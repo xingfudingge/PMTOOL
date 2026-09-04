@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PMTool Logo 三方向预览</title>
+<style>
+  :root {
+    --bg-light: #FAFAFA;
+    --bg-dark: #191919;
+    --border: #E5E5E2;
+    --text: #37352F;
+    --text-secondary: #787774;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', system-ui, sans-serif;
+    background: var(--bg-light);
+    color: var(--text);
+    padding: 40px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 48px;
+  }
+  .card {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .card h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .card .concept {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .icon-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    margin-top: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .icon-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+  .icon-cell img { display: block; }
+
+  /* 背景变体展示 */
+  .bg-variants {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .bg-cell {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bg-cell.light { background: #FAFAFA; border: 1px solid var(--border); }
+  .bg-cell.surface { background: #FFFFFF; border: 1px solid var(--border); }
+  .bg-cell.dark { background: #191919; }
+  .bg-cell.accent { background: #5B5CE2; }
+</style>
+</head>
+<body>
+  <h1>PMTool Logo · 三方向对比预览</h1>
+  <p class="subtitle">每个方向都展示了：16/24/32/64px 四种尺寸 + 4 种背景下的 App Icon 表现</p>
+
+  <div class="grid">
+    <!-- 方向 A -->
+    <div class="card">
+      <h2>方向 A · Workspace</h2>
+      <p class="concept">一扇窗 + 一个桌面 · Things / Bear 风格<br>抽象工作空间，桌上摆放项目笔记</p>
+      <div class="icon-row">
+        <div class="icon-cell"><img src="direction-A-workspace.svg" width="16" height="16"/><span>16</span></div>
+        <div class="icon-cell"><img src="direction-A-workspace.svg" width="24" height="24"/><span>24</span></div>
+        <div class="icon-cell"><img src="direction-A-workspace.svg" width="32" height="32"/><span>32</span></div>
+        <div class="icon-cell"><img src="direction-A-workspace.svg" width="64" height="64"/><span>64</span></div>
+        <div class="icon-cell"><img src="direction-A-workspace.svg" width="128" height="128"/><span>App</span></div>
+      </div>
+      <div class="bg-variants">
+        <div class="bg-cell light"><img src="direction-A-workspace.svg" width="48" height="48"/></div>
+        <div class="bg-cell surface"><img src="direction-A-workspace.svg" width="48" height="48"/></div>
+        <div class="bg-cell dark"><img src="direction-A-workspace.svg" width="48" height="48"/></div>
+      </div>
+    </div>
+
+    <!-- 方向 B -->
+    <div class="card">
+      <h2>方向 B · PM 字母负形</h2>
+      <p class="concept">P 圆环 + M 折线 · Bear / Notion 风格<br>字母符号化，不直接写"PM"</p>
+      <div class="icon-row">
+        <div class="icon-cell"><img src="direction-B-letterform.svg" width="16" height="16"/><span>16</span></div>
+        <div class="icon-cell"><img src="direction-B-letterform.svg" width="24" height="24"/><span>24</span></div>
+        <div class="icon-cell"><img src="direction-B-letterform.svg" width="32" height="32"/><span>32</span></div>
+        <div class="icon-cell"><img src="direction-B-letterform.svg" width="64" height="64"/><span>64</span></div>
+        <div class="icon-cell"><img src="direction-B-letterform.svg" width="128" height="128"/><span>App</span></div>
+      </div>
+      <div class="bg-variants">
+        <div class="bg-cell light"><img src="direction-B-letterform.svg" width="48" height="48"/></div>
+        <div class="bg-cell surface"><img src="direction-B-letterform.svg" width="48" height="48"/></div>
+        <div class="bg-cell dark"><img src="direction-B-letterform.svg" width="48" height="48"/></div>
+      </div>
+    </div>
+
+    <!-- 方向 C -->
+    <div class="card">
+      <h2>方向 C · 抽象节点网络</h2>
+      <p class="concept">中心 + 四角 + 连接线 · Arc / Raycast 风格<br>项目/任务/笔记/文件四通八达</p>
+      <div class="icon-row">
+        <div class="icon-cell"><img src="direction-C-abstract.svg" width="16" height="16"/><span>16</span></div>
+        <div class="icon-cell"><img src="direction-C-abstract.svg" width="24" height="24"/><span>24</span></div>
+        <div class="icon-cell"><img src="direction-C-abstract.svg" width="32" height="32"/><span>32</span></div>
+        <div class="icon-cell"><img src="direction-C-abstract.svg" width="64" height="64"/><span>64</span></div>
+        <div class="icon-cell"><img src="direction-C-abstract.svg" width="128" height="128"/><span>App</span></div>
+      </div>
+      <div class="bg-variants">
+        <div class="bg-cell light"><img src="direction-C-abstract.svg" width="48" height="48"/></div>
+        <div class="bg-cell surface"><img src="direction-C-abstract.svg" width="48" height="48"/></div>
+        <div class="bg-cell dark"><img src="direction-C-abstract.svg" width="48" height="48"/></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

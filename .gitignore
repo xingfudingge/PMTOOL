@@ -1,0 +1,114 @@
+# ========================
+# PMTool - Git Ignore 配置
+# ========================
+
+# ========================================
+# 依赖目录
+# ========================================
+node_modules/
+.pnpm-store/
+
+# ========================================
+# 构建产物
+# ========================================
+# PMTool 主应用
+app/dist/
+
+# License Generator
+app/license-generator/web/dist/
+
+# Rust 构建
+target/
+app/src-tauri/target/
+app/license-generator/src-tauri/target/
+
+# DMG 安装包
+*.dmg
+app/src-tauri/target/release/bundle/dmg/*.dmg
+app/src-tauri/target/release/bundle/*.dmg
+
+# ========================================
+# 环境和密钥
+# ========================================
+.env
+.env.local
+.env.development
+.env.production
+
+# PMTool 配置和密钥
+~/.pmtool/
+pmtool-tauri.log
+pmtool-vite.log
+lg.log
+
+# GitHub 访问令牌（本地机密）
+.pmtool-github-token
+
+# 密钥（严禁提交私钥进仓库）
+app/src-tauri/keys/
+app/license-generator/src-tauri/keys/
+
+# ========================================
+# IDE 配置
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ========================================
+# 日志和调试
+# ========================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ========================================
+# Tauri 相关
+# ========================================
+app/src-tauri/tauri.conf.json.backup
+app/license-generator/src-tauri/tauri.conf.json.backup
+
+# ========================================
+# 测试覆盖
+# ========================================
+coverage/
+.nyc_output/
+
+# ========================================
+# 临时文件
+# ========================================
+*.tmp
+*.temp
+*.bak
+
+# ========================================
+# 数据库文件（不应进版本控制 · 包含运行数据）
+# ========================================
+database/*.db
+database/*.db-journal
+database/*.db-wal
+database/*.db-shm
+
+# ========================================
+# 其他
+# ========================================
+*.lock
+Cargo.lock  # 如果需要版本控制，可以取消注释

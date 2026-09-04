@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试授权码 API</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 700px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f7;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1a1a1a; margin-bottom: 24px; }
+        h2 { color: #374151; margin-bottom: 16px; font-size: 1.1rem; }
+        button {
+            background: #5b5ce2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #ccc; }
+        .result {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+        .loading { color: #6b7280; }
+        label { display: block; margin-bottom: 6px; font-weight: 500; color: #374151; }
+        input, select {
+            width: 100%;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>PMTool 授权码生成器 - API 测试</h1>
+
+    <div class="card">
+        <h2>测试 1: 检查后端状态</h2>
+        <button id="checkBtn" onclick="checkStatus()">检查后端</button>
+        <div id="statusResult" class="result">等待测试...</div>
+    </div>
+
+    <div class="card">
+        <h2>测试 2: 生成测试授权码</h2>
+        <label>设备 ID:</label>
+        <input type="text" id="deviceId" value="test-device-$(date +%s)" placeholder="输入设备 ID">
+
+        <label>授权期限:</label>
+        <select id="duration">
+            <option value="30">30 天</option>
+            <option value="365">1 年</option>
+            <option value="0">永久</option>
+        </select>
+
+        <button id="generateBtn" onclick="generateLicense()">生成测试授权码</button>
+        <div id="licenseResult" class="result">等待生成...</div>
+    </div>
+
+    <div class="card">
+        <h2>测试 3: 验证授权码格式</h2>
+        <div id="verifyResult" class="result">授权码格式验证结果</div>
+    </div>
+
+    <script>
+        async function checkStatus() {
+            const result = document.getElementById('statusResult');
+            const btn = document.getElementById('checkBtn');
+
+            btn.disabled = true;
+            result.innerHTML = '<span class="loading">检查中...</span>';
+
+            try {
+                const status = await window.__TAURI__.core.invoke('check_key_status');
+                if (status) {
+                    result.innerHTML = '<span class="success">✓ 后端运行正常，密钥已存在</span>';
+                } else {
+                    result.innerHTML = '<span class="error">✗ 密钥不存在，将自动生成</span>';
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">✗ 错误：${error}</span>`;
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function generateLicense() {
+            const deviceId = document.getElementById('deviceId').value.trim();
+            const duration = parseInt(document.getElementById('duration').value);
+            const result = document.getElementById('licenseResult');
+            const verifyResult = document.getElementById('verifyResult');
+            const btn = document.getElementById('generateBtn');
+
+            if (!deviceId) {
+                result.innerHTML = '<span class="error">✗ 请输入设备 ID</span>';
+                return;
+            }
+
+            btn.disabled = true;
+            result.innerHTML = '<span class="loading">生成中...</span>';
+
+            try {
+                const startDate = new Date().toISOString().split('T')[0] + 'T00:00:00+08:00';
+                const license = await window.__TAURI__.core.invoke('generate_license_command', {
+                    deviceId: deviceId,
+                    durationDays: duration,
+                    startDate: startDate
+                });
+
+                result.innerHTML = `<span class="success">✓ 授权码生成成功!</span>\n\n${license}`;
+
+                // 验证格式
+                verifyLicense(license);
+            } catch (error) {
+                result.innerHTML = `<span class="error">✗ 生成失败：${error}</span>`;
+                console.error(error);
+                verifyResult.innerHTML = `<span class="error">验证失败：${error}</span>`;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function verifyLicense(license) {
+            const parts = license.split('-');
+            const validPrefix = parts[0] === 'PMT1';
+            const validPartsCount = parts.length === 14;
+
+            let html = '<strong>格式验证:</strong>\n';
+
+            if (validPrefix) {
+                html += '✓ 前缀正确 (PMT1)\n';
+            } else {
+                html += `✗ 前缀错误：${parts[0]}\n`;
+            }
+
+            if (validPartsCount) {
+                html += `✓ 分段正确 (${parts.length} 段)\n`;
+            } else {
+                html += `✗ 分段错误：${parts.length}段 (期望 14 段)\n`;
+            }
+
+            if (parts.length >= 2) {
+                const sigLen = parts[1].length;
+                const dataLen = parts.slice(2).join('').length;
+                html += `  签名长度：${sigLen}字符\n`;
+                html += `  数据长度：${dataLen}字符\n`;
+
+                // License Generator 签名是 64 字符 hex + base64 编码
+                // 64 hex chars = base64 encoded = ~87 chars (URL_SAFE_NO_PAD)
+                if (sigLen >= 80 && dataLen > 100) {
+                    html += '✓ 签名和数据长度看起来正常';
+                } else {
+                    html += '⚠ 签名或数据长度可能异常';
+                }
+            }
+
+            document.getElementById('verifyResult').innerHTML = html;
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            checkStatus();
+            // 更新测试用的设备 ID
+            document.getElementById('deviceId').value = `test-device-${Date.now()}`;
+        });
+    </script>
+</body>
+</html>

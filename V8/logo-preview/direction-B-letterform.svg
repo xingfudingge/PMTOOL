@@ -1,0 +1,23 @@
+<!--
+  PMTool Logo · 方向 B · 字母抽象（PM 几何负形）
+  理念：P / M 的负形结合 · 类似 Bear / Notion 的字母处理
+  100×100 viewBox · 圆角 22 · Indigo 填充
+  几何：把 P 和 M 用同一条「桌面前沿线」连接 · P 是上方的圆 · M 是下方的两个角
+  含义：PMTool 的字母符号 · 抽象成工作台 + 显示器
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <rect x="0" y="0" width="100" height="100" rx="22" fill="#5B5CE2"/>
+
+  <!-- P 的几何：上方一个圆环 + 右侧一个矩形手柄 -->
+  <!-- 圆环外径 22，内径 11，环宽 11 -->
+  <circle cx="36" cy="38" r="11" fill="none" stroke="#FFFFFF" stroke-width="6"/>
+  <!-- P 的手柄：从圆环右侧延伸到桌面 -->
+  <rect x="45" y="33" width="10" height="10" fill="#5B5CE2"/>
+  <line x1="45" y1="38" x2="55" y2="38" stroke="#FFFFFF" stroke-width="6" stroke-linecap="square"/>
+
+  <!-- M 的几何：两个尖角 · 代表桌面前沿的两个支架 -->
+  <!-- 左 M：左侧斜线 -->
+  <path d="M 30 72 L 30 56 L 50 72 L 50 56" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- 右 M：右侧斜线 -->
+  <path d="M 60 56 L 60 72 L 80 56 L 80 72" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

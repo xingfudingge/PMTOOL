@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试 Tauri API</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f7;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #5b5ce2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #ccc; }
+        #result {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+    </style>
+</head>
+<body>
+    <h1>Tauri API 测试</h1>
+
+    <div class="card">
+        <h3>1. 检查密钥状态</h3>
+        <button onclick="checkKeyStatus()">检查密钥</button>
+        <div id="status-result"></div>
+    </div>
+
+    <div class="card">
+        <h3>2. 测试生成授权码</h3>
+        <label>设备 ID:</label>
+        <input type="text" id="deviceId" value="test-device-12345" style="width: 100%; padding: 8px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px;">
+        <label>期限:</label>
+        <select id="duration" style="padding: 8px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px;">
+            <option value="30">30 天</option>
+            <option value="365">1 年</option>
+            <option value="0">永久</option>
+        </select>
+        <br><br>
+        <button id="generateBtn" onclick="generateTestLicense()">生成测试授权码</button>
+        <div id="license-result"></div>
+    </div>
+
+    <script>
+        async function checkKeyStatus() {
+            const result = document.getElementById('status-result');
+            result.innerHTML = '<span class="success">检查中...</span>';
+            try {
+                const status = await window.__TAURI__.core.invoke('check_key_status');
+                if (status) {
+                    result.innerHTML = '<span class="success">✓ 密钥已存在</span>';
+                } else {
+                    result.innerHTML = '<span class="error">✗ 密钥不存在，需要先调用 generate_license_command 来生成</span>';
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">错误：${error}</span>`;
+            }
+        }
+
+        async function generateTestLicense() {
+            const btn = document.getElementById('generateBtn');
+            const result = document.getElementById('license-result');
+            const deviceId = document.getElementById('deviceId').value;
+            const duration = parseInt(document.getElementById('duration').value);
+
+            btn.disabled = true;
+            btn.textContent = '生成中...';
+            result.innerHTML = '<span class="success">生成中...</span>';
+
+            try {
+                const startDate = new Date().toISOString().split('T')[0] + 'T00:00:00+08:00';
+                const license = await window.__TAURI__.core.invoke('generate_license_command', {
+                    deviceId: deviceId,
+                    durationDays: duration,
+                    startDate: startDate
+                });
+                result.innerHTML = `<span class="success">✓ 授权码生成成功!</span><div>${license}</div>`;
+            } catch (error) {
+                result.innerHTML = `<span class="error">✗ 生成失败：${error}</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '生成测试授权码';
+            }
+        }
+
+        // 页面加载时检查状态
+        window.addEventListener('load', () => {
+            checkKeyStatus();
+        });
+    </script>
+</body>
+</html>

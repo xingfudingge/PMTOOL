@@ -1,0 +1,71 @@
+/**
+ * PMTool · 知识空间 Tauri Commands
+ *
+ * 对应 Rust repositories/knowledge_spaces.rs：
+ *   - list_personal()
+ *   - list_by_project()
+ *   - get_by_id()
+ *   - create()
+ *   - delete()
+ *
+ * 设计原则：
+ *   - 个人知识中心和个人知识空间一一对应
+ *   - 项目知识中心通过绑定关系访问项目知识空间
+ *   - 删除知识空间前必须先解绑所有项目
+ */
+
+use tauri::State;
+
+use crate::AppState;
+use crate::repositories::knowledge_spaces::{
+    self as repo, KnowledgeSpace, KnowledgeSpaceInput,
+};
+
+/// 列出个人知识空间（通常只有一个）
+#[tauri::command]
+pub fn list_personal_knowledge_spaces(
+    state: State<'_, AppState>,
+) -> Result<Vec<KnowledgeSpace>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repo::list_personal(&conn).map_err(|e| e.to_string())
+}
+
+/// 列出某项目对应的知识空间
+#[tauri::command]
+pub fn list_project_knowledge_spaces(
+    state: State<'_, AppState>,
+    project_id: i64,
+) -> Result<Vec<KnowledgeSpace>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repo::list_by_project(&conn, project_id).map_err(|e| e.to_string())
+}
+
+/// 获取单个知识空间
+#[tauri::command]
+pub fn get_knowledge_space(
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<Option<KnowledgeSpace>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repo::get_by_id(&conn, id).map_err(|e| e.to_string())
+}
+
+/// 创建新的知识空间
+#[tauri::command]
+pub fn create_knowledge_space(
+    state: State<'_, AppState>,
+    input: KnowledgeSpaceInput,
+) -> Result<KnowledgeSpace, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repo::create(&conn, input).map_err(|e| e.to_string())
+}
+
+/// 删除知识空间（需要先解绑所有项目）
+#[tauri::command]
+pub fn delete_knowledge_space(
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repo::delete(&conn, id).map_err(|e| e.to_string())
+}

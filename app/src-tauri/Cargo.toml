@@ -1,0 +1,55 @@
+[package]
+name = "pmtool"
+version = "2.0.0"
+description = "PMTool · 实施经理个人工作台"
+authors = ["维护者"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "pmtool_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[dependencies]
+tauri = { version = "2.0", features = [] }
+tauri-plugin-shell = "2.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Phase 4 · T4.9 文件管理（OS 默认程序打开）
+open = "5"
+
+# 维护者 2026-08-31 · FilesTab：原生目录选择器（rfd）
+rfd = "0.14"
+# 维护者 2026-08-31 · FilesTab：递归扫描用 std::fs（之前用 ignore 但 git 仓库上下文会把内容全部过滤掉）
+
+# Phase 1 · License 授权
+rsa = "0.9"
+sha2 = { version = "0.10", features = ["oid"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Ed25519 签名（新授权系统）
+ed25519-dalek = "2.0"
+rand = "0.8"
+base32 = "0.4"
+hex = "0.4"
+
+# 设备指纹采集
+sysinfo = "0.30"
+regex = "1.10"
+
+# 剪贴板写入（复制设备唯一值）
+arboard = "3.4"
+
+[features]
+# 默认 features
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

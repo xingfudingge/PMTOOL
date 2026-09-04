@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# PMTool runtime data（运行时生成的数据库/数据/备份/日志）
+data/
+backup/
+logs/
+# SQLite 数据库文件（具体文件 pattern · 不要排除 src/database/ 源代码）
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Env
+.env
+.env.local
+.env.*.local
