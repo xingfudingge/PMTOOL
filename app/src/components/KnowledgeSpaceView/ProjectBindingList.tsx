@@ -303,12 +303,12 @@ function ConfirmUnbindDialog({
         }}
       >
         <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 12px', color: 'var(--color-text)' }}>
-          解绑「{projectName}」？
+          删除「{projectName}」的项目知识库？
         </h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: '0 0 16px' }}>
-          解绑仅删除项目中心对该项目知识空间的访问入口，不会删除该项目下的目录、知识、附件。
+          此操作将<strong>真删</strong>该项目整个知识库（目录、知识、附件及磁盘文件），<strong>不可恢复</strong>。
           <br />
-          <strong>此操作不可逆（解绑后需手动重新添加）。</strong>
+          若仅想移除项目中心入口、保留知识，请去「项目中心 → 项目知识库」解绑。
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button
@@ -340,7 +340,7 @@ function ConfirmUnbindDialog({
               fontWeight: 500,
             }}
           >
-            解绑
+            删除
           </button>
         </div>
       </div>
