@@ -101,6 +101,11 @@ import { FileTree } from '@/components/FileTree'
 import { FilePreview } from '@/components/FilePreview'
 import { ProjectKnowledgeCenter } from '@/components/KnowledgeSpaceView/ProjectKnowledgeCenter'
 import {
+  listProjectBindings,
+  listProjectKnowledgeSpaces,
+  deleteBinding,
+} from '@/services/knowledgeSpaces'
+import {
   listProjectFiles,
   pickProjectDirectory,
   setProjectLocalDirectory,
@@ -139,7 +144,7 @@ interface PlanningTabDef {
 const PRIMARY_TABS: PrimaryTabDef[] = [
   { key: 'planning', label: '计划管理', Icon: ListTodo },
   { key: 'weekly', label: '每周工作情况及下周任务', Icon: CalendarDays },
-  { key: 'knowledge', label: '知识中心', Icon: BookOpen },
+  { key: 'knowledge', label: '项目知识库', Icon: BookOpen },
   { key: 'files', label: '项目文件管理', Icon: FolderOpen },
   { key: 'members', label: '项目成员', Icon: Users },
   { key: 'risks', label: '风险登记册', Icon: AlertOctagon },
@@ -6779,12 +6784,182 @@ function IssueImportConfirmModal({
 
 function KnowledgeTab({ data }: { data: ProjectDetailData }) {
   const project = data.project
+  const [spaceId, setSpaceId] = useState<number | null>(null)
+  const [confirmUnbind, setConfirmUnbind] = useState(false)
+
+  // 挂载时查出该项目的知识空间（用于「解绑」定位）
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const spaces = await listProjectKnowledgeSpaces(project.id)
+        if (alive) setSpaceId(spaces[0]?.id ?? null)
+      } catch {
+        if (alive) setSpaceId(null)
+      }
+    })()
+    return () => { alive = false }
+  }, [project.id])
+
+  const handleUnbind = async () => {
+    if (spaceId == null) return
+    try {
+      await deleteBinding(project.id, spaceId)
+      toast.success('已解绑该项目的知识库（知识已保留）')
+      setConfirmUnbind(false)
+      setSpaceId(null)
+    } catch (e) {
+      toast.error(`解绑失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   return (
-    <div style={{ height: '100%' }}>
-      <ProjectKnowledgeCenter
-        projectId={project.id}
-        projectName={project.project_name}
-      />
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 8,
+          padding: '8px 116px',
+          borderBottom: '1px solid var(--color-border-thin)',
+          background: 'var(--color-bg-subtle)',
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+          项目知识归知识中心所有，此处仅只读访问
+        </span>
+        <button
+          type="button"
+          onClick={() => setConfirmUnbind(true)}
+          disabled={spaceId == null}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            fontSize: 11,
+            background: 'transparent',
+            color: spaceId == null ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+            border: '1px solid var(--color-border-thin)',
+            borderRadius: 6,
+            cursor: spaceId == null ? 'not-allowed' : 'pointer',
+            opacity: spaceId == null ? 0.5 : 1,
+          }}
+          title={spaceId == null ? '该项目尚未绑定知识库' : '解绑后项目中心不再显示该知识库，但知识保留在知识中心'}
+        >
+          <X size={11} /> 解绑
+        </button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {spaceId == null ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              fontSize: 35,
+              color: 'var(--color-text-tertiary)',
+            }}
+          >
+            该项目尚未在知识中心绑定知识库。
+          </div>
+        ) : (
+          <ProjectKnowledgeCenter
+            projectId={project.id}
+            projectName={project.project_name}
+          />
+        )}
+      </div>
+
+      {confirmUnbind && spaceId != null && (
+        <ConfirmUnbindKnowledgeDialog
+          projectName={project.project_name}
+          onConfirm={handleUnbind}
+          onCancel={() => setConfirmUnbind(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ConfirmUnbindKnowledgeDialog({
+  projectName,
+  onConfirm,
+  onCancel,
+}: {
+  projectName: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-bg)',
+          borderRadius: 'var(--radius-md)',
+          padding: 24,
+          maxWidth: 420,
+          width: '90%',
+          boxShadow: '0 4px 30px rgba(0,0,0,0.3)',
+        }}
+      >
+        <h3 style={{ fontSize: 15, fontWeight: 670, margin: '0 0 12px', color: 'var(--color-text)' }}>
+          解绑「{projectName}」的知识库？
+        </h3>
+        <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: '0 0 20px' }}>
+          解绑仅移除项目中心对该知识库的访问入口，<strong>不会删除</strong>该知识库下的目录、知识、附件。
+          <br />
+          知识仍保留在「知识中心 → 项目知识中心」，可随时重新添加。
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: '7px 18px',
+              fontSize: 13,
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-bg)',
+              color: 'var(--color-text)',
+              borderRadius: 'var(--radius)',
+              cursor: 'pointer',
+            }}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            style={{
+              padding: '7px 24px',
+              fontSize: 13,
+              border: 'none',
+              background: 'var(--color-accent)',
+              color: 'var(--color-text-on-accent, #fff)',
+              borderRadius: 'var(--radius)',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            解绑
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

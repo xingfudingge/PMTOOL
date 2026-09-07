@@ -11,7 +11,7 @@
  * 关注点：纯 SQL 操作，不含业务逻辑。
  */
 
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
 /// 知识空间 (对应 knowledge_spaces 表)
