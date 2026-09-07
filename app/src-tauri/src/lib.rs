@@ -351,6 +351,7 @@ pub fn run() {
             commands::knowledge_folders::list_knowledge_folders_by_project,
             commands::knowledge_folders::upsert_knowledge_folder,
             commands::knowledge_folders::ensure_project_knowledge_library,
+            commands::knowledge_folders::ensure_ai_knowledge_folder,
             commands::knowledge_folders::delete_knowledge_folder,
             // 知识空间 commands（2026-09-03 知识中心重构）
             commands::knowledge_spaces::list_personal_knowledge_spaces,

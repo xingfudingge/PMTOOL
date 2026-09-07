@@ -53,8 +53,41 @@ pub fn init(app_data_dir: &PathBuf) -> Result<DbPool, rusqlite::Error> {
     // 执行 schema migration（drizzle-kit 格式）
     run_migrations(&conn)?;
 
+    // 维护者 2026-09-04 · 设计文档 §15：为每个项目补建缺失的独立知识空间
+    ensure_project_knowledge_spaces(&conn).ok();
+
     eprintln!("[DB] ✅ 数据库就绪");
     Ok(Mutex::new(conn))
+}
+
+/// 维护者 2026-09-04 · 设计文档 §15
+/// 为 projects 表中每个项目补建缺失的独立知识空间（knowledge_spaces · space_type='project'）。
+/// 项目知识中心要求“每个项目一个独立知识空间”，此函数作为兜底：老库中已有项目但无空间时补齐。
+fn ensure_project_knowledge_spaces(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("SELECT id, project_name FROM projects")?;
+    let projects: Vec<(i64, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for (pid, name) in projects {
+        let exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM knowledge_spaces WHERE space_type = 'project' AND project_id = ?1",
+                [pid],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        if !exists {
+            conn.execute(
+                "INSERT INTO knowledge_spaces (space_type, project_id, name, created_at, updated_at)
+                 VALUES ('project', ?1, ?2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                rusqlite::params![pid, name],
+            )?;
+            eprintln!("[DB] 补建项目知识空间: {:?} ({})", pid, name);
+        }
+    }
+    Ok(())
 }
 
 /// 执行 migration（启动时）

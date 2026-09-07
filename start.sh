@@ -134,7 +134,15 @@ stop_pmtool() {
     # 停止进程
     force_stop_port $TAURI_PORT "$TAURI_PID_FILE" "PMTool"
 
-    # 再次确认
+    # 2026-09-07 修复：Tauri 桌面窗口进程（pmtool 二进制）不占 1420 端口，
+    # 上面只杀了 Vite(node) 和 pnpm，窗口还开着。按进程名补杀 dev 二进制。
+    log_info "按进程名清理 PMTool 桌面进程..."
+    pkill -f "target/debug/pmtool" 2>/dev/null || true
+    pkill -f "src-tauri/target/debug/pmtool" 2>/dev/null || true
+    pkill -f "pmtool" 2>/dev/null || true
+    sleep 0.3
+
+    # 再次确认端口 + 窗口进程
     if check_port $TAURI_PORT; then
         log_error "PMTool 未完全停止"
         return 1

@@ -1,0 +1,950 @@
+/**
+ * PMTool · 统一知识树视图（2026-09-04 重构 · 设计文档 §31）
+ *
+ * 两栏布局（替代原三栏"树 + 中间列表 + 编辑区"）：
+ *   ┌────────────────┬──────────────────────────────┐
+ *   │ 左侧单棵树      │ 右侧 BlockNote 编辑区          │
+ *   │ ├ 目录（USER） │                              │
+ *   │ │  ├ 目录       │  标题                          │
+ *   │ │  ├ 📄 知识    │  BlockNote                    │
+ *   │ │  └ 📄 知识    │                              │
+ *   │ ├ 项目根(PROJECT_ROOT, 仅项目模式)               │
+ *   │ └ ✨ AI 生成(SYSTEM_AI)                         │
+ *   └────────────────┴──────────────────────────────┘
+ *
+ * 节点操作（悬停 ⋯ 菜单）按 nodeKind 控制：
+ *   - root         个人「目录」虚拟根：仅 添加子目录
+ *   - project-root 项目根：删除 + 添加子目录（不可直接建知识）
+ *   - folder       普通目录：删除 / 重命名 / 添加子目录 / 新建知识
+ *   - note         知识节点：删除 / 重命名
+ *   - ai           系统 AI 生成目录：添加子目录 / 新建知识（不可删 / 不可重命名）
+ *
+ * 删除一律走 DeleteConfirmDialog（设计文档 §2）。
+ * 真删除在后端已级联（数据库 + BlockNote 内容 + 附件记录 + 本地文件）。
+ */
+
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import {
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  FileText,
+  Plus,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  FolderPlus,
+  Sparkles,
+  BookOpen,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import type { Block } from '@blocknote/core'
+
+import { DocumentEditor } from '@/components/DocumentEditor'
+import { DeleteConfirmDialog } from './DeleteConfirmDialog'
+import { resolveInitialBlocks } from '@/components/DocumentEditor/useBlockNoteSetup'
+import {
+  buildUnifiedTree,
+  type UnifiedNode,
+} from './tree'
+import {
+  listKnowledgeNotes,
+  listKnowledgeNotesBySpaceType,
+  listKnowledgeFolders,
+  listKnowledgeFoldersByProject,
+  listPersonalKnowledgeSpaces,
+  upsertKnowledgeFolder,
+  upsertKnowledgeNote,
+  ensureAiKnowledgeFolder,
+  deleteKnowledgeFolder,
+  deleteKnowledgeNote,
+  getKnowledgeNote,
+  type KnowledgeNote as DbNote,
+  type KnowledgeFolder as DbFolder,
+} from '@/services/knowledge'
+import { listProjectKnowledgeSpaces } from '@/services/knowledgeSpaces'
+
+export interface KnowledgeTreeViewProps {
+  mode: 'personal' | 'project'
+  /** project 模式必填 */
+  projectId?: number
+  projectName?: string
+  /** 右侧初始空状态文案 */
+  emptyHint?: string
+}
+
+// ============================================================
+// 样式
+// ============================================================
+
+const rootStyle: React.CSSProperties = {
+  display: 'flex',
+  height: '100%',
+  background: 'var(--color-bg)',
+}
+
+const treePanelStyle: React.CSSProperties = {
+  width: 280,
+  flexShrink: 0,
+  borderRight: '1px solid var(--color-border-thin)',
+  background: 'var(--color-bg-subtle)',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+}
+
+const editorPanelStyle: React.CSSProperties = {
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: 0,
+  background: 'var(--color-bg)',
+}
+
+const headerStyle: React.CSSProperties = {
+  padding: '12px 14px',
+  borderBottom: '1px solid var(--color-border-thin)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexShrink: 0,
+}
+
+const titleStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  color: 'var(--color-text)',
+  flex: 1,
+  margin: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
+
+const iconBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 22,
+  height: 22,
+  background: 'transparent',
+  border: 'none',
+  borderRadius: 3,
+  cursor: 'pointer',
+  color: 'var(--color-text-tertiary)',
+  flexShrink: 0,
+  padding: 0,
+}
+
+const rowContainerStyle: React.CSSProperties = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
+}
+
+const rowStyle = (active: boolean, depth: number): React.CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: `4px 8px 4px ${6 + depth * 14}px`,
+  fontSize: 12.5,
+  fontWeight: active ? 500 : 400,
+  color: active ? 'var(--color-text)' : 'var(--color-text-secondary)',
+  background: active ? 'var(--color-bg-active)' : 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  textAlign: 'left',
+  flex: 1,
+  minWidth: 0,
+  borderRadius: 'var(--radius)',
+})
+
+const emptyEditorStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100%',
+  color: 'var(--color-text-tertiary)',
+  fontSize: 13,
+  gap: 12,
+  padding: 32,
+  textAlign: 'center',
+}
+
+// ============================================================
+// 主组件
+// ============================================================
+
+export function KnowledgeTreeView({
+  mode,
+  projectId,
+  projectName,
+  emptyHint,
+}: KnowledgeTreeViewProps) {
+  const [notes, setNotes] = useState<DbNote[]>([])
+  const [folders, setFolders] = useState<DbFolder[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeNoteId, setActiveNoteId] = useState<number | null>(null)
+  const [activeNote, setActiveNote] = useState<DbNote | null>(null)
+  const [initialBlocks, setInitialBlocks] = useState<Block[] | undefined>(undefined)
+
+  // 二次确认弹窗
+  const [confirm, setConfirm] = useState<{
+    open: boolean
+    type: 'note' | 'folder'
+    id: number
+    name: string
+  }>({ open: false, type: 'note', id: 0, name: '' })
+
+  // 命名弹窗（Tauri WebView 不支持 window.prompt，用内嵌弹窗替代）
+  const [namePrompt, setNamePrompt] = useState<{
+    open: boolean
+    title: string
+    initialValue: string
+    resolve: (v: string | null) => void
+  } | null>(null)
+
+  const askName = useCallback((title: string, initialValue: string) => {
+    return new Promise<string | null>((resolve) => {
+      setNamePrompt({ open: true, title, initialValue, resolve })
+    })
+  }, [])
+
+  // ───────── 数据加载 ─────────
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      let resolvedFolders: DbFolder[] = []
+      let resolvedNotes: DbNote[] = []
+
+      if (mode === 'personal') {
+        // 确保个人 AI 系统目录存在
+        await ensureAiKnowledgeFolder('personal', null)
+        const spaces = await listPersonalKnowledgeSpaces()
+        const spaceId = spaces[0]?.id
+        if (spaceId != null) {
+          resolvedNotes = await listKnowledgeNotes(spaceId)
+        }
+        resolvedFolders = await listKnowledgeFolders('personal')
+      } else {
+        if (projectId == null) return
+        // 2026-09-07 修复：项目知识归知识中心，项目详情只读展示已在知识中心绑定的内容。
+        // 不再自动创建“项目根目录”+“AI 生成目录”，避免莫名冒目录。
+        const spaces = await listProjectKnowledgeSpaces(projectId)
+        const spaceId = spaces[0]?.id
+        if (spaceId != null) {
+          // 按空间 id 精确取笔记（避免跨项目污染）
+          resolvedNotes = await listKnowledgeNotes(spaceId)
+        }
+        resolvedFolders = await listKnowledgeFoldersByProject(projectId)
+      }
+      setNotes(resolvedNotes)
+      setFolders(resolvedFolders)
+    } catch (e) {
+      console.error('[KnowledgeTreeView] refresh failed:', e)
+      toast.error(`加载失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [mode, projectId, projectName])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  // ───────── 树组装 ─────────
+  const tree = useMemo(
+    () =>
+      buildUnifiedTree(folders, notes, {
+        withVirtualRoot: mode === 'personal',
+      }),
+    [folders, notes, mode],
+  )
+
+  // ───────── 打开知识 ─────────
+  const openNote = useCallback(async (note: DbNote) => {
+    setActiveNoteId(note.id)
+    setActiveNote(note)
+    setInitialBlocks(undefined)
+    try {
+      const fresh = await getKnowledgeNote(note.id)
+      if (!fresh) {
+        toast.error('笔记不存在或已被删除')
+        setActiveNoteId(null)
+        setActiveNote(null)
+        return
+      }
+      setActiveNote(fresh)
+      const blocks = resolveInitialBlocks(
+        fresh.contentType,
+        fresh.content ?? '',
+        fresh.contentMd ?? '',
+        undefined as any,
+      )
+      setInitialBlocks(blocks)
+    } catch (e) {
+      console.error('[KnowledgeTreeView] openNote failed:', e)
+      toast.error(`打开失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }, [])
+
+  // ───────── 知识保存回填 ─────────
+  const handleNoteSaved = useCallback(async () => {
+    await refresh()
+    if (activeNoteId != null) {
+      const fresh = await getKnowledgeNote(activeNoteId)
+      if (fresh) setActiveNote(fresh)
+    }
+  }, [refresh, activeNoteId])
+
+  // ───────── 重命名知识 ─────────
+  const renameNote = useCallback(
+    async (note: DbNote, newName: string) => {
+      try {
+        await upsertKnowledgeNote({
+          id: note.id,
+          spaceId: note.spaceId,
+          space: note.space,
+          title: newName.trim(),
+          content: note.content ?? '[]',
+          contentType: note.contentType,
+          contentMd: note.contentMd ?? '',
+          pinned: note.pinned,
+          folderId: note.folderId,
+          category: note.category,
+          sourceType: note.sourceType,
+          isAiGenerated: note.isAiGenerated,
+          createdBy: note.createdBy,
+          systemType: note.systemType,
+        })
+        toast.success('已重命名')
+        await refresh()
+        if (activeNoteId === note.id) {
+          const fresh = await getKnowledgeNote(note.id)
+          if (fresh) setActiveNote(fresh)
+        }
+      } catch (e) {
+        toast.error(`重命名失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    },
+    [refresh, activeNoteId],
+  )
+
+  // ───────── 解析空间信息（创建知识 / 目录需要 spaceId） ─────────
+  const resolveSpaceId = useCallback(async (): Promise<number> => {
+    if (mode === 'personal') {
+      const spaces = await listPersonalKnowledgeSpaces()
+      if (!spaces[0]) throw new Error('个人知识空间未初始化')
+      return spaces[0].id
+    }
+    const spaces = await listProjectKnowledgeSpaces(projectId!)
+    if (!spaces[0]) throw new Error('项目知识空间未初始化')
+    return spaces[0].id
+  }, [mode, projectId])
+
+  // ───────── 创建目录 ─────────
+  const createFolder = useCallback(
+    async (parentId: number | null) => {
+      const spaceId = await resolveSpaceId()
+      const name = await askName('新建目录', '')
+      if (!name || !name.trim()) return null
+      try {
+        const created = await upsertKnowledgeFolder({
+          spaceId,
+          parentId,
+          space: mode,
+          projectId: mode === 'project' ? projectId ?? null : null,
+          name: name.trim(),
+          systemType: 'USER',
+        })
+        await refresh()
+        return created
+      } catch (e) {
+        toast.error(`新建目录失败：${e instanceof Error ? e.message : String(e)}`)
+        return null
+      }
+    },
+    [mode, projectId, refresh, resolveSpaceId, askName],
+  )
+
+  // ───────── 创建知识 ─────────
+  const createNote = useCallback(
+    async (folderId: number | null) => {
+      try {
+        const spaceId = await resolveSpaceId()
+        const created = await upsertKnowledgeNote({
+          spaceId,
+          space: mode,
+          title: '未命名知识',
+          content: '[]',
+          contentType: 'BLOCKNOTE_JSON',
+          contentMd: '',
+          pinned: false,
+          folderId,
+          sourceType: 'USER',
+          isAiGenerated: false,
+        })
+        await refresh()
+        await openNote(created)
+      } catch (e) {
+        toast.error(`新建知识失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    },
+    [mode, refresh, resolveSpaceId, openNote],
+  )
+
+  // ───────── 重命名 ─────────
+  const renameFolder = useCallback(
+    async (folder: DbFolder, newName: string) => {
+      try {
+        const spaceId = await resolveSpaceId()
+        await upsertKnowledgeFolder({
+          id: folder.id,
+          spaceId,
+          parentId: folder.parentId,
+          space: mode,
+          projectId: mode === 'project' ? projectId ?? null : null,
+          name: newName.trim(),
+          systemType: folder.systemType,
+        })
+        await refresh()
+      } catch (e) {
+        toast.error(`重命名失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    },
+    [mode, projectId, refresh, resolveSpaceId],
+  )
+
+  // ───────── 删除（确认后真删） ─────────
+  const doDelete = useCallback(async () => {
+    try {
+      if (confirm.type === 'folder') {
+        await deleteKnowledgeFolder(confirm.id)
+        toast.success('目录已删除')
+      } else {
+        await deleteKnowledgeNote(confirm.id)
+        toast.success('知识已删除')
+        if (activeNoteId === confirm.id) {
+          setActiveNoteId(null)
+          setActiveNote(null)
+          setInitialBlocks(undefined)
+        }
+      }
+      await refresh()
+    } catch (e) {
+      toast.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setConfirm({ open: false, type: 'note', id: 0, name: '' })
+    }
+  }, [confirm, refresh, activeNoteId])
+
+  // ───────── 渲染树 ─────────
+  return (
+    <div style={rootStyle}>
+      <aside style={treePanelStyle}>
+        <div style={headerStyle}>
+          <h3 style={titleStyle}>
+            {mode === 'personal' ? '目录' : (projectName ?? '项目知识')}
+          </h3>
+          {mode === 'personal' && (
+            <button
+              type="button"
+              style={iconBtnStyle}
+              onClick={async () => {
+                // 个人虚拟根加一级目录：parentId=null
+                await createFolder(null)
+              }}
+              title="添加一级目录"
+            >
+              <Plus size={14} strokeWidth={2} />
+            </button>
+          )}
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 6px 16px' }}>
+          {loading && folders.length === 0 ? (
+            <div style={{ padding: 16, fontSize: 12, color: 'var(--color-text-tertiary)' }}>加载中…</div>
+          ) : tree.length === 0 ? (
+            <div style={{ padding: 16, fontSize: 12, color: 'var(--color-text-tertiary)', textAlign: 'center' }}>
+              暂无内容
+            </div>
+          ) : (
+            tree.map((node) => (
+              <TreeNodeRow
+                key={`${node.kind}:${node.id}`}
+                node={node}
+                depth={0}
+                activeNoteId={activeNoteId}
+                onOpenNote={openNote}
+                onCreateChildFolder={(parentId) => createFolder(parentId)}
+                onCreateNote={(folderId) => createNote(folderId)}
+                onRenameFolder={renameFolder}
+                onRenameNote={renameNote}
+                onRenameNotePrompt={(n) => {
+                  void (async () => {
+                    const next = await askName('重命名知识', n.title)
+                    if (next && next.trim() && next !== n.title) {
+                      await renameNote(n, next)
+                    }
+                  })()
+                }}
+                onAskDelete={(type, id, name) => setConfirm({ open: true, type, id, name })}
+              />
+            ))
+          )}
+        </div>
+      </aside>
+
+      <main style={editorPanelStyle}>
+        {activeNote ? (
+          <DocumentEditor
+            key={activeNote.id}
+            source={{ kind: 'knowledge', noteId: activeNote.id }}
+            initialTitle={activeNote.title}
+            initialUpdatedAt={activeNote.updatedAt}
+            initialNote={activeNote}
+            initialBlocks={initialBlocks}
+            onDeleted={() => {
+              setActiveNoteId(null)
+              setActiveNote(null)
+              setInitialBlocks(undefined)
+              void refresh()
+            }}
+            onExported={(path) => toast.success(`已导出到：${path}`)}
+          />
+        ) : (
+          <div style={emptyEditorStyle}>
+            <BookOpen size={32} color="var(--color-text-tertiary)" />
+            <div style={{ fontSize: 13 }}>
+              {emptyHint ?? (mode === 'personal'
+                ? '选中知识节点开始编辑，或点 ⋯ 新建'
+                : '选中项目目录中的知识开始编辑')}
+            </div>
+          </div>
+        )}
+      </main>
+
+      <DeleteConfirmDialog
+        open={confirm.open}
+        title={confirm.type === 'folder' ? '确认删除目录' : '确认删除知识'}
+        description={
+          confirm.type === 'folder'
+            ? '删除后目录、所有子目录、其中全部知识与附件将被永久删除，无法恢复。'
+            : '删除后知识内容（BlockNote 正文）与附件将被永久删除，无法恢复。'
+        }
+        onConfirm={doDelete}
+        onCancel={() => setConfirm({ open: false, type: 'note', id: 0, name: '' })}
+      />
+
+      {/* 命名弹窗（新建目录 / 重命名知识 · 替代 Tauri 不支持的 window.prompt） */}
+      {namePrompt && (
+        <NamePromptDialog
+          title={namePrompt.title}
+          initialValue={namePrompt.initialValue}
+          onSubmit={(v) => { namePrompt.resolve(v); setNamePrompt(null) }}
+          onCancel={() => { namePrompt.resolve(null); setNamePrompt(null) }}
+        />
+      )}
+
+      {/* 隐藏的 ref 用于在保存回调里触发刷新（DocumentEditor 不暴露 save ref 也可） */}
+      <SaveBridge onSaved={handleNoteSaved} />
+    </div>
+  )
+}
+
+/**
+ * 命名弹窗（Tauri WebView 不支持 window.prompt，用内嵌弹窗替代）。
+ * 用于新建目录、重命名知识/目录。
+ */
+function NamePromptDialog({
+  title,
+  initialValue,
+  onSubmit,
+  onCancel,
+}: {
+  title: string
+  initialValue: string
+  onSubmit: (v: string) => void
+  onCancel: () => void
+}) {
+  const [val, setVal] = useState(initialValue)
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-bg)',
+          borderRadius: 'var(--radius-md)',
+          padding: 24,
+          width: '90%',
+          maxWidth: 380,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+        }}
+      >
+        <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 12px', color: 'var(--color-text)' }}>
+          {title}
+        </h3>
+        <input
+          autoFocus
+          type="text"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); onSubmit(val) }
+            if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+          }}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '8px 10px',
+            fontSize: 13,
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius)',
+            background: 'var(--color-bg)',
+            color: 'var(--color-text)',
+            outline: 'none',
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: '6px 14px',
+              fontSize: 12,
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-bg)',
+              color: 'var(--color-text)',
+              borderRadius: 'var(--radius)',
+              cursor: 'pointer',
+            }}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={() => onSubmit(val)}
+            style={{
+              padding: '6px 14px',
+              fontSize: 12,
+              border: 'none',
+              background: 'var(--color-accent)',
+              color: 'var(--color-text-on-accent, #fff)',
+              borderRadius: 'var(--radius)',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 占位组件：把 handleNoteSaved 暴露给 DocumentEditor 内部 onExported/onSaved 等钩子。
+ * 实际 DocumentEditor 保存后无需外部触发刷新（自身状态机内会写库），这里留空置即可。
+ */
+function SaveBridge(_props: { onSaved: () => void | Promise<void> }): null {
+  return null
+}
+
+// ============================================================
+// TreeNodeRow（递归 · 悬停 ⋯ 菜单按 nodeKind 决定）
+// ============================================================
+
+interface TreeNodeRowProps {
+  node: UnifiedNode
+  depth: number
+  activeNoteId: number | null
+  onOpenNote: (n: DbNote) => void
+  onCreateChildFolder: (parentId: number | null) => Promise<DbFolder | null>
+  onCreateNote: (folderId: number | null) => Promise<void>
+  onRenameFolder: (f: DbFolder, newName: string) => Promise<void>
+  onRenameNote: (n: DbNote, newName: string) => Promise<void>
+  /** 触发知识重命名（由父组件用命名弹窗取新名，再调 onRenameNote） */
+  onRenameNotePrompt: (n: DbNote) => void
+  onAskDelete: (type: 'note' | 'folder', id: number, name: string) => void
+}
+
+function TreeNodeRow({
+  node,
+  depth,
+  activeNoteId,
+  onOpenNote,
+  onCreateChildFolder,
+  onCreateNote,
+  onRenameFolder,
+  onRenameNote,
+  onRenameNotePrompt,
+  onAskDelete,
+}: TreeNodeRowProps) {
+  const [expanded, setExpanded] = useState(true)
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(node.name)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [menuOpen])
+
+  const isActive = node.kind === 'note' && node.note?.id === activeNoteId
+  const isSystem = node.kind === 'root' || node.kind === 'ai'
+  const isProjectRoot = node.kind === 'project-root'
+  const isFolder = node.kind === 'folder'
+  const hasChildren = node.children.length > 0
+
+  const submitRename = () => {
+    const v = renameValue.trim()
+    if (v && v !== node.name && isFolder) {
+      onRenameFolder(node as unknown as DbFolder, v)
+    }
+    setRenaming(false)
+  }
+
+  // 节点图标
+  const icon = (() => {
+    if (node.kind === 'ai') return <Sparkles size={11} color={isActive ? 'var(--color-accent)' : '#9333ea'} />
+    if (node.kind === 'note') return <FileText size={11} color={isActive ? 'var(--color-accent)' : 'var(--color-text-tertiary)'} />
+    if (node.kind === 'root') return <Folder size={11} color="var(--color-text-tertiary)" />
+    if (isProjectRoot) return <FolderOpen size={11} color="var(--color-text-tertiary)" />
+    return isActive
+      ? <FolderOpen size={11} color="var(--color-accent)" />
+      : <Folder size={11} color="var(--color-text-tertiary)" />
+  })()
+
+  return (
+    <div>
+      <div style={rowContainerStyle}>
+        {renaming && isFolder ? (
+          <input
+            autoFocus
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); submitRename() }
+              if (e.key === 'Escape') { e.preventDefault(); setRenameValue(node.name); setRenaming(false) }
+            }}
+            onBlur={submitRename}
+            style={{
+              ...rowStyle(false, depth),
+              flex: 1,
+              paddingTop: 2,
+              paddingBottom: 2,
+              outline: 'none',
+              background: 'var(--color-bg-active)',
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            style={rowStyle(isActive, depth)}
+            onClick={() => {
+              if (node.kind === 'note' && node.note) onOpenNote(node.note)
+              else if (hasChildren) setExpanded((v) => !v)
+            }}
+            onDoubleClick={() => {
+              if (isFolder) {
+                setRenameValue(node.name)
+                setRenaming(true)
+              }
+            }}
+          >
+            <span
+              onClick={(e) => {
+                e.stopPropagation()
+                if (hasChildren) setExpanded((v) => !v)
+              }}
+              style={{ display: 'inline-flex', width: 12, justifyContent: 'center' }}
+            >
+              {hasChildren ? (
+                expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />
+              ) : null}
+            </span>
+            {icon}
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {node.name}
+            </span>
+          </button>
+        )}
+
+        {/* 悬停 ⋯ 按钮（始终保留占位 · hover 显示） */}
+        {!renaming && (
+          <button
+            type="button"
+            style={{ ...iconBtnStyle, marginRight: 4, opacity: menuOpen ? 1 : 0.5 }}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v) }}
+            title="操作"
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.opacity = '0.5' }}
+          >
+            <MoreHorizontal size={12} />
+          </button>
+        )}
+
+        {menuOpen && (
+          <div
+            ref={menuRef}
+            style={{
+              position: 'absolute',
+              top: '100%',
+              right: 4,
+              zIndex: 50,
+              minWidth: 160,
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius)',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+              padding: 4,
+              fontSize: 12,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 按 nodeKind 决定菜单项（设计文档 §31） */}
+            {(node.kind === 'folder' || node.kind === 'project-root' || node.kind === 'root' || node.kind === 'ai') && (
+              <MenuItem
+                icon={<FolderPlus size={11} />}
+                label="添加子目录"
+                onClick={async () => {
+                  setMenuOpen(false)
+                  // ai 目录 id 是真实 DB 主键，可以直接作 parent
+                  await onCreateChildFolder(node.kind === 'root' ? null : node.id)
+                }}
+              />
+            )}
+            {(node.kind === 'folder' || node.kind === 'ai') && (
+              <MenuItem
+                icon={<Plus size={11} />}
+                label="新建知识"
+                onClick={async () => {
+                  setMenuOpen(false)
+                  await onCreateNote(node.kind === 'root' ? null : node.id)
+                }}
+              />
+            )}
+            {(node.kind === 'folder') && (
+              <MenuItem
+                icon={<Pencil size={11} />}
+                label="重命名"
+                onClick={() => {
+                  setMenuOpen(false)
+                  setRenameValue(node.name)
+                  setRenaming(true)
+                }}
+              />
+            )}
+            {(node.kind === 'note') && (
+              <MenuItem
+                icon={<Pencil size={11} />}
+                label="重命名"
+                onClick={() => {
+                  setMenuOpen(false)
+                  if (!node.note) return
+                  onRenameNotePrompt(node.note)
+                }}
+              />
+            )}
+            {/* 删除：folder（除 SYSTEM_AI 与 PROJECT_ROOT） 与 note 均可 */}
+            {(node.kind === 'folder' || node.kind === 'project-root' || node.kind === 'note') && (
+              <MenuItem
+                icon={<Trash2 size={11} />}
+                label="删除"
+                danger
+                onClick={() => {
+                  setMenuOpen(false)
+                  const t = node.kind === 'note' ? 'note' : 'folder'
+                  onAskDelete(t, node.id, node.name)
+                }}
+              />
+            )}
+            {/* ai 系统目录不可删 / 不可改名 · 不显示 */}
+            {/* root 虚拟根不可删 / 不可改名 · 不显示 */}
+          </div>
+        )}
+      </div>
+
+      {expanded && hasChildren && (
+        <div>
+          {node.children.map((c) => (
+            <TreeNodeRow
+              key={`${c.kind}:${c.id}`}
+              node={c}
+              depth={depth + 1}
+              activeNoteId={activeNoteId}
+              onOpenNote={onOpenNote}
+              onCreateChildFolder={onCreateChildFolder}
+              onCreateNote={onCreateNote}
+              onRenameFolder={onRenameFolder}
+              onRenameNote={onRenameNote}
+              onRenameNotePrompt={onRenameNotePrompt}
+              onAskDelete={onAskDelete}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  danger,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  danger?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        width: '100%',
+        padding: '6px 8px',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 3,
+        cursor: 'pointer',
+        color: danger ? '#dc2626' : 'var(--color-text)',
+        fontSize: 12,
+        textAlign: 'left',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-subtle)')}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  )
+}
+
+export default KnowledgeTreeView

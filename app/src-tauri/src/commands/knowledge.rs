@@ -27,6 +27,7 @@
 use tauri::State;
 
 use crate::AppState;
+use crate::repositories::attachments as att_repo;
 use crate::repositories::knowledge_notes::{
     self as repo, KnowledgeNote, KnowledgeNoteInput,
 };
@@ -85,7 +86,24 @@ pub fn delete_knowledge_note(
         return Ok(false);
     }
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    repo::delete(&conn, id).map_err(|e| e.to_string())
+
+    // 维护者 2026-09-04 · 设计文档 §25：真删除 —— 附件记录 + 本地文件一并清除
+    // 先收集该笔记的所有附件 file_path，删除记录后再删文件，避免残留孤儿文件
+    let attachments = att_repo::list_by_owner(&conn, "KNOWLEDGE", id).map_err(|e| e.to_string())?;
+    let file_paths: Vec<String> = attachments
+        .iter()
+        .filter_map(|a| Some(a.file_path.clone()))
+        .collect();
+
+    // 删数据库记录（knowledge_notes + attachments 一并 CASCADE）
+    let deleted = repo::delete(&conn, id).map_err(|e| e.to_string())?;
+
+    // 删本地文件（失败不致命 · 记录已删）
+    for path in &file_paths {
+        let _ = state.file_storage.delete_file(path);
+    }
+
+    Ok(deleted)
 }
 
 /// 全文搜索：按知识空间 ID 筛选（别名）

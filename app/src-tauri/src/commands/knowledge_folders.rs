@@ -96,12 +96,17 @@ pub fn delete_knowledge_folder(
     id: i64,
 ) -> Result<bool, String> {
     // 维护者 2026-09-03：系统目录不允许删除
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
     if let Ok(Some(folder)) = repo::get_by_id(&conn, id) {
         if folder.system_type == "SYSTEM_AI" || folder.system_type == "PROJECT_ROOT" {
             return Ok(false);
         }
     }
 
-    repo::delete(&conn, id).map_err(|e| e.to_string())
+    // 维护者 2026-09-04 · 设计文档 §25：递归真删除目录 —— 子目录 + 知识 + 附件记录 + 本地文件
+    let file_paths = repo::cascade_delete(&mut conn, id).map_err(|e| e.to_string())?;
+    for path in &file_paths {
+        let _ = state.file_storage.delete_file(path);
+    }
+    Ok(true)
 }

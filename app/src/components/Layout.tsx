@@ -16,7 +16,6 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
-import { StatusBar } from './StatusBar'
 import { ToastHost } from './Toast'
 import { useEditingMaximized, clearEditingMaximizedOnBoot } from './DocumentEditor/editingMaximized'
 import type { PageId } from '../App'
@@ -109,6 +108,8 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
             width: editingMaximized ? 0 : 'auto',
             overflow: 'hidden',
             flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
           <Sidebar
@@ -133,16 +134,7 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
           {children}
         </main>
       </div>
-      {/* 维护者 2026-08-31：编辑区最大化时把底栏收起 */}
-      <div
-        style={{
-          height: editingMaximized ? 0 : 'auto',
-          overflow: 'hidden',
-          flexShrink: 0,
-        }}
-      >
-        <StatusBar />
-      </div>
+      {/* 2026-09-07：移除底部状态栏（无用） */}
       <ToastHost />
     </div>
   )

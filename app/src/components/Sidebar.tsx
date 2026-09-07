@@ -41,6 +41,7 @@ interface NavItem {
 }
 
 // 8 大模块名固定 · 按维护者 2026-08-24 拍板
+// 主工作区固定在最上面
 const NAV_ITEMS: NavItem[] = [
   { id: 'home', label: '主工作区', Icon: Home },
   { id: 'todo', label: '任务中心', Icon: CheckSquare },
@@ -107,7 +108,9 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }
         borderRight: '1px solid var(--color-border-thin)',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'width 0.15s, min-width 0.15s, max-width 0.15s',
+        flex: 1,
+        minHeight: 0,
+        transition: 'width 0.25s, min-width 0.25s, max-width 0.25s',
         flexShrink: 0,
       }}
     >
@@ -155,10 +158,13 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }
 
       {/* 维护者 2026-08-31：nav 不加 flex:1，marginTop:auto 加在版本号 div 上
           —— 让版本号贴 sidebar 底部，nav 只占内容高度，避免底部一大块空白 */}
+      {/* 2026-09-07：整个模块导航区块贴到侧栏最底部（marginTop:auto），主工作区仍是列表第一项 */}
       <nav
         style={{
-          padding: collapsed ? '8px 6px' : '14px 10px',
+          padding: collapsed ? '8px 6px' : '14px 30px',
           overflowY: 'auto',
+          flex: 1,
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
           gap: '4px',
@@ -207,30 +213,7 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }
         )}
       </nav>
 
-      {/* 维护者 2026-08-31：版本号 div 加 marginTop:auto 推到底部 */}
-      {!collapsed && (
-        <div
-          style={{
-            marginTop: 'auto',
-            padding: '8px 14px 10px',
-            borderTop: '1px solid var(--color-border-thin)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-          }}
-        >
-          <span
-            style={{
-              fontSize: '10px',
-              color: 'var(--color-text-tertiary)',
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.04em',
-            }}
-          >
-            PMTool V2.0 · Phase A
-          </span>
-        </div>
-      )}
+      {/* 2026-09-07：移除版本号区域（无用信息） */}
     </aside>
   )
 }

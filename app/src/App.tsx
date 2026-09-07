@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { Toaster } from 'sonner'
 import { Layout } from './components/Layout'
 import { LicenseGuard } from './components/LicenseGuard'
 import { RegenConfirmModal } from './components/RegenConfirmModal'
@@ -126,6 +127,7 @@ function App() {
         {/* 全局报告覆盖确认弹窗 · 主页 + 报告中心共用 */}
         <RegenConfirmModal />
       </ReportGenProvider>
+      <Toaster />
     </LicenseGuard>
   )
 }

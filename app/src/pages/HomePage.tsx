@@ -1368,14 +1368,14 @@ export function appendToTodayWorkNote(entry: string) {
   } catch {
     notes = { today, todayContent: '', nextWorkday: '', nextContent: '' }
   }
-  // 自动补 "· " 前缀（如果还没有）
+  // 维护者 2026-09-07：不再自动加 "· " 前缀（默认原样记录，避免孤立的丑圆点）
   const trimmed = entry.trim()
-  const prefixed = trimmed.startsWith('· ') ? trimmed : `· ${trimmed}`
+  const raw = trimmed.startsWith('· ') ? trimmed.slice(2) : trimmed
   // 去重 + 追加
-  if (!notes.todayContent.includes(prefixed)) {
+  if (!notes.todayContent.includes(raw)) {
     notes.todayContent = notes.todayContent
-      ? `${notes.todayContent}\n${prefixed}`
-      : prefixed
+      ? `${notes.todayContent}\n${raw}`
+      : raw
   }
   try {
     localStorage.setItem(WORK_NOTES_KEY, JSON.stringify(notes))
@@ -1744,12 +1744,14 @@ function NoteCard({
       <div
         style={{
           fontSize: '9.5px',
+          lineHeight: 1.4,
           color: 'var(--color-text-tertiary)',
           marginTop: 4,
           flexShrink: 0,
+          overflow: 'visible',
         }}
       >
-        仅本地保存 · 自动以「· 」开头 · 回车续行 · 输入 @ 选择项目
+        仅本地保存 · 回车续行 · 输入 @ 选择项目
       </div>
     </div>
   )

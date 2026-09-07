@@ -60,12 +60,22 @@ pub fn create_knowledge_space(
     repo::create(&conn, input).map_err(|e| e.to_string())
 }
 
-/// 删除知识空间（需要先解绑所有项目）
+/// 删除知识空间（2026-09-07 改为级联真删：解绑 + 空间内目录/知识/附件记录 + 磁盘文件）
 #[tauri::command]
 pub fn delete_knowledge_space(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<bool, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    repo::delete(&conn, id).map_err(|e| e.to_string())
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    // 个人知识空间不允许删除
+    if let Ok(Some(space)) = repo::get_by_id(&conn, id) {
+        if space.space_type == "personal" {
+            return Err("个人知识空间不允许删除".to_string());
+        }
+    }
+    let file_paths = repo::cascade_delete_space(&mut conn, id).map_err(|e| e.to_string())?;
+    for path in &file_paths {
+        let _ = state.file_storage.delete_file(path);
+    }
+    Ok(true)
 }
