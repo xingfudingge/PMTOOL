@@ -23,7 +23,8 @@ pub struct KnowledgeFolder {
     pub id: i64,
     pub parent_id: Option<i64>,
     pub space: String,              // 'personal' / 'project'
-    pub project_id: Option<i64>,    // 仅当 space=PROJECT 时有效
+    pub space_id: Option<i64>,      // 2026-09-07 一库多项目：目录归属空间而非项目
+    pub project_id: Option<i64>,    // 兼容字段；共享空间为空
     pub name: String,
     pub sort_order: i64,
     pub system_type: String,        // USER / SYSTEM_AI / PROJECT_ROOT
@@ -38,6 +39,7 @@ pub struct KnowledgeFolderInput {
     pub id: Option<i64>,
     pub parent_id: Option<i64>,
     pub space: String,
+    pub space_id: Option<i64>,
     pub project_id: Option<i64>,
     pub name: String,
     pub sort_order: Option<i64>,
@@ -45,7 +47,7 @@ pub struct KnowledgeFolderInput {
 }
 
 /// 共享 SELECT 列顺序
-const SELECT_COLS: &str = "id, parent_id, space, project_id, name, sort_order, \
+const SELECT_COLS: &str = "id, parent_id, space, space_id, project_id, name, sort_order, \
                            system_type, created_at, updated_at";
 
 fn row_to_knowledge_folder(row: &Row) -> rusqlite::Result<KnowledgeFolder> {
@@ -53,12 +55,13 @@ fn row_to_knowledge_folder(row: &Row) -> rusqlite::Result<KnowledgeFolder> {
         id: row.get(0)?,
         parent_id: row.get(1)?,
         space: row.get(2)?,
-        project_id: row.get(3)?,
-        name: row.get(4)?,
-        sort_order: row.get(5)?,
-        system_type: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        space_id: row.get(3)?,
+        project_id: row.get(4)?,
+        name: row.get(5)?,
+        sort_order: row.get(6)?,
+        system_type: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 
@@ -151,11 +154,11 @@ pub fn upsert(conn: &Connection, input: KnowledgeFolderInput) -> rusqlite::Resul
     if let Some(id) = input.id {
         let n = conn.execute(
             "UPDATE knowledge_folders
-             SET parent_id=?2, space=?3, project_id=?4, name=?5, sort_order=?6,
-                 system_type=?7, updated_at=CURRENT_TIMESTAMP
+             SET parent_id=?2, space=?3, space_id=?4, project_id=?5, name=?6, sort_order=?7,
+                 system_type=?8, updated_at=CURRENT_TIMESTAMP
              WHERE id=?1",
             params![
-                id, input.parent_id, input.space, input.project_id,
+                id, input.parent_id, input.space, input.space_id, input.project_id,
                 input.name, sort_order, system_type
             ],
         )?;
@@ -167,10 +170,10 @@ pub fn upsert(conn: &Connection, input: KnowledgeFolderInput) -> rusqlite::Resul
     // INSERT
     let final_id: i64 = conn.execute(
         "INSERT INTO knowledge_folders
-         (parent_id, space, project_id, name, sort_order, system_type, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+         (parent_id, space, space_id, project_id, name, sort_order, system_type, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
         params![
-            input.parent_id, input.space, input.project_id,
+            input.parent_id, input.space, input.space_id, input.project_id,
             input.name, sort_order, system_type
         ],
     )?.try_into().unwrap();
@@ -296,6 +299,7 @@ pub fn ensure_project_root(
         id: None,
         parent_id: None,
         space: "project".to_string(),
+        space_id: None,
         project_id: Some(project_id),
         name: project_name.to_string(),
         sort_order: Some(0),
@@ -328,6 +332,7 @@ pub fn ensure_ai_folder(
         id: None,
         parent_id: None,
         space: space.to_string(),
+        space_id: None,
         project_id,
         name: "AI 生成".to_string(),
         sort_order: Some(0),

@@ -76,6 +76,7 @@ export interface KnowledgeFolder {
   id: number
   parentId: number | null
   space: KnowledgeSpace
+  spaceId: number | null        // 一库多项目：目录按空间归属
   projectId: number | null
   name: string
   sortOrder: number
@@ -192,6 +193,17 @@ export async function listKnowledgeFoldersByProject(
 ): Promise<KnowledgeFolder[]> {
   return await invoke<KnowledgeFolder[]>('list_knowledge_folders_by_project', {
     projectId,
+  })
+}
+
+/**
+ * 列出某个知识空间下的所有目录（一库多项目：目录按空间归属）
+ */
+export async function listKnowledgeFoldersBySpaceId(
+  spaceId: number,
+): Promise<KnowledgeFolder[]> {
+  return await invoke<KnowledgeFolder[]>('list_knowledge_folders_by_space_id', {
+    spaceId,
   })
 }
 

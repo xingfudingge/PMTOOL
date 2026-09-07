@@ -349,6 +349,7 @@ pub fn run() {
             // 知识目录 commands（维护者 2026-08-31 · Phase C 三栏布局）
             commands::knowledge_folders::list_knowledge_folders,
             commands::knowledge_folders::list_knowledge_folders_by_project,
+            commands::knowledge_folders::list_knowledge_folders_by_space_id,
             commands::knowledge_folders::upsert_knowledge_folder,
             commands::knowledge_folders::ensure_project_knowledge_library,
             commands::knowledge_folders::ensure_ai_knowledge_folder,
@@ -356,6 +357,7 @@ pub fn run() {
             // 知识空间 commands（2026-09-03 知识中心重构）
             commands::knowledge_spaces::list_personal_knowledge_spaces,
             commands::knowledge_spaces::list_project_knowledge_spaces,
+            commands::knowledge_spaces::list_all_project_spaces,
             commands::knowledge_spaces::get_knowledge_space,
             commands::knowledge_spaces::create_knowledge_space,
             commands::knowledge_spaces::delete_knowledge_space,

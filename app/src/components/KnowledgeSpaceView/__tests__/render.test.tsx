@@ -109,7 +109,7 @@ describe('KnowledgeSpaceView · 真按钮事件测试（不进 modal）', () => 
 
   it('选中目录后点笔记列表 + 按钮 → upsertKnowledgeNote 被调', async () => {
     vi.mocked(svc.listKnowledgeFolders).mockResolvedValueOnce([{
-      id: 1, parentId: null, space: 'personal', projectId: null, name: '工作笔记', sortOrder: 0, systemType: 'USER', createdAt: '', updatedAt: '',
+      id: 1, parentId: null, space: 'personal', spaceId: null, projectId: null, name: '工作笔记', sortOrder: 0, systemType: 'USER', createdAt: '', updatedAt: '',
     }])
     render(<KnowledgeSpaceView space="personal" />)
     fireEvent.click(await screen.findByTitle('工作笔记'))

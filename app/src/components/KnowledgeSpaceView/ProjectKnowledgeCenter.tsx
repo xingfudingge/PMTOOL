@@ -1,25 +1,32 @@
 /**
  * PMTool · 项目知识中心（2026-09-04 重构 · 设计文档 §15 · §31）
  *
- * 容器：单项目知识中心，使用统一 KnowledgeTreeView（两栏）。
- * 项目知识中心 UI 结构与个人知识中心一致；项目根节点（PROJECT_ROOT）只允许
- * 删除 / 添加子目录，不能直接新建知识（设计文档 §16）。
+ * 容器：单个知识空间（知识库）的两栏树。
+ * 一库多项目（M:N）：可直接传入 spaceId 精确展示某个共享知识库，
+ * 不依赖项目 id 解析（项目可能绑定多个知识库）。
  */
 
 import { KnowledgeTreeView } from './KnowledgeTreeView'
 
 interface ProjectKnowledgeCenterProps {
-  projectId: number
-  projectName: string
+  /** 要展示的知识库空间 id（一库多项目：精确指定，优先于 projectId） */
+  spaceId?: number
+  projectId?: number
+  projectName?: string
 }
 
-export function ProjectKnowledgeCenter({ projectId, projectName }: ProjectKnowledgeCenterProps) {
+export function ProjectKnowledgeCenter({
+  spaceId,
+  projectId,
+  projectName,
+}: ProjectKnowledgeCenterProps) {
   return (
     <KnowledgeTreeView
       mode="project"
+      spaceId={spaceId}
       projectId={projectId}
       projectName={projectName}
-      emptyHint="该项目尚未在知识中心添加知识库，请前往「知识中心 → 项目知识中心」添加项目后新建目录与知识"
+      emptyHint="该知识库尚未添加内容，回到「项目知识中心」新建知识库后添加目录与知识"
     />
   )
 }

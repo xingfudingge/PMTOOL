@@ -27,6 +27,7 @@ function mkFolder(id: number, parentId: number | null = null, name = `f${id}`, s
     id,
     parentId,
     space: 'personal',
+    spaceId: null,
     projectId: null,
     name,
     sortOrder: 0,

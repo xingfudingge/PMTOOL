@@ -53,6 +53,7 @@ import {
   listKnowledgeNotesBySpaceType,
   listKnowledgeFolders,
   listKnowledgeFoldersByProject,
+  listKnowledgeFoldersBySpaceId,
   listPersonalKnowledgeSpaces,
   upsertKnowledgeFolder,
   upsertKnowledgeNote,
@@ -70,6 +71,8 @@ export interface KnowledgeTreeViewProps {
   /** project 模式必填 */
   projectId?: number
   projectName?: string
+  /** 一库多项目：直接指定知识空间（优先于 projectId 解析，目录/笔记/创建均按空间归属） */
+  spaceId?: number
   /** 右侧初始空状态文案 */
   emptyHint?: string
 }
@@ -181,6 +184,7 @@ export function KnowledgeTreeView({
   mode,
   projectId,
   projectName,
+  spaceId,
   emptyHint,
 }: KnowledgeTreeViewProps) {
   const [notes, setNotes] = useState<DbNote[]>([])
@@ -229,16 +233,18 @@ export function KnowledgeTreeView({
         }
         resolvedFolders = await listKnowledgeFolders('personal')
       } else {
-        if (projectId == null) return
-        // 2026-09-07 修复：项目知识归知识中心，项目详情只读展示已在知识中心绑定的内容。
-        // 不再自动创建“项目根目录”+“AI 生成目录”，避免莫名冒目录。
-        const spaces = await listProjectKnowledgeSpaces(projectId)
-        const spaceId = spaces[0]?.id
-        if (spaceId != null) {
-          // 按空间 id 精确取笔记（避免跨项目污染）
-          resolvedNotes = await listKnowledgeNotes(spaceId)
+        // 一库多项目：目录/笔记按 space_id 归属。优先用传入的 spaceId（共享空间），
+        // 否则按项目取绑定的第一个空间（旧路径，兼容 ProjectKnowledgeCenter 直用）。
+        let targetSpaceId = spaceId
+        if (targetSpaceId == null) {
+          if (projectId == null) return
+          const spaces = await listProjectKnowledgeSpaces(projectId)
+          targetSpaceId = spaces[0]?.id
         }
-        resolvedFolders = await listKnowledgeFoldersByProject(projectId)
+        if (targetSpaceId != null) {
+          resolvedNotes = await listKnowledgeNotes(targetSpaceId)
+          resolvedFolders = await listKnowledgeFoldersBySpaceId(targetSpaceId)
+        }
       }
       setNotes(resolvedNotes)
       setFolders(resolvedFolders)
@@ -248,7 +254,7 @@ export function KnowledgeTreeView({
     } finally {
       setLoading(false)
     }
-  }, [mode, projectId, projectName])
+  }, [mode, projectId, projectName, spaceId])
 
   useEffect(() => {
     void refresh()
@@ -339,10 +345,12 @@ export function KnowledgeTreeView({
       if (!spaces[0]) throw new Error('个人知识空间未初始化')
       return spaces[0].id
     }
+    // 一库多项目：直用传入的共享空间；否则按项目取绑定第一个空间
+    if (spaceId != null) return spaceId
     const spaces = await listProjectKnowledgeSpaces(projectId!)
     if (!spaces[0]) throw new Error('项目知识空间未初始化')
     return spaces[0].id
-  }, [mode, projectId])
+  }, [mode, projectId, spaceId])
 
   // ───────── 创建目录 ─────────
   const createFolder = useCallback(
@@ -355,7 +363,7 @@ export function KnowledgeTreeView({
           spaceId,
           parentId,
           space: mode,
-          projectId: mode === 'project' ? projectId ?? null : null,
+          projectId: null, // 一库多项目：目录归属空间，不锁单项目
           name: name.trim(),
           systemType: 'USER',
         })
@@ -366,7 +374,7 @@ export function KnowledgeTreeView({
         return null
       }
     },
-    [mode, projectId, refresh, resolveSpaceId, askName],
+    [mode, projectId, spaceId, refresh, resolveSpaceId, askName],
   )
 
   // ───────── 创建知识 ─────────

@@ -15,8 +15,8 @@
 
 import { invoke } from '@tauri-apps/api/core'
 
-/** 知识空间类型 */
-export type KnowledgeSpaceType = 'PERSONAL' | 'PROJECT'
+/** 知识空间类型（2026-09-07 统一小写存储） */
+export type KnowledgeSpaceType = 'personal' | 'project'
 
 /** 知识空间 */
 export interface KnowledgeSpace {
@@ -59,13 +59,18 @@ export async function listPersonalKnowledgeSpaces(): Promise<KnowledgeSpace[]> {
   return await invoke<KnowledgeSpace[]>('list_personal_knowledge_spaces')
 }
 
-/** 列出某项目对应的知识空间 */
+/** 列出某项目通过绑定可访问的知识空间（多对多） */
 export async function listProjectKnowledgeSpaces(
   projectId: number,
 ): Promise<KnowledgeSpace[]> {
   return await invoke<KnowledgeSpace[]>('list_project_knowledge_spaces', {
     projectId,
   })
+}
+
+/** 列出所有项目型知识空间（「以知识库为主」列表用） */
+export async function listAllProjectSpaces(): Promise<KnowledgeSpace[]> {
+  return await invoke<KnowledgeSpace[]>('list_all_project_spaces')
 }
 
 /** 获取单个知识空间 */

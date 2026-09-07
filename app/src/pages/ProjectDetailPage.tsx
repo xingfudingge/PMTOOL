@@ -104,6 +104,8 @@ import {
   listProjectBindings,
   listProjectKnowledgeSpaces,
   deleteBinding,
+  getKnowledgeSpace,
+  type KnowledgeSpace,
 } from '@/services/knowledgeSpaces'
 import {
   listProjectFiles,
@@ -6784,30 +6786,48 @@ function IssueImportConfirmModal({
 
 function KnowledgeTab({ data }: { data: ProjectDetailData }) {
   const project = data.project
-  const [spaceId, setSpaceId] = useState<number | null>(null)
+  const [spaces, setSpaces] = useState<KnowledgeSpace[]>([])
+  const [activeSpaceId, setActiveSpaceId] = useState<number | null>(null)
   const [confirmUnbind, setConfirmUnbind] = useState(false)
 
-  // 挂载时查出该项目的知识空间（用于「解绑」定位）
+  // 挂载时查出该项目绑定的所有知识空间（M:N · 一个项目可能绑定多个知识库）
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const spaces = await listProjectKnowledgeSpaces(project.id)
-        if (alive) setSpaceId(spaces[0]?.id ?? null)
+        const bound = await listProjectBindings(project.id)
+        // 用绑定关系 + 空间 id 一一解析（避免走 space.project_id，解绑后能正确清空）
+        const resolved: KnowledgeSpace[] = []
+        for (const b of bound) {
+          try {
+            const sp = await getKnowledgeSpace(b.knowledgeSpaceId)
+            if (sp) resolved.push(sp)
+          } catch { /* 忽略单个失败 */ }
+        }
+        if (!alive) return
+        setSpaces(resolved)
+        setActiveSpaceId(resolved[0]?.id ?? null)
       } catch {
-        if (alive) setSpaceId(null)
+        if (alive) {
+          setSpaces([])
+          setActiveSpaceId(null)
+        }
       }
     })()
     return () => { alive = false }
   }, [project.id])
 
+  const activeSpace = spaces.find((s) => s.id === activeSpaceId) ?? null
+
   const handleUnbind = async () => {
-    if (spaceId == null) return
+    if (activeSpaceId == null) return
     try {
-      await deleteBinding(project.id, spaceId)
+      await deleteBinding(project.id, activeSpaceId)
       toast.success('已解绑该项目的知识库（知识已保留）')
       setConfirmUnbind(false)
-      setSpaceId(null)
+      const next = spaces.filter((s) => s.id !== activeSpaceId)
+      setSpaces(next)
+      setActiveSpaceId(next[0]?.id ?? null)
     } catch (e) {
       toast.error(`解绑失败：${e instanceof Error ? e.message : String(e)}`)
     }
@@ -6821,19 +6841,35 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
           alignItems: 'center',
           justifyContent: 'flex-end',
           gap: 8,
-          padding: '8px 116px',
+          padding: '8px 20px',
           borderBottom: '1px solid var(--color-border-thin)',
           background: 'var(--color-bg-subtle)',
           flexShrink: 0,
         }}
       >
+        {spaces.length > 1 && (
+          <select
+            value={activeSpaceId ?? ''}
+            onChange={(e) => setActiveSpaceId(Number(e.target.value))}
+            style={{
+              fontSize: 11, padding: '3px 6px', border: '1px solid var(--color-border)',
+              borderRadius: 6, background: 'var(--color-bg)', color: 'var(--color-text)',
+              maxWidth: 200,
+            }}
+            title="切换知识库"
+          >
+            {spaces.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
         <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
           项目知识归知识中心所有，此处仅只读访问
         </span>
         <button
           type="button"
           onClick={() => setConfirmUnbind(true)}
-          disabled={spaceId == null}
+          disabled={activeSpaceId == null}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -6841,19 +6877,19 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
             padding: '4px 10px',
             fontSize: 11,
             background: 'transparent',
-            color: spaceId == null ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+            color: activeSpaceId == null ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
             border: '1px solid var(--color-border-thin)',
             borderRadius: 6,
-            cursor: spaceId == null ? 'not-allowed' : 'pointer',
-            opacity: spaceId == null ? 0.5 : 1,
+            cursor: activeSpaceId == null ? 'not-allowed' : 'pointer',
+            opacity: activeSpaceId == null ? 0.5 : 1,
           }}
-          title={spaceId == null ? '该项目尚未绑定知识库' : '解绑后项目中心不再显示该知识库，但知识保留在知识中心'}
+          title={activeSpaceId == null ? '该项目尚未绑定知识库' : '解绑后项目中心不再显示该知识库，但知识保留在知识中心'}
         >
           <X size={11} /> 解绑
         </button>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
-        {spaceId == null ? (
+        {activeSpaceId == null ? (
           <div
             style={{
               display: 'flex',
@@ -6868,13 +6904,14 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
           </div>
         ) : (
           <ProjectKnowledgeCenter
+            spaceId={activeSpaceId}
             projectId={project.id}
-            projectName={project.project_name}
+            projectName={activeSpace?.name ?? project.project_name}
           />
         )}
       </div>
 
-      {confirmUnbind && spaceId != null && (
+      {confirmUnbind && activeSpaceId != null && (
         <ConfirmUnbindKnowledgeDialog
           projectName={project.project_name}
           onConfirm={handleUnbind}
@@ -6884,7 +6921,6 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
     </div>
   )
 }
-
 function ConfirmUnbindKnowledgeDialog({
   projectName,
   onConfirm,

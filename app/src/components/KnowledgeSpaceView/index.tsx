@@ -293,6 +293,7 @@ function buildFolderTree(folders: DbFolder[], notes: DbNote[]): FolderNode[] {
     id: 0,
     parentId: null,
     space: roots[0]?.space ?? 'personal',
+    spaceId: roots[0]?.spaceId ?? null,
     projectId: roots[0]?.projectId ?? null,
     name: '未分类',
     sortOrder: 0,

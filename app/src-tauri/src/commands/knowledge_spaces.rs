@@ -30,7 +30,7 @@ pub fn list_personal_knowledge_spaces(
     repo::list_personal(&conn).map_err(|e| e.to_string())
 }
 
-/// 列出某项目对应的知识空间
+/// 列出某项目通过绑定可访问的所有知识空间
 #[tauri::command]
 pub fn list_project_knowledge_spaces(
     state: State<'_, AppState>,
@@ -38,6 +38,15 @@ pub fn list_project_knowledge_spaces(
 ) -> Result<Vec<KnowledgeSpace>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     repo::list_by_project(&conn, project_id).map_err(|e| e.to_string())
+}
+
+/// 列出所有项目型知识空间（供「以知识库为主」列表）
+#[tauri::command]
+pub fn list_all_project_spaces(
+    state: State<'_, AppState>,
+) -> Result<Vec<KnowledgeSpace>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repo::list_all_project_spaces(&conn).map_err(|e| e.to_string())
 }
 
 /// 获取单个知识空间

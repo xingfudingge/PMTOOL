@@ -11,7 +11,7 @@
  * 关注点：纯 SQL 操作，不含业务逻辑。
  */
 
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
 
 /// 知识空间 (对应 knowledge_spaces 表)
@@ -38,6 +38,9 @@ pub struct KnowledgeSpaceInput {
 /// 共享 SELECT 列顺序
 const SELECT_COLS: &str = "id, space_type, project_id, name, created_at, updated_at";
 
+/// JOIN 查询用：加 `ks.` 前缀避免 project_knowledge_bindings 同名列歧义
+const SELECT_COLS_KS: &str = "ks.id, ks.space_type, ks.project_id, ks.name, ks.created_at, ks.updated_at";
+
 fn row_to_knowledge_space(row: &Row) -> rusqlite::Result<KnowledgeSpace> {
     Ok(KnowledgeSpace {
         id: row.get(0)?,
@@ -60,14 +63,29 @@ pub fn list_personal(conn: &Connection) -> rusqlite::Result<Vec<KnowledgeSpace>>
     rows.collect()
 }
 
-/// 列出某项目的所有知识空间（通常也是一个）
+/// 列出某项目通过绑定可访问的所有知识空间（多对多：一个空间可被多个项目共享）
+/// 走 project_knowledge_bindings 关联，而非空间自带 project_id（后者已改为一库多项目共享模型）
 pub fn list_by_project(conn: &Connection, project_id: i64) -> rusqlite::Result<Vec<KnowledgeSpace>> {
     let sql = format!(
-        "SELECT {} FROM knowledge_spaces WHERE space_type = ?1 AND project_id = ?2",
+        "SELECT {} FROM knowledge_spaces ks \
+         JOIN project_knowledge_bindings pb ON pb.knowledge_space_id = ks.id \
+         WHERE pb.project_id = ?1 \
+         ORDER BY ks.id ASC",
+        SELECT_COLS_KS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![project_id], row_to_knowledge_space)?;
+    rows.collect()
+}
+
+/// 列出所有项目型知识空间（供「知识库为主」列表：每行一个空间）
+pub fn list_all_project_spaces(conn: &Connection) -> rusqlite::Result<Vec<KnowledgeSpace>> {
+    let sql = format!(
+        "SELECT {} FROM knowledge_spaces WHERE space_type = ?1 ORDER BY id ASC",
         SELECT_COLS
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params!["project", project_id], row_to_knowledge_space)?;
+    let rows = stmt.query_map(params!["project"], row_to_knowledge_space)?;
     rows.collect()
 }
 
@@ -83,12 +101,16 @@ pub fn get_by_id(conn: &Connection, id: i64) -> rusqlite::Result<Option<Knowledg
 }
 
 /// 创建新的知识空间
+/// 2026-09-07 一库多项目共享：project 型空间不再锁单项目，project_id 强制 NULL，
+/// space_type 统一小写存储。项目↔空间完全由 project_knowledge_bindings 关联。
 pub fn create(conn: &Connection, input: KnowledgeSpaceInput) -> rusqlite::Result<KnowledgeSpace> {
+    let space_type = input.space_type.to_lowercase();
+    let project_id: Option<i64> = if space_type == "project" { None } else { input.project_id };
     let sql = format!(
         "INSERT INTO knowledge_spaces (space_type, project_id, name, created_at, updated_at)
          VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
     );
-    conn.execute(&sql, params![input.space_type, input.project_id, input.name])?;
+    conn.execute(&sql, params![space_type, project_id, input.name])?;
     get_by_id(conn, conn.last_insert_rowid())?
         .ok_or(rusqlite::Error::QueryReturnedNoRows)
 }
@@ -112,16 +134,6 @@ pub fn cascade_delete_space(
     space_id: i64,
 ) -> rusqlite::Result<Vec<String>> {
     let tx = conn.transaction()?;
-
-    // 0. 确定该空间的 project_id（用于匹配 knowledge_folders.project_id）
-    let project_id: Option<i64> = tx
-        .query_row(
-            "SELECT project_id FROM knowledge_spaces WHERE id = ?1",
-            params![space_id],
-            |r| r.get(0),
-        )
-        .optional()?
-        .flatten();
 
     // 1. 解绑所有项目
     tx.execute(
@@ -165,15 +177,11 @@ pub fn cascade_delete_space(
         }
     }
 
-    // 4. 删除该空间全部目录
-    if let Some(pid) = project_id {
-        tx.execute(
-            "DELETE FROM knowledge_folders WHERE project_id = ?1",
-            params![pid],
-        )?;
-    } else {
-        tx.execute("DELETE FROM knowledge_folders WHERE space = 'personal'", [])?;
-    }
+    // 4. 删除该空间全部目录（2026-09-07 改按 space_id，不再按 project_id / 空间字符串）
+    tx.execute(
+        "DELETE FROM knowledge_folders WHERE space_id = ?1",
+        params![space_id],
+    )?;
 
     // 5. 删除空间本身
     tx.execute("DELETE FROM knowledge_spaces WHERE id = ?1", params![space_id])?;

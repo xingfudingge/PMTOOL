@@ -47,6 +47,16 @@ pub fn list_knowledge_folders_by_project(
     repo::list_by_project(&conn, project_id).map_err(|e| e.to_string())
 }
 
+/// 列出某个知识空间下的所有目录（一库多项目：目录按空间归属）
+#[tauri::command]
+pub fn list_knowledge_folders_by_space_id(
+    state: State<'_, AppState>,
+    space_id: i64,
+) -> Result<Vec<KnowledgeFolder>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repo::list_by_space_id(&conn, space_id).map_err(|e| e.to_string())
+}
+
 /// 获取单个目录
 #[tauri::command]
 pub fn get_knowledge_folder(
