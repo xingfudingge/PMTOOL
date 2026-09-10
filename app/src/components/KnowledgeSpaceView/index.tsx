@@ -643,7 +643,14 @@ export function KnowledgeSpaceView({
       <main style={editorPanelStyle}>
         {activeNote ? (
           <DocumentEditor
-            key={`${activeNote.id}-${initialBlocks?.length || 0}`}
+            // 2026-09-08 · key 用 id + updatedAt：内容保存后 updatedAt 变化 → 强制 remount
+            // BlockNote useCreateBlockNote 只在 mount 读 initialContent，key 不含内容指纹时
+            // 空段落(空块)会因 length 不变而不重载，导致「再次进入内容丢失」
+            // 2026-09-08 · key 基于内容指纹（content + updatedAt）。
+            // 切换界面再点回同一篇笔记时，若 updatedAt 未变且用 id 做 key，BlockNote
+            // 不会 remount → 仍显示旧（空白/缓存）实例 → 内容疑似丢失。
+            // 用 content 指纹保证「内容一变 → remount → 重新加载最新内容」。
+            key={`${activeNote.id}-${activeNote.content?.length ?? 0}-${activeNote.updatedAt}`}
             source={{ kind: 'knowledge', noteId: activeNote.id }}
             initialTitle={activeNote.title}
             initialUpdatedAt={activeNote.updatedAt}
@@ -658,7 +665,27 @@ export function KnowledgeSpaceView({
               // DocumentEditor 内部通过 ref 暴露 save 方法
             }}
             onStatusChange={(status: SaveStatus, lastSavedAt: string | null) => {
-              // 状态由 DocumentEditor 内部维护
+              // 2026-09-08 · 保存成功后刷新 activeNote + initialBlocks，让 key(content+updatedAt)
+              // 更新 → 驱动 BlockNote remount 重载最新内容，根治「切走再切回内容丢失」。
+              if (status === 'clean' && lastSavedAt && activeNoteId != null) {
+                void (async () => {
+                  const fresh = await getKnowledgeNote(activeNoteId)
+                  if (!fresh) return
+                  setLoadingNote(fresh)
+                  if (fresh.contentType === 'BLOCKNOTE_JSON' && fresh.content && fresh.content.trim()) {
+                    try {
+                      const parsed = JSON.parse(fresh.content)
+                      if (Array.isArray(parsed) && parsed.length > 0) {
+                        setInitialBlocks(parsed)
+                        return
+                      }
+                    } catch {
+                      // 解析失败 → 置空重算
+                    }
+                  }
+                  setInitialBlocks(undefined)
+                })()
+              }
             }}
           />
         ) : (

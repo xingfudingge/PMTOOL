@@ -10,15 +10,18 @@
 import { useState } from 'react'
 import { Search, ChevronLeft, Library } from 'lucide-react'
 import { PersonalKnowledgeCenter } from '@/components/KnowledgeSpaceView/PersonalKnowledgeCenter'
+import { useEditingMaximized } from '@/components/DocumentEditor/editingMaximized'
 import { KnowledgeTreeView } from '@/components/KnowledgeSpaceView/KnowledgeTreeView'
 import { ProjectBindingList } from '@/components/KnowledgeSpaceView/ProjectBindingList'
 import { GlobalSearchResults } from '@/components/KnowledgeSpaceView/GlobalSearchResults'
 import type { KnowledgeSpace } from '@/services/knowledgeSpaces'
 
 export function KnowledgePage() {
+  const editingMaximized = useEditingMaximized()
   const [space, setSpace] = useState<'personal' | 'project'>('personal')
   const [globalQuery, setGlobalQuery] = useState('')
   const [selectedSpace, setSelectedSpace] = useState<KnowledgeSpace | null>(null)
+  const [showManager, setShowManager] = useState(false)
 
   // 全局搜索优先
   if (globalQuery.trim()) {
@@ -27,6 +30,8 @@ export function KnowledgePage() {
 
   return (
     <div data-testid="knowledge-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {!editingMaximized && (
+        <>
       <div
         style={{
           padding: '12px 24px 0',
@@ -111,11 +116,15 @@ export function KnowledgePage() {
         />
       </div>
 
+        </>
+      )}
+
       {/* 内容区 */}
       <div style={{ flex: 1, minHeight: 0 }}>
         {space === 'personal' ? (
           <PersonalKnowledgeCenter />
         ) : selectedSpace != null ? (
+          /* 从「管理绑定」点某知识库进入其单库目录树 */
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div
               style={{
@@ -143,9 +152,9 @@ export function KnowledgePage() {
                   color: 'var(--color-text-secondary)',
                   cursor: 'pointer',
                 }}
-                title="返回知识库列表"
+                title="返回目录树"
               >
-                <ChevronLeft size={12} /> 返回知识库列表
+                <ChevronLeft size={12} /> 返回目录树
               </button>
               <Library size={13} color="var(--color-accent)" />
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>
@@ -161,8 +170,48 @@ export function KnowledgePage() {
               />
             </div>
           </div>
+        ) : showManager ? (
+          <ProjectBindingList onBack={() => { setShowManager(false); setSelectedSpace(null) }} />
         ) : (
-          <ProjectBindingList onSelectSpace={(s) => setSelectedSpace(s)} />
+          /* 项目知识中心一进来就是「目录树」：所有项目并列，每项目下=其绑定库的目录+各库 AI 生成目录 */
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 16px',
+                borderBottom: '1px solid var(--color-border-thin)',
+                background: 'var(--color-bg)',
+                flexShrink: 0,
+              }}
+            >
+              <Library size={13} color="var(--color-accent)" />
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', flex: 1 }}>
+                项目知识中心 · 目录树
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManager(true)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '5px 12px', fontSize: 12, color: 'var(--color-text-secondary)',
+                  background: 'transparent', border: '1px solid var(--color-border-thin)',
+                  borderRadius: 'var(--radius)', cursor: 'pointer',
+                }}
+                title="新建/绑定/解绑知识库"
+              >
+                管理知识库绑定
+              </button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <KnowledgeTreeView
+                mode="project"
+                aggregate
+                emptyHint="选中项目目录中的知识开始编辑"
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>

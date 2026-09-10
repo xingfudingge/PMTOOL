@@ -185,3 +185,52 @@ pub fn would_create_cycle(conn: &Connection, task_id: i64, new_parent_id: i64) -
     }
     Ok(false)
 }
+/// 批量导入任务（整体事务）
+/// 2026-09-08 修复「导入32条只剩6条」：逐条 invoke 无事务，中途任一失败即中断但已写条目不回滚。
+/// 改为单事务：父任务先落库拿到真实 id，子任务 parent_id 用真实 id 重映射，全部成功一次 COMMIT，
+/// 任一失败整批 ROLLBACK —— 要么32条全成功，要么全失败，绝不残留部分。
+/// 返回真实 id 列表（顺序与输入一致）。
+pub fn import_bulk(
+    conn: &mut Connection,
+    project_id: i64,
+    tasks: &[ProjectTask],
+) -> rusqlite::Result<Vec<i64>> {
+    let tx = conn.transaction()?;
+    let mut real_ids: Vec<i64> = Vec::with_capacity(tasks.len());
+
+    for task in tasks {
+        // 输入 task.parent_id 指向「临时序号 id」（excel 序号），需经 real_ids 映射成真实 DB id。
+        // 本仓库 create() 按输入写 parent_id；此处先解析：临时 id 是 1..n，按下标对应。
+        let real_parent = match task.parent_id {
+            Some(pid) if pid > 0 && (pid as usize) <= real_ids.len() => {
+                real_ids.get((pid - 1) as usize).copied()
+            }
+            _ => None,
+        };
+        let mut mapped = task.clone();
+        mapped.project_id = project_id;
+        mapped.parent_id = real_parent;
+
+        tx.execute(
+            "INSERT INTO project_tasks (project_id, parent_id, task_name, owner, start_date, end_date, work_days, progress, status, remark, sort_order, natural_days) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                mapped.project_id,
+                mapped.parent_id,
+                mapped.task_name,
+                mapped.owner,
+                mapped.start_date,
+                mapped.end_date,
+                mapped.work_days,
+                mapped.progress,
+                mapped.status,
+                mapped.remark,
+                mapped.sort_order,
+                mapped.natural_days,
+            ],
+        )?;
+        real_ids.push(tx.last_insert_rowid());
+    }
+
+    tx.commit()?;
+    Ok(real_ids)
+}

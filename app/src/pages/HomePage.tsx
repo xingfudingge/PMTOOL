@@ -73,6 +73,7 @@ import {
   type HolidayProvider,
 } from '@/services/holidayProvider'
 import { formatLocalDate, extractLocalDate } from '@/services/datetime'
+import { getWorkNote, saveWorkNote } from '@/services/workNotes'
 import {
   MentionTextarea,
   type MentionOption,
@@ -1313,6 +1314,17 @@ interface WorkNotes {
   nextContent: string
 }
 
+// 2026-09-08 · 规范化今日/下周内容：删除孤立「·」行、裸文本行补「· 」前缀、清空行
+function normalizeContentText(txt: string): string {
+  if (!txt) return ''
+  return txt
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '' && l !== '·')        // 去掉空行 + 孤立圆点行
+    .map((l) => (l.startsWith('· ') ? l : `· ${l}`)) // 裸文本补前缀
+    .join('\n')
+}
+
 function loadNotes(): WorkNotes {
   const today = formatLocalDate(new Date())
   try {
@@ -1328,7 +1340,11 @@ function loadNotes(): WorkNotes {
         parsed.nextContent = parsed.nextItems.join('\n')
         delete parsed.nextItems
       }
-      if (parsed.today === today) return parsed as WorkNotes
+      if (parsed.today === today) {
+        parsed.todayContent = normalizeContentText(parsed.todayContent)
+        parsed.nextContent = normalizeContentText(parsed.nextContent)
+        return parsed as WorkNotes
+      }
     }
   } catch {
     // ignore
@@ -1342,6 +1358,10 @@ function saveNotes(n: WorkNotes) {
   } catch {
     // ignore quota
   }
+  // 2026-09-08 · 异步落库（主存储 → SQLite）· localStorage 仅作本地回显缓存
+  saveWorkNote(n.today, normalizeContentText(n.todayContent), n.nextWorkday, normalizeContentText(n.nextContent)).catch(() => {
+    /* 静默：后端失败不影响本地回显 */
+  })
 }
 
 /**
@@ -1368,20 +1388,24 @@ export function appendToTodayWorkNote(entry: string) {
   } catch {
     notes = { today, todayContent: '', nextWorkday: '', nextContent: '' }
   }
-  // 维护者 2026-09-07：不再自动加 "· " 前缀（默认原样记录，避免孤立的丑圆点）
-  const trimmed = entry.trim()
-  const raw = trimmed.startsWith('· ') ? trimmed.slice(2) : trimmed
-  // 去重 + 追加
-  if (!notes.todayContent.includes(raw)) {
-    notes.todayContent = notes.todayContent
-      ? `${notes.todayContent}\n${raw}`
-      : raw
+  // 2026-09-08：恢复自动加 "· " 前缀（完成待办自动追加的条目要带圆点列表符号）
+  // 修正：之前 2026-09-07 去掉前缀+strip 已有 ·，导致出现孤立的「·」行、裸文本混乱
+  const trimmed = entry.replace(/^·\s*/, '').trim()
+  const line = `· ${trimmed}`
+  // 按完整行（含前缀）去重 · 追加
+  const lines = notes.todayContent ? notes.todayContent.split('\n') : []
+  if (!lines.includes(line)) {
+    notes.todayContent = lines.length
+      ? `${lines.join('\n')}\n${line}`
+      : line
   }
   try {
     localStorage.setItem(WORK_NOTES_KEY, JSON.stringify(notes))
   } catch {
     // ignore
   }
+  // 2026-09-08 · 同步落库（待办完成自动 append 也要持久化，否则重启丢失「测试111」类记录）
+  saveWorkNote(notes.today, normalizeContentText(notes.todayContent), notes.nextWorkday, normalizeContentText(notes.nextContent)).catch(() => {})
   window.dispatchEvent(new CustomEvent(WORKNOTES_EVENT))
 }
 
@@ -1417,11 +1441,29 @@ export function removeFromTodayWorkNote(marker: string) {
   } catch {
     // ignore
   }
+  // 2026-09-08 · 同步落库（取消待办完成删行也要持久化）
+  saveWorkNote(notes.today, normalizeContentText(notes.todayContent), notes.nextWorkday, normalizeContentText(notes.nextContent)).catch(() => {})
   window.dispatchEvent(new CustomEvent(WORKNOTES_EVENT))
 }
 
 function TodayWorkCard({ projects }: { projects: MentionOption[] }) {
   const [notes, setNotes] = useState<WorkNotes>(() => loadNotes())
+  // 2026-09-08 · 挂载时从后端拉取，覆盖 localStorage 缓存（主存储在后端）
+  useEffect(() => {
+    const today = formatLocalDate(new Date())
+    getWorkNote(today)
+      .then((saved) => {
+        if (saved && saved.note_date === today) {
+          setNotes({
+            today,
+            todayContent: saved.today_content,
+            nextWorkday: saved.next_workday,
+            nextContent: saved.next_content,
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
   // 监听 worknotes 事件 · 当外部（如 appendToTodayWorkNote）写入时自动刷新
   useEffect(() => {
     const handler = () => setNotes(loadNotes())
@@ -1740,18 +1782,6 @@ function NoteCard({
             minHeight: 0,
           }}
         />
-      </div>
-      <div
-        style={{
-          fontSize: '9.5px',
-          lineHeight: 1.4,
-          color: 'var(--color-text-tertiary)',
-          marginTop: 4,
-          flexShrink: 0,
-          overflow: 'visible',
-        }}
-      >
-        仅本地保存 · 回车续行 · 输入 @ 选择项目
       </div>
     </div>
   )

@@ -26,8 +26,8 @@ import {
 } from '@/services/knowledgeSpaces'
 
 interface ProjectBindingListProps {
-  /** 点击某个知识库后由父组件切换到该库的 KnowledgeTreeView */
-  onSelectSpace: (space: KnowledgeSpace) => void
+  /** 返回项目目录树 */
+  onBack: () => void
 }
 
 interface SpaceRow {
@@ -36,7 +36,7 @@ interface SpaceRow {
   loading: boolean
 }
 
-export function ProjectBindingList({ onSelectSpace }: ProjectBindingListProps) {
+export function ProjectBindingList({ onBack }: ProjectBindingListProps) {
   const [allProjects, setAllProjects] = useState<Project[]>([])
   const [rows, setRows] = useState<SpaceRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,7 +91,6 @@ export function ProjectBindingList({ onSelectSpace }: ProjectBindingListProps) {
       setNewName('')
       setCreating(false)
       await reload()
-      void onSelectSpace(created)
     } catch (e) {
       toast.error(`创建失败：${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -183,6 +182,19 @@ export function ProjectBindingList({ onSelectSpace }: ProjectBindingListProps) {
         <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)', margin: 0, flex: 1 }}>
           项目知识中心 · 知识库
         </h3>
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '6px 12px', fontSize: 12, color: 'var(--color-text-secondary)',
+            background: 'transparent', border: '1px solid var(--color-border-thin)',
+            borderRadius: 'var(--radius)', cursor: 'pointer',
+          }}
+          title="返回目录树"
+        >
+          返回目录树
+        </button>
         <button
           type="button"
           onClick={() => setCreating(true)}
@@ -292,19 +304,11 @@ export function ProjectBindingList({ onSelectSpace }: ProjectBindingListProps) {
               {/* 行头：库名 + 进入 + 添加项目 + 删除 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Library size={14} color="var(--color-accent)" />
-                <button
-                  type="button"
-                  onClick={() => onSelectSpace(row.space)}
-                  style={{
-                    flex: 1, textAlign: 'left', background: 'transparent', border: 'none',
-                    cursor: 'pointer', fontSize: 13, color: 'var(--color-text)',
-                    display: 'flex', alignItems: 'center', gap: 4, fontWeight: 500,
-                  }}
-                  title="进入该知识库"
+                <span
+                  style={{ flex: 1, textAlign: 'left', fontSize: 13, color: 'var(--color-text)', fontWeight: 500 }}
                 >
                   {row.space.name}
-                  <ChevronRight size={12} />
-                </button>
+                </span>
                 <button
                   type="button"
                   onClick={() => { setAddingSpace(row); setCheckSet(new Set()) }}

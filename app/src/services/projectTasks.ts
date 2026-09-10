@@ -160,3 +160,8 @@ export function buildTaskTree(tasks: ProjectTask[]): TaskNode[] {
   }
   return roots
 }
+
+/// 批量导入任务（整体事务）
+export async function importProjectTasksBulk(projectId: number, tasks: unknown[]): Promise<number[]> {
+  return await invoke<number[]>('import_project_tasks_bulk', { projectId, tasks })
+}

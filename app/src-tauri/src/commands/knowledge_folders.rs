@@ -99,6 +99,21 @@ pub fn ensure_ai_knowledge_folder(
     repo::ensure_ai_folder(&conn, &space, project_id).map_err(|e| e.to_string())
 }
 
+/// 创建或取得某知识空间（知识库）的独立 AI 生成目录（一库一 AI 目录 · 跟随知识库）
+/// 2026-09-09 · 一库多项目：AI 目录按 space_id 归属，不跨库共享。
+#[tauri::command]
+pub fn ensure_knowledge_ai_folder(
+    state: State<'_, AppState>,
+    space_id: i64,
+) -> Result<KnowledgeFolder, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let space = crate::repositories::knowledge_spaces::get_by_id(&conn, space_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "知识空间不存在".to_string())?;
+    repo::ensure_ai_folder_for_space(&conn, space_id, &space.space_type)
+        .map_err(|e| e.to_string())
+}
+
 /// 删除目录（二次确认后执行）
 #[tauri::command]
 pub fn delete_knowledge_folder(

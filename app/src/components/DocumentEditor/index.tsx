@@ -24,7 +24,7 @@
  * 模块命名锁定：必须是「知识中心」「项目文件管理」。
  */
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { BlockNoteView } from '@blocknote/mantine'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -91,6 +91,7 @@ export function DocumentEditor(props: DocumentEditorProps) {
     onDirtyChange,
     onClose,
     onExported,
+    onStatusChange,
   } = props
 
   // ---------- 标题 ----------
@@ -150,6 +151,11 @@ export function DocumentEditor(props: DocumentEditorProps) {
       setLastSavedSnapshot(JSON.stringify(blocks))
     }
   }, [source.kind, initialMarkdown, editor.pmSchema])
+
+  // 2026-09-09 · 知识模式不再用 setContent 二次注入。
+  // BlockNote 内容由 useCreateBlockNote(initialContent) 在 mount 时读取，且外层 key 用内容指纹
+  // 强制 remount 载入最新块。此前这里用 tiptap.setContent(initialBlocks) 兜底——initialBlocks
+  // 引用每次变化都会把编辑器重置回初始内容，导致「编辑成果被冲回默认、无法编辑」。故移除。
 
   // 知识中心模式：使用 initialBlocks
   // project-file 模式：使用 convertedBlocks
@@ -222,6 +228,16 @@ export function DocumentEditor(props: DocumentEditorProps) {
     }
     return currentDocJson !== lastSavedSnapshot
   }, [isProjectTxt, txtLoaded, txtContent, currentDocJson, lastSavedSnapshot, status])
+
+  // 仅当 status / lastSavedAt 真正变化时回调 onStatusChange。
+  // 避免「父回调产生新引用 → 子 effect 反复跑 → 父再 setState」的反馈回路。
+  const lastStatusRef = useRef<{ s: SaveStatus; t: string | null }>({ s: status, t: lastSavedAt })
+  useEffect(() => {
+    const prev = lastStatusRef.current
+    if (prev.s === status && prev.t === lastSavedAt) return
+    lastStatusRef.current = { s: status, t: lastSavedAt }
+    onStatusChange?.(status, lastSavedAt)
+  }, [status, lastSavedAt, onStatusChange])
 
   useEffect(() => {
     onDirtyChange?.(dirty)

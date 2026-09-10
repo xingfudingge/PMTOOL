@@ -252,6 +252,14 @@ export async function ensureAiKnowledgeFolder(
 }
 
 /**
+ * 确保某知识空间（知识库）存在独立的 AI 生成目录（一库一 AI 目录 · 不跨库共享）
+ * 2026-09-09 · 一库多项目：AI 目录按空间归属（替代 ensureAiKnowledgeFolder 的全局定位）。
+ */
+export async function ensureKnowledgeAiFolder(spaceId: number): Promise<KnowledgeFolder> {
+  return await invoke<KnowledgeFolder>('ensure_knowledge_ai_folder', { spaceId })
+}
+
+/**
  * 删除目录（前端必须先二次确认）
  */
 export async function deleteKnowledgeFolder(id: number): Promise<boolean> {

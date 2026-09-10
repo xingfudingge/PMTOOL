@@ -194,7 +194,12 @@ function StatusBadge({ status, lastSavedAt }: { status: SaveStatus; lastSavedAt:
 
 function formatTime(iso: string, now: number): string {
   try {
-    const d = new Date(iso)
+    // 2026-09-09 · SQLite CURRENT_TIMESTAMP 存 UTC（如 '2026-09-09 01:23:00'）,
+    // JS 无时区解析会当成本地时间 → 显示 01:23 而实际应为 09:24（UTC+8）。
+    // 检测无时区的 SQLite 格式, 手动补 Z 解析成 UTC 再转本地时区显示。
+    const dbUtc = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(iso)
+    const fixed = dbUtc ? iso.replace(' ', 'T') + 'Z' : iso
+    const d = new Date(fixed)
     if (Number.isNaN(d.getTime())) return ''
     const diff = now - d.getTime()
     if (diff < 60_000) return '刚刚'

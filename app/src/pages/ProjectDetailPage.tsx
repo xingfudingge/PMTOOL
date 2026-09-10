@@ -20,7 +20,7 @@
  * 严格：复用 16 张表 · 不新增表 · 不新增 Rust commands
  */
 
-import { Fragment, useEffect, useMemo, useRef, useState, Component } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback, Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import {
   AlertOctagon,
@@ -91,6 +91,7 @@ import { triggerDownload } from '@/services/excel'
 import { formatLocalDate } from '@/services/datetime'
 import {
   createProjectTask,
+  importProjectTasksBulk,
   deleteProjectTask,
   updateProjectTask,
   type ProjectTask,
@@ -102,7 +103,8 @@ import { FilePreview } from '@/components/FilePreview'
 import { ProjectKnowledgeCenter } from '@/components/KnowledgeSpaceView/ProjectKnowledgeCenter'
 import {
   listProjectBindings,
-  listProjectKnowledgeSpaces,
+  listAllProjectSpaces,
+  createBinding,
   deleteBinding,
   getKnowledgeSpace,
   type KnowledgeSpace,
@@ -2966,34 +2968,10 @@ function TaskPlanPanel({
         }
       }
       const importedCount = importConfirm.length
-      // 串行创建 · tempId → realId 映射以还原父子层级
-      const tempIdToRealId = new Map<number, number>()
-      const importDiag: string[] = []
-      for (const t of importConfirm) {
-        const realParentId =
-          t.parent_id !== null && t.parent_id !== undefined
-            ? (tempIdToRealId.get(t.parent_id) ?? null)
-            : null
-        importDiag.push(`task="${t.task_name}" tempId=${t.id} parsedParent=${t.parent_id} mapGot=${t.parent_id !== null && t.parent_id !== undefined ? tempIdToRealId.get(t.parent_id) : 'N/A'} realParent=${realParentId} sortOrder=${t.sort_order}`)
-        const newId = await createProjectTask({
-          project_id: projectId,
-          parent_id: realParentId,
-          task_name: t.task_name,
-          owner: t.owner,
-          start_date: t.start_date,
-          end_date: t.end_date,
-          work_days: t.work_days,
-          natural_days: t.natural_days,
-          progress: t.progress,
-          status: t.status,
-          sort_order: t.sort_order,
-        })
-        importDiag.push(`  → newId=${newId}`)
-        if (t.id > 0) tempIdToRealId.set(t.id, newId)
-      }
-      console.log('[IMPORT_DIAG]\n' + importDiag.join('\n'))
-      console.log('[IMPORT_DIAG]\n' + importDiag.join('\n'))
-      // alert('[IMPORT_DIAG]\n' + importDiag.join('\n'))
+      // 2026-09-08 改：单次批量事务导入（父先落库→子映射真实 id→全成 COMMIT / 任一失败整批 ROLLBACK）
+      // 根治「提示成功32条、重启后只落6条（阶段2-4丢失）」
+      const realIds = await importProjectTasksBulk(projectId, importConfirm)
+      console.log('[IMPORT_BULK] imported', realIds.length, 'ids')
       setImportConfirm(null)
       setImportFile(null)
       await onRefresh()
@@ -6784,40 +6762,66 @@ function IssueImportConfirmModal({
 // 一级 · 知识中心（项目维度笔记 · 复用 KnowledgeSpaceView）
 // ============================================================
 
+// ============================================================
+// 一级 tab 组件：知识中心
+// ============================================================
+
 function KnowledgeTab({ data }: { data: ProjectDetailData }) {
   const project = data.project
   const [spaces, setSpaces] = useState<KnowledgeSpace[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState<number | null>(null)
+  const [allSpaces, setAllSpaces] = useState<KnowledgeSpace[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [binding, setBinding] = useState(false)
   const [confirmUnbind, setConfirmUnbind] = useState(false)
 
-  // 挂载时查出该项目绑定的所有知识空间（M:N · 一个项目可能绑定多个知识库）
+  const reload = useCallback(async () => {
+    // 该项目通过绑定关系可访问的所有知识库（M:N · 不依赖 space.project_id）
+    const bound = await listProjectBindings(project.id)
+    const resolved: KnowledgeSpace[] = []
+    for (const b of bound) {
+      try {
+        const sp = await getKnowledgeSpace(b.knowledgeSpaceId)
+        if (sp) resolved.push(sp)
+      } catch { /* ignore */ }
+    }
+    setSpaces(resolved)
+    setActiveSpaceId((cur) => (resolved.some((x) => x.id === cur) ? cur : resolved[0]?.id ?? null))
+  }, [project.id])
+
+  // 挂载时加载绑定 + 拉取知识中心所有项目知识库（供绑定选择）
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const bound = await listProjectBindings(project.id)
-        // 用绑定关系 + 空间 id 一一解析（避免走 space.project_id，解绑后能正确清空）
-        const resolved: KnowledgeSpace[] = []
-        for (const b of bound) {
-          try {
-            const sp = await getKnowledgeSpace(b.knowledgeSpaceId)
-            if (sp) resolved.push(sp)
-          } catch { /* 忽略单个失败 */ }
-        }
-        if (!alive) return
-        setSpaces(resolved)
-        setActiveSpaceId(resolved[0]?.id ?? null)
-      } catch {
-        if (alive) {
-          setSpaces([])
-          setActiveSpaceId(null)
-        }
-      }
+        const all = await listAllProjectSpaces()
+        if (alive) setAllSpaces(all)
+      } catch { /* ignore */ }
+    })()
+    ;(async () => {
+      try {
+        await reload()
+      } catch { /* ignore */ }
     })()
     return () => { alive = false }
-  }, [project.id])
+  }, [reload])
 
-  const activeSpace = spaces.find((s) => s.id === activeSpaceId) ?? null
+  const activeSpace = spaces.find((sp) => sp.id === activeSpaceId) ?? null
+
+  const handleBind = async (spaceId: number) => {
+    setBinding(true)
+    try {
+      await createBinding({ projectId: project.id, knowledgeSpaceId: spaceId })
+      toast.success('已绑定知识库')
+      setPickerOpen(false)
+      await reload()
+      setActiveSpaceId(spaceId)
+    } catch (e) {
+      toast.error(`绑定失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setBinding(false)
+    }
+  }
 
   const handleUnbind = async () => {
     if (activeSpaceId == null) return
@@ -6825,82 +6829,105 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
       await deleteBinding(project.id, activeSpaceId)
       toast.success('已解绑该项目的知识库（知识已保留）')
       setConfirmUnbind(false)
-      const next = spaces.filter((s) => s.id !== activeSpaceId)
-      setSpaces(next)
-      setActiveSpaceId(next[0]?.id ?? null)
+      await reload()
     } catch (e) {
       toast.error(`解绑失败：${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
+  // 可选（未绑定的）知识库：知识中心里的 project 空间，排除已绑定的
+  const unboundSpaces = allSpaces.filter((sp) => !spaces.some((b) => b.id === sp.id))
+
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 480 }}>
+      {/* 顶部工具栏（参考项目文件管理布局） */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'flex-end',
           gap: 8,
-          padding: '8px 20px',
-          borderBottom: '1px solid var(--color-border-thin)',
+          padding: '10px 14px',
+          borderBottom: '1px solid var(--color-border)',
           background: 'var(--color-bg-subtle)',
           flexShrink: 0,
         }}
       >
-        {spaces.length > 1 && (
-          <select
-            value={activeSpaceId ?? ''}
-            onChange={(e) => setActiveSpaceId(Number(e.target.value))}
-            style={{
-              fontSize: 11, padding: '3px 6px', border: '1px solid var(--color-border)',
-              borderRadius: 6, background: 'var(--color-bg)', color: 'var(--color-text)',
-              maxWidth: 200,
-            }}
-            title="切换知识库"
-          >
-            {spaces.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        )}
-        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-          项目知识归知识中心所有，此处仅只读访问
+        <BookOpen size={14} color="var(--color-text-secondary)" />
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)' }}>
+          项目知识库
         </span>
-        <button
-          type="button"
-          onClick={() => setConfirmUnbind(true)}
-          disabled={activeSpaceId == null}
+        <span
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 10px',
-            fontSize: 11,
-            background: 'transparent',
-            color: activeSpaceId == null ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
-            border: '1px solid var(--color-border-thin)',
-            borderRadius: 6,
-            cursor: activeSpaceId == null ? 'not-allowed' : 'pointer',
-            opacity: activeSpaceId == null ? 0.5 : 1,
+            flex: 1, minWidth: 0, fontSize: 11, color: 'var(--color-text-tertiary)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginLeft: 8,
           }}
-          title={activeSpaceId == null ? '该项目尚未绑定知识库' : '解绑后项目中心不再显示该知识库，但知识保留在知识中心'}
+          title={activeSpace?.name ?? ''}
         >
-          <X size={11} /> 解绑
-        </button>
+          {spaces.length > 1 ? (
+            <select
+              value={activeSpaceId ?? ''}
+              onChange={(e) => setActiveSpaceId(Number(e.target.value))}
+              style={{
+                fontSize: 11, padding: '2px 6px', border: '1px solid var(--color-border)',
+                borderRadius: 6, background: 'var(--color-bg)', color: 'var(--color-text)',
+                maxWidth: 220,
+              }}
+              title="切换知识库"
+            >
+              {spaces.map((sp) => (
+                <option key={sp.id} value={sp.id}>{sp.name}</option>
+              ))}
+            </select>
+          ) : (
+            activeSpace?.name
+          )}
+        </span>
+        {activeSpaceId != null && (
+          <button
+            type="button"
+            onClick={handleUnbind}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+              fontSize: 11, background: 'transparent', color: '#dc2626',
+              border: '1px solid rgba(220,38,38,0.3)', borderRadius: 'var(--radius)',
+              cursor: 'pointer',
+            }}
+            title="解绑：仅移除项目入口，知识保留在知识中心，可随时重新绑定"
+          >
+            <X size={11} /> 解绑
+          </button>
+        )}
       </div>
+
+      {/* 主体 */}
       <div style={{ flex: 1, minHeight: 0 }}>
         {activeSpaceId == null ? (
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', gap: 14, color: 'var(--color-text-tertiary)', padding: 32,
               height: '100%',
-              fontSize: 35,
-              color: 'var(--color-text-tertiary)',
             }}
           >
-            该项目尚未在知识中心绑定知识库。
+            <BookOpen size={48} strokeWidth={1.25} />
+            <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+              绑定一个知识库，开始浏览与编辑项目知识
+            </div>
+            <div style={{ fontSize: 11, maxWidth: 480, textAlign: 'center', lineHeight: 1.6 }}>
+              如需新建知识库，请前往「知识中心 → 项目知识中心」创建后再回到这里绑定。
+            </div>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 14px',
+                background: 'var(--color-accent)', color: 'var(--color-text-on-accent, #fff)',
+                border: 'none', borderRadius: 'var(--radius)', fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', marginTop: 4,
+              }}
+            >
+              <Plus size={12} /> 选择知识库
+            </button>
           </div>
         ) : (
           <ProjectKnowledgeCenter
@@ -6910,6 +6937,68 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
           />
         )}
       </div>
+
+      {/* 选择知识库弹窗（绑定） */}
+      {pickerOpen && (
+        <div
+          onClick={() => setPickerOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--color-bg)', borderRadius: 'var(--radius-md)', padding: 24,
+              maxWidth: 440, width: '90%', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            }}
+          >
+            <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 12px', color: 'var(--color-text)' }}>
+              选择知识库
+            </h3>
+            {unboundSpaces.length === 0 ? (
+              <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+                知识中心暂无可绑定的知识库。请先去「项目知识中心」新建，再回到这里绑定。
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 300, overflowY: 'auto' }}>
+                {unboundSpaces.map((sp) => (
+                  <button
+                    key={sp.id}
+                    type="button"
+                    onClick={() => void handleBind(sp.id)}
+                    disabled={binding}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                      background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-thin)',
+                      borderRadius: 'var(--radius)', cursor: binding ? 'not-allowed' : 'pointer',
+                      fontSize: 13, color: 'var(--color-text)', textAlign: 'left', opacity: binding ? 0.5 : 1,
+                    }}
+                  >
+                    <BookOpen size={13} color="var(--color-accent)" />
+                    <span style={{ flex: 1 }}>{sp.name}</span>
+                    <Plus size={12} />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(false)}
+                style={{
+                  padding: '6px 14px', fontSize: 12, border: '1px solid var(--color-border)',
+                  background: 'var(--color-bg)', color: 'var(--color-text)', borderRadius: 'var(--radius)',
+                  cursor: 'pointer',
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmUnbind && activeSpaceId != null && (
         <ConfirmUnbindKnowledgeDialog
@@ -6921,6 +7010,7 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
     </div>
   )
 }
+
 function ConfirmUnbindKnowledgeDialog({
   projectName,
   onConfirm,

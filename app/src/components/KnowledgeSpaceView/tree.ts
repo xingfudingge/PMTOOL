@@ -278,3 +278,84 @@ export function buildUnifiedTree(
 
   return folderRoots
 }
+
+/**
+ * 组装「项目知识中心」多项目聚合树（2026-09-09）
+ *
+ * 以项目为顶层节点（project-root），项目下 = 该项目绑定知识库的目录 + 各库的 AI 生成目录（固定在树底）。
+ * M:N：多个项目可绑定同一知识库 —— 每个绑定了该库的项目节点都会展示该库内容（共享）。
+ * 一个项目绑定多个知识库时，各库目录与 AI 目录依次并入该项目节点下。
+ */
+/**
+ * 组装「项目知识中心」知识库树（2026-09-09 · 以知识库为顶层，库与库独立）
+ *
+ * 顶层节点 = 知识空间（知识库），每个库独立挂自己的目录 + AI 生成目录（底部）。
+ * 一个库可被多个项目绑定（M:N）——共享只体现在库节点标注的绑定项目上，不改变库内容，
+ * 也不会让库内容在多个项目下重复显示（知识库与知识库互不干扰）。
+ */
+export function buildLibrariesTree(
+  spaces: { id: number; name: string; boundText: string }[],
+  foldersBySpace: Map<number, DbFolder[]>,
+  notesBySpace: Map<number, DbNote[]>,
+): UnifiedNode[] {
+  const roots: UnifiedNode[] = []
+  for (const s of spaces) {
+    const folders = foldersBySpace.get(s.id) ?? []
+    const notes = notesBySpace.get(s.id) ?? []
+    const children = buildUnifiedTree(folders, notes, { withVirtualRoot: false }).filter(
+      (c) => c.kind !== 'project-root',
+    )
+    // 库节点：spaceId 指向该知识库，便于在其下新建目录/知识；name 追加绑定项目标注。
+    roots.push({
+      id: s.id,
+      parentId: null,
+      space: 'project',
+      spaceId: s.id,
+      projectId: null,
+      name: s.boundText ? `${s.name}（绑定：${s.boundText}）` : s.name,
+      systemType: 'PROJECT_ROOT',
+      sortOrder: 0,
+      createdAt: '',
+      updatedAt: '',
+      kind: 'project-root',
+      children,
+      expanded: true,
+      isSystem: true,
+    })
+  }
+  return roots
+}
+
+export function buildProjectsAggregateTree(
+  projects: { id: number; name: string }[],
+  foldersByProject: Map<number, DbFolder[]>,
+  notesByProject: Map<number, DbNote[]>,
+): UnifiedNode[] {
+  const roots: UnifiedNode[] = []
+  for (const p of projects) {
+    const folders = foldersByProject.get(p.id) ?? []
+    const notes = notesByProject.get(p.id) ?? []
+    // 该项目绑定知识库的目录+AI 树（去除嵌套的 project-root，防库内含实例根）
+    const children = buildUnifiedTree(folders, notes, { withVirtualRoot: false }).filter(
+      (c) => c.kind !== 'project-root',
+    )
+    if (children.length === 0) continue
+    roots.push({
+      id: p.id,
+      parentId: null,
+      space: 'project',
+      spaceId: null,
+      projectId: p.id,
+      name: p.name,
+      systemType: 'PROJECT_ROOT',
+      sortOrder: 0,
+      createdAt: '',
+      updatedAt: '',
+      kind: 'project-root',
+      children,
+      expanded: true,
+      isSystem: true,
+    })
+  }
+  return roots
+}

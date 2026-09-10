@@ -104,3 +104,15 @@ pub fn delete_project_task(state: State<'_, AppState>, id: i64) -> Result<bool, 
     // 级联：删除任务及其所有子孙
     tasks_repo::delete_with_children(&pool, id).map_err(|e| e.to_string())
 }
+
+/// 批量导入任务（整体事务）：父先落库 -> 子映射真实 id -> 全部成功 COMMIT / 任一失败 ROLLBACK
+#[tauri::command]
+pub fn import_project_tasks_bulk(
+    state: State<'_, AppState>,
+    project_id: i64,
+    tasks: Vec<tasks_repo::ProjectTask>,
+) -> Result<Vec<i64>, String> {
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    tasks_repo::import_bulk(&mut conn, project_id, &tasks).map_err(|e| e.to_string())
+}
+

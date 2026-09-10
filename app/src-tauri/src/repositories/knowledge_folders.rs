@@ -168,7 +168,7 @@ pub fn upsert(conn: &Connection, input: KnowledgeFolderInput) -> rusqlite::Resul
     }
 
     // INSERT
-    let final_id: i64 = conn.execute(
+    conn.execute(
         "INSERT INTO knowledge_folders
          (parent_id, space, space_id, project_id, name, sort_order, system_type, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
@@ -176,9 +176,9 @@ pub fn upsert(conn: &Connection, input: KnowledgeFolderInput) -> rusqlite::Resul
             input.parent_id, input.space, input.space_id, input.project_id,
             input.name, sort_order, system_type
         ],
-    )?.try_into().unwrap();
+    )?;
 
-    get_by_id(conn, final_id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+    get_by_id(conn, conn.last_insert_rowid())?.ok_or(rusqlite::Error::QueryReturnedNoRows)
 }
 
 /// 删除目录及其所有子目录和关联知识
@@ -334,6 +334,45 @@ pub fn ensure_ai_folder(
         space: space.to_string(),
         space_id: None,
         project_id,
+        name: "AI 生成".to_string(),
+        sort_order: Some(0),
+        system_type: Some("SYSTEM_AI".to_string()),
+    };
+
+    upsert(conn, input)
+}
+
+/// 确保某知识空间（知识库）有且仅有一个独立的 AI 生成目录（SYSTEM_AI 类型）
+///
+/// 2026-09-09 · 一库多项目：AI 目录按 space_id 归属（每库唯一、独立，不跨库共享），
+/// 不再用全局 space 字符串 / project_id 定位 —— 共享库下 project_id 为 NULL，按 space
+/// 字符串查会把所有库的 AI 目录混成全局一个（即此前 AI 目录“全局共享”的根因）。
+/// 新建知识库时调用，保证“一库一 AI 生成目录、跟随知识库”。
+pub fn ensure_ai_folder_for_space(
+    conn: &Connection,
+    space_id: i64,
+    space_type: &str,
+) -> rusqlite::Result<KnowledgeFolder> {
+    // 该库已有 AI 目录（每库唯一）则直接返回
+    let sql = format!(
+        "SELECT {} FROM knowledge_folders \
+         WHERE space_id = ?1 AND system_type = 'SYSTEM_AI' LIMIT 1",
+        SELECT_COLS
+    );
+    {
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query(params![space_id])?;
+        if let Some(row) = rows.next()? {
+            return Ok(row_to_knowledge_folder(row)?);
+        }
+    }
+
+    let input = KnowledgeFolderInput {
+        id: None,
+        parent_id: None,
+        space: space_type.to_string(),
+        space_id: Some(space_id),
+        project_id: None,
         name: "AI 生成".to_string(),
         sort_order: Some(0),
         system_type: Some("SYSTEM_AI".to_string()),
