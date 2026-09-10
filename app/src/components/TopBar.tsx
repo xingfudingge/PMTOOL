@@ -195,22 +195,6 @@ export function TopBar({ currentPage, theme, onToggleTheme }: TopBarProps) {
               if (!menuOpen) e.currentTarget.style.background = 'transparent'
             }}
           >
-            <div
-              style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                background: 'var(--color-accent)',
-                color: 'var(--color-text-on-accent)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: 600,
-              }}
-            >
-              刘
-            </div>
             <ChevronDown
               size={12}
               strokeWidth={2}

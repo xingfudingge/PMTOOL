@@ -209,6 +209,7 @@ pub fn run() {
             commands::backup::reveal_path,
             // 工作日同步（维护者 2026-09-09 · 节假日源同步）
             commands::holidays::sync_holidays,
+            commands::holidays::clear_holidays,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

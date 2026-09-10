@@ -26,7 +26,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { LicenseStatus, ActivateLicenseResult } from '@/types/license'
 import { useSettings, SETTING_KEYS } from '@/state/SettingsProvider'
-import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, setBackupLocation, setDataRoot, revealPath, syncHolidays, type BackupItem } from '@/services/settings'
+import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, setBackupLocation, setDataRoot, revealPath, syncHolidays, clearHolidays, type BackupItem } from '@/services/settings'
 import { pickProjectDirectory } from '@/services/projectFiles'
 
 interface SettingsSection {
@@ -40,7 +40,7 @@ const SECTIONS: SettingsSection[] = [
   { id: 'appearance', label: '外观', Icon: Palette },
   { id: 'data', label: '数据', Icon: Database },
   { id: 'automation', label: '自动化', Icon: Sparkles },
-  { id: 'workday', label: '工作日', Icon: CalendarDays },
+  { id: 'workday', label: '法定节假日', Icon: CalendarDays },
   { id: 'ai', label: 'AI 配置', Icon: Sparkles },
   { id: 'license', label: '授权', Icon: Shield },
   { id: 'about', label: '关于', Icon: Info },
@@ -161,9 +161,6 @@ function ProfileSection() {
   return (
     <>
       <SectionHeader title="个人资料" desc="管理你的基本信息和设备标识" />
-      <Field label="头像">
-        <Avatar />
-      </Field>
       <Field label="姓名">
         <Input
           value={get('userName') ?? ''}
@@ -658,31 +655,43 @@ function AboutSection() {
 function WorkdaySection() {
   const { get, save } = useSettings()
   const [sources, setSources] = useState<{ name: string; url: string }[]>(() => {
-    try { const v = get('holidaySources'); return v ? JSON.parse(v) : [{ name: 'jsDelivr', url: 'https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/[{year}].json' }, { name: 'GitHub Raw', url: 'https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/[{year}].json' }, { name: '备用-节假日API', url: 'https://timor.tech/api/holiday/year/[{year}]' }] } catch { return [] }
+    try { const v = get('holidaySources'); return v ? JSON.parse(v) : [
+      { name: '节假日API(国内)', url: 'https://timor.tech/api/holiday/year/{year}' },
+      { name: 'jsDelivr 镜像', url: 'https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/{year}.json' },
+      { name: 'GitHub Raw', url: 'https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json' },
+    ] } catch { return [] }
   })
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const active = parseInt(get('holidayActive') || '0', 10) || 0
   const persist = (list: { name: string; url: string }[]) => { setSources(list); save('holidaySources', JSON.stringify(list)) }
   const addSource = () => persist([...sources, { name: '', url: '' }])
   const updSource = (i: number, k: 'name' | 'url', v: string) => { const l = sources.slice(); l[i] = { ...l[i], [k]: v }; persist(l) }
-  const delSource = (i: number) => persist(sources.filter((_, j) => j !== i))
+  const delSource = (i: number) => { const l = sources.filter((_, j) => j !== i); persist(l); if (active >= l.length && active !== 0) save('holidayActive', String(l.length - 1)) }
   const doSync = async () => {
-    const src = sources.find((x) => x.url) || sources[0]
+    const src = sources[active] || sources.find((x) => x.url) || sources[0]
     if (!src || !src.url) { setMsg('请先配置一个同步源地址'); return }
     setBusy(true); setMsg(null)
     try { const r = await syncHolidays(src.url, new Date().getFullYear()); setMsg(r); save('holidayLastSync', new Date().toISOString()) }
     catch (e) { setMsg('同步失败：' + String(e)) }
     finally { setBusy(false) }
   }
+  const doClear = async () => {
+    setBusy(true); setMsg(null)
+    try { const n = await clearHolidays(); setMsg('已清除 ' + n + ' 条法定节假日数据（用于测试与工作日历的关联）') }
+    catch (e) { setMsg('清除失败：' + String(e)) }
+    finally { setBusy(false) }
+  }
   return (
     <>
-      <SectionHeader title="工作日" desc="法定节假日同步源 · 自动同步周期 · 手动同步" />
+      <SectionHeader title="法定节假日" desc="法定节假日同步源 · 自动同步周期 · 手动同步" />
       <Field label="同步源">
         <div>
           {sources.map((src, i) => (
-            <span key={i} className="pms-row" style={{ marginBottom: 6 }}>
+            <span key={i} className="pms-row" style={{ marginBottom: 7 }}>
+              <button type="button" className={i === active ? 'pm-btn' : 'pm-btn'} style={{ minWidth: 62 }} onClick={() => save('holidayActive', String(i))} title="设为使用源">{i === active ? '● 使用' : '使用'}</button>
               <input className="pm-btn" style={{ width: 120 }} value={src.name} onChange={(e) => updSource(i, 'name', e.target.value)} placeholder="名称" />
-              <input className="pm-btn" style={{ flex: 530 }} value={src.url} onChange={(e) => updSource(i, 'url', e.target.value)} placeholder="接口地址(用 {year} 占位年度)" />
+              <input className="pm-btn" style={{ flex: 255 }} value={src.url} onChange={(e) => updSource(i, 'url', e.target.value)} placeholder="接口地址(用 {year} 占位年度)" />
               <button type="button" className="pm-btn-danger" onClick={() => delSource(i)}>删除</button>
             </span>
           ))}
@@ -697,6 +706,11 @@ function WorkdaySection() {
             onSelect={(v) => save('holidaySyncPeriod', v)}
           />
           <button type="button" className="pm-btn" disabled={busy} onClick={doSync}>立即同步</button>
+        </span>
+      </Field>
+      <Field label="清除数据">
+        <span className="pms-row">
+          <button type="button" className="pm-btn-danger" disabled={busy} onClick={doClear}>清除法定节假日</button>
         </span>
       </Field>
       {msg && <div className="pms-msg">{msg}</div>}
@@ -1075,42 +1089,6 @@ function ColorSwatches() {
   )
 }
 
-function Avatar() {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-      }}
-    >
-      <div
-        style={{
-          width: '40px',
-          height: '40px',
-          borderRadius: '50%',
-          background: 'var(--color-accent)',
-          color: 'var(--color-text-on-accent)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '15px',
-          fontWeight: 600,
-        }}
-      >
-        刘
-      </div>
-      <button
-        style={{
-          fontSize: '12px',
-          color: 'var(--color-accent)',
-        }}
-      >
-        更换头像
-      </button>
-    </div>
-  )
-}
 
 // License activation result type
 interface LicenseActivationResult {

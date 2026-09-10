@@ -51,7 +51,7 @@ pub async fn sync_holidays(state: State<'_, AppState>, source_url: String, year:
             let name = v.get("name").and_then(|x| x.as_str()).unwrap_or(kk).to_string();
             let date = v.get("date").and_then(|x| x.as_str()).map(|s| s.to_string())
                 .unwrap_or_else(|| format!("{:04}-{}", year, kk));
-            let off = v.get("isOffDay").and_then(|x| x.as_bool()).unwrap_or(true);
+            let off = v.get("isOffDay").and_then(|x| x.as_bool()).unwrap_or_else(|| v.get("holiday").and_then(|x| x.as_bool()).unwrap_or(true));
             items.push(holidays_repo::HolidayEntry {
                 id: 0,
                 date,
@@ -74,8 +74,19 @@ fn matched_obj(v: &serde_json::Value, year: i64) -> Option<&serde_json::Map<Stri
         if let Some(inner) = m.get(&year.to_string()) {
             if let Some(obj) = inner.as_object() { return Some(obj); }
         }
+        if let Some(h) = m.get("holiday") {
+            if let Some(obj) = h.as_object() { return Some(obj); }
+        }
         Some(m)
     } else {
         None
     }
+}
+
+
+/// 清空全部法定节假日数据（设置页「清除法定节假日」按钮 · 用于测试与工作日历关联）
+#[tauri::command]
+pub fn clear_holidays(state: State<'_ , AppState>) -> Result<usize, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    holidays_repo::clear_all(&conn).map_err(|e| e.to_string())
 }

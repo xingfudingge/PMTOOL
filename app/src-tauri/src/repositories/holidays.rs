@@ -77,3 +77,8 @@ pub fn upsert_many(conn: &Connection, items: &[HolidayEntry]) -> rusqlite::Resul
 pub fn delete_by_source(conn: &Connection, source: &str) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM holidays WHERE source = ?1", params![source])
 }
+
+/// 清空全部节假日数据
+pub fn clear_all(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM holidays", [])
+}

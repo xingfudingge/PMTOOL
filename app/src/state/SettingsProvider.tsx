@@ -26,6 +26,7 @@ export const SETTING_KEYS = {
   aiBaseUrl: 'aiBaseUrl',
   aiTemperature: 'aiTemperature',
   holidaySources: 'holidaySources',
+  holidayActive: 'holidayActive',
   holidaySyncPeriod: 'holidaySyncPeriod',
   holidayLastSync: 'holidayLastSync',
   autoDailyReport: 'autoDailyReport',

@@ -75,3 +75,8 @@ export async function revealPath(path: string): Promise<boolean> {
 export async function syncHolidays(sourceUrl: string, year: number): Promise<string> {
   return await invoke<string>('sync_holidays', { sourceUrl, year })
 }
+
+/** 清空全部法定节假日数据（用于测试与工作日历的关联） */
+export async function clearHolidays(): Promise<number> {
+  return await invoke<number>('clear_holidays')
+}
