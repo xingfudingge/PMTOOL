@@ -220,7 +220,8 @@ export function TemplatesPage() {
   }
 
   return (
-    <div
+    <div style={{ height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      <div
       style={{
         background: 'var(--color-surface)',
         border: '1px solid var(--color-border-thin)',
@@ -229,7 +230,7 @@ export function TemplatesPage() {
         display: 'flex',
         flexDirection: 'column',
         // 高度跟随父容器 · 父级是模板页面区域
-        minHeight: 480,
+        height: '100%',
       }}
     >
       {/* 顶部工具栏 */}
@@ -503,6 +504,7 @@ export function TemplatesPage() {
             flex: 1,
             display: 'grid',
             gridTemplateColumns: '260px 1fr',
+            gridTemplateRows: '1fr',
             minHeight: 0,
           }}
         >
@@ -687,5 +689,6 @@ export function TemplatesPage() {
         </div>
       )}
     </div>
+      </div>
   )
 }
