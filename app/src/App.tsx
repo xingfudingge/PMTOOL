@@ -25,6 +25,8 @@ import { KnowledgePage } from './pages/KnowledgePage'
 import { TemplatesPage } from './pages/TemplatesPage'
 import { AIPage } from './pages/AIPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { SettingsProvider } from './state/SettingsProvider'
+import { AutomationProvider } from './state/AutomationProvider'
 
 export type PageId =
   | 'home'
@@ -117,6 +119,8 @@ function App() {
 
   return (
     <LicenseGuard>
+      <SettingsProvider>
+      <AutomationProvider>
       <ReportGenProvider>
         <Layout
           currentPage={currentPage === 'projectDetail' ? 'projects' : currentPage}
@@ -127,6 +131,8 @@ function App() {
         {/* 全局报告覆盖确认弹窗 · 主页 + 报告中心共用 */}
         <RegenConfirmModal />
       </ReportGenProvider>
+      </AutomationProvider>
+      </SettingsProvider>
       <Toaster />
     </LicenseGuard>
   )

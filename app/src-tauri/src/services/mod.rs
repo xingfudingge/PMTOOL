@@ -12,5 +12,6 @@ pub mod device_fingerprint;
 pub mod file_browser;
 pub mod file_storage;
 pub mod file_storage_local;
+pub mod data_maintenance;
 pub mod license;
 pub mod trial;

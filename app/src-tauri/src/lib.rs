@@ -39,6 +39,8 @@ pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
     /// 文件存储 Provider（Phase 4 T4.9）
     pub file_storage: BoxedProvider,
+    /// 应用数据目录 app_data_dir（设置中心「数据」分区用）
+    pub data_dir: std::path::PathBuf,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -47,25 +49,31 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // 获取应用数据目录（RFC-03 §2：使用 OS 应用数据目录）
-            let app_data_dir = app
+            let default_data_dir = app
                 .path()
                 .app_data_dir()
                 .expect("无法获取 app_data_dir");
 
+            // 数据目录支持覆盖（设置中心「数据目录自定义」· 读 <默认目录>/data_root.override）
+            let override_file = default_data_dir.join("data_root.override");
+            let data_dir = services::data_maintenance::read_data_root_override(&override_file)
+                .unwrap_or_else(|| default_data_dir.clone());
+
             // 初始化数据库（建库 + migration）
-            let pool = db::init(&app_data_dir)
+            let pool = db::init(&data_dir)
                 .map_err(|e| format!("DB init failed: {}", e))?;
 
             // 初始化文件存储 Provider（Phase 4 T4.9）
             let file_storage: BoxedProvider =
                 Arc::new(services::file_storage_local::LocalFileStorageProvider::new(
-                    app_data_dir.join("PMToolData"),
+                    data_dir.join("PMToolData"),
                 ));
 
             // 注册应用状态
             app.manage(AppState {
                 db: pool,
                 file_storage,
+                data_dir: data_dir.clone(),
             });
 
             Ok(())
@@ -186,6 +194,21 @@ pub fn run() {
             // 模板中心 commands（维护者 2026-09-09 · 全局模板目录绑定）
             commands::template_directory::get_template_directory,
             commands::template_directory::set_template_directory,
+            // 设置中心 commands（维护者 2026-09-09 · 应用设置持久化 + 数据目录）
+            commands::settings::get_all_settings,
+            commands::settings::get_setting,
+            commands::settings::set_setting,
+            commands::settings::get_data_dir,
+            // 数据维护 commands（维护者 2026-09-09 · 备份/还原/数据目录迁移）
+            commands::backup::backup_data,
+            commands::backup::restore_data,
+            commands::backup::set_data_root,
+            commands::backup::get_backup_location,
+            commands::backup::set_backup_location,
+            commands::backup::list_backups,
+            commands::backup::reveal_path,
+            // 工作日同步（维护者 2026-09-09 · 节假日源同步）
+            commands::holidays::sync_holidays,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -241,3 +241,11 @@ body {
   color: var(--color-text);
   transition: background-color 0.15s ease, color 0.15s ease;
 }
+
+/* 设置中心 · 通用按钮/控件（维护者 2026-09-09） */
+.pm-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;font-size:12px;color:var(--color-text);background:var(--color-bg);border:1px solid var(--color-border);border-radius:4px;cursor:pointer;}
+.pm-btn:hover{background:var(--color-bg-hover);}
+.pm-btn-danger{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;font-size:12px;color:#dc2626;background:transparent;border:1px solid var(--color-border-thin);border-radius:4px;cursor:pointer;}
+.pm-time{padding:4px 8px;font-size:13px;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);color:var(--color-text);}
+.pms-msg{padding:8px 12px;margin:10px 0;font-size:12px;color:var(--color-text-secondary);background:var(--color-bg-subtle);border-radius:6px;border:1px solid var(--color-border-thin);}
+.pms-row{display:flex;align-items:center;gap:10px;}

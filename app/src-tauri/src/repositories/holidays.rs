@@ -59,3 +59,21 @@ pub fn list_all(conn: &Connection) -> rusqlite::Result<Vec<HolidayEntry>> {
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(entries)
 }
+
+/// 批量 upsert 节假日（date 为主键，存在则更新 name/type/is_workday/source）
+pub fn upsert_many(conn: &Connection, items: &[HolidayEntry]) -> rusqlite::Result<usize> {
+    let mut stmt = conn.prepare(
+        "INSERT INTO holidays (date, name, type, is_workday, source) VALUES (?1, ?2, ?3, ?4, ?5) \
+         ON CONFLICT(date) DO UPDATE SET \
+           name = excluded.name, type = excluded.type, is_workday = excluded.is_workday, source = excluded.source",
+    )?;
+    for it in items {
+        stmt.execute(params![&it.date, &it.name, &it.r#type, it.is_workday, &it.source])?;
+    }
+    Ok(items.len())
+}
+
+/// 清空某来源的旧数据（重新同步前先清，避免跨年重复）
+pub fn delete_by_source(conn: &Connection, source: &str) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM holidays WHERE source = ?1", params![source])
+}

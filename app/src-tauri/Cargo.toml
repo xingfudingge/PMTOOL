@@ -19,7 +19,7 @@ tempfile = "3"
 [dependencies]
 tauri = { version = "2.0", features = [] }
 tauri-plugin-shell = "2.0"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -48,6 +48,9 @@ regex = "1.10"
 
 # 剪贴板写入（复制设备唯一值）
 arboard = "3.4"
+
+# 工作日同步（节假日 API 拉取）
+ureq = { version = "2", features = ["json"] }
 
 [features]
 # 默认 features

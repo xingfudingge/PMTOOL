@@ -22,6 +22,7 @@ pub mod knowledge_folders;
 pub mod knowledge_spaces;
 pub mod project_knowledge_bindings;
 pub mod template_config;
+pub mod app_settings;
 
 // re-export 常用 struct · service / command 层直接 use repositories::ProjectMember
 pub use project_members::ProjectMember;

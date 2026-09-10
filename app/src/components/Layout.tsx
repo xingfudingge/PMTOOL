@@ -18,6 +18,7 @@ import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { ToastHost } from './Toast'
 import { useEditingMaximized, clearEditingMaximizedOnBoot } from './DocumentEditor/editingMaximized'
+import { useSettings } from '@/state/SettingsProvider'
 import type { PageId } from '../App'
 
 interface LayoutProps {
@@ -26,19 +27,9 @@ interface LayoutProps {
   children: ReactNode
 }
 
-type ThemeMode = 'light' | 'dark'
-
-function getInitialTheme(): ThemeMode {
-  if (typeof window === 'undefined') return 'light'
-  const saved = window.localStorage.getItem('pmtool.theme')
-  if (saved === 'light' || saved === 'dark') return saved
-  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
-  return 'light'
-}
-
 export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
+  const { resolvedTheme, save } = useSettings()
   // 维护者 2026-08-31：编辑区最大化 → 整窗 chrome（顶栏 / 侧栏 / 底栏）全折叠
   const editingMaximized = useEditingMaximized()
 
@@ -48,11 +39,6 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
     clearEditingMaximizedOnBoot()
   }, [])
 
-  // 同步 data-theme 到 <html>
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    window.localStorage.setItem('pmtool.theme', theme)
-  }, [theme])
 
   // ⌘\\ 折叠侧栏
   useEffect(() => {
@@ -63,12 +49,12 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
         e.preventDefault()
-        setTheme((t) => (t === 'light' ? 'dark' : 'light'))
+        save('theme', resolvedTheme === 'dark' ? 'light' : 'dark')
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [resolvedTheme, save])
 
   return (
     <div
@@ -91,8 +77,8 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
       >
         <TopBar
           currentPage={currentPage}
-          theme={theme}
-          onToggleTheme={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+          theme={resolvedTheme}
+          onToggleTheme={() => save('theme', resolvedTheme === 'dark' ? 'light' : 'dark')}
         />
       </div>
       <div
