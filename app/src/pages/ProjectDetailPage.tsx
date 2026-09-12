@@ -61,6 +61,7 @@ import {
 } from '@/services/projectDetail'
 import { updateProject } from '@/services/project'
 import {
+  listProjectIssues,
   createProjectIssue,
   deleteProjectIssue,
   updateProjectIssue,
@@ -84,6 +85,10 @@ import { parseRisksExcel, exportRisksToExcel } from '@/services/excelRisks'
 import { parseWeeklyExcel, exportWeeklyToExcel } from '@/services/excelWeekly'
 import { parseMembersExcel, exportMembersToExcel } from '@/services/excelMembers'
 import { parseProjectsExcel, exportProjectsToExcel } from '@/services/excelProjects'
+import { exportWholeProjectExcel } from '@/services/excelProjectTemplate'
+import { listProjectRequirements } from '@/services/projectRequirements'
+import { listProjectIssueLog } from '@/services/projectIssueLog'
+import { listProjectTodoItems } from '@/services/projectTodoItems'
 import { toast } from '@/components/Toast'
 import { RegistersSection } from '@/components/RegistersSection'
 import { InlineEditableCell } from '@/components/InlineEditableCell'
@@ -1335,6 +1340,42 @@ function GanttTab({
     }
   }
 
+  /** 顶部工具栏 · 导出整个项目模板（甘特/各登记册/周报/成员/节假日） */
+  const handleExportWholeProject = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const [reqs, issLog, todos, risks, week] = await Promise.all([
+        listProjectRequirements(projectId),
+        listProjectIssueLog(projectId),
+        listProjectTodoItems(projectId),
+        listProjectIssues(projectId),
+        listWeeklyEntries(projectId),
+      ])
+      await defaultHolidayProvider.load()
+      const blob = await exportWholeProjectExcel({
+        tasks: data.tasks,
+        risks,
+        requirements: reqs,
+        issues: issLog,
+        todos,
+        weeklyEntries: week,
+        holidays: defaultHolidayProvider.list(),
+      })
+      const ts = formatLocalDate(new Date())
+      const filename = `${data.project.project_name || projectId}-整项目模板-${ts}.xlsx`
+      const ok = await saveBlobToDirectory(blob, filename)
+      if (ok) toast.success('已导出整个项目模板', `文件名：${filename}`)
+      else toast.error('导出失败', '导出已取消或写入失败')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      toast.error('导出失败', msg)
+      setError(msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** 顶部工具栏 · 触发隐藏 file input */
   const handleImportClick = () => {
     fileInputRef.current?.click()
@@ -1420,6 +1461,17 @@ function GanttTab({
           >
             <Download size={11} />
             导出 Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportWholeProject()}
+            disabled={busy}
+            data-testid="export-whole-project"
+            style={ghostBtnStyle}
+            title="导出整个项目模板（甘特/各登记册/周报/成员/节假日）"
+          >
+            <Download size={11} />
+            导出整个项目
           </button>
           {/* 全屏最大化 / 还原 · 放工具栏最末尾 */}
           <button

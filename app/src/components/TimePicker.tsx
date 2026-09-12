@@ -91,8 +91,10 @@ export function TimePicker({
           className="pm-time"
           style={{ width, textAlign: 'center', cursor: 'pointer' }}
           value={value}
-          readOnly
+          placeholder="HH:mm"
+          onChange={(e) => { setOpen(false); onChange(e.target.value) }}
           onClick={handleOpen}
+          onBlur={() => setOpen(false)}
           onKeyDown={(e) => e.key === 'Enter' && handleOpen()}
           aria-label="选择时间"
         />

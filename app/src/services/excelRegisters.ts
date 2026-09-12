@@ -191,6 +191,9 @@ function issStatusFromCN(v: unknown): string {
   if (s === '处理中' || s === 'in_progress' || s === 'inprogress') return 'IN_PROGRESS'
   if (s === '已解决' || s === 'resolved') return 'RESOLVED'
   if (s === '已关闭' || s === 'closed') return 'CLOSED'
+  // 兼容「是否已处理」列：是/已/已完成 → 已关闭，否/未 → 待处理
+  if (['是', '已', '已完成', '已处理'].includes(s)) return 'CLOSED'
+  if (['否', '未'].includes(s)) return 'OPEN'
   return 'OPEN'
 }
 
@@ -217,7 +220,7 @@ export async function parseIssueLogExcel(file: File, projectId: number): Promise
   const cHandler = findCol(headerMap, ['问题处理人', '处理人'])
   const cProgress = findCol(headerMap, ['当前处理进度', '处理进度'])
   const cActual = findCol(headerMap, ['实际处理时间'])
-  const cStatus = findCol(headerMap, ['问题状态'])
+  const cStatus = findCol(headerMap, ['问题状态', '是否已处理', '是否处理'])
   const cSeq = findCol(headerMap, ['序号'])
   const out: ProjectIssueLog[] = []
   for (let r = hr; r <= range.e.r; r++) {
@@ -250,14 +253,14 @@ export async function exportIssueLogToExcel(items: ProjectIssueLog[]): Promise<B
     序号: x.id ? x.id : '',
     问题描述: x.title,
     提出人: x.proposer ?? '',
-    '涉及系统及模块（参考需规）': x.module ?? '',
+    '涉及系统及模块(参考需规)': x.module ?? '',
     发现时间: x.discovered_at ?? '',
     计划解决时间: x.plan_date ?? '',
     计划解决方案: x.plan_solution ?? '',
     问题处理人: x.handler ?? '',
     当前处理进度说明: x.progress_note ?? '',
     实际处理时间: x.actual_date ?? '',
-    问题状态: issStatusToCN(x.status),
+    是否已处理: x.status === 'RESOLVED' || x.status === 'CLOSED' ? '是' : '否',
   }))
   return toBook(rows, ISSUE_SHEET)
 }
@@ -266,7 +269,7 @@ export async function exportIssueLogToExcel(items: ProjectIssueLog[]): Promise<B
 // 其他待办事项
 // ============================================================
 
-const TODO_SHEET = '其他待办事项'
+const TODO_SHEET = '其他代办事项'
 
 function todoStatusFromCN(v: unknown): string {
   const t = toStr(v)
@@ -328,11 +331,10 @@ export async function exportTodoItemsToExcel(items: ProjectTodoItem[]): Promise<
   const rows = items.map((x) => ({
     编号: x.id ? x.id : '',
     代办事项说明: x.content,
-    '涉及人员（软件）': x.related_people ?? '',
+    '涉及人员（厂商）': x.related_people ?? '',
     计划完成时间: x.plan_date ?? '',
     当前完成情况说明: x.completion_note ?? '',
     实际完成时间: x.actual_date ?? '',
-    任务状态: todoStatusToCN(x.status),
     备注: x.remark ?? '',
   }))
   return toBook(rows, TODO_SHEET)

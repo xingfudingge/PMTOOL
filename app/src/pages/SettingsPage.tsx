@@ -757,7 +757,7 @@ function WorkdaySection() {
 function AutomationSection() {
   const { get, save } = useSettings()
   const timeField = (key: string) => (
-    <TimePicker value={get(key) ?? '09:00'} onChange={(v) => saveSchedule(key, v)} testid={`${key}-picker`} />
+    <TimePicker value={get(key) ?? '09:00'} onChange={(v) => saveSchedule(key, v)} testid={`${key}-picker`} minuteStep={1} />
   )
   const toggleField = (key: string) => <Toggle checked={get(key) === '1'} onChange={(v) => save(key, v ? '1' : '0')} />
   // 变更调度配置（周几/几号/时间/顺延）时，清掉该任务的 lastRun/ignored。

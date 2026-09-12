@@ -339,7 +339,52 @@ export async function exportProjectsToExcel(
     })
   })
 
-  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  // 甘特条形填充：任务行 (START_ROW + i) 对应 tasks[i] · 模板日列从 col 9 起（row3 为逐日日期）
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+  const GANTT_COL_BASE = 9
+  // 模板启动日期 = row1 单元格 B2 的序列值（日列锚点）
+  const anchorCell = ws[XLSX.utils.encode_cell({ r: 1, c: 1 })]
+  const anchorSerial = typeof anchorCell?.v === 'number' ? anchorCell.v : null
+  const anchorDate = anchorSerial ? new Date(Math.round((anchorSerial - 25569) * 86400 * 1000)) : null
+  const dayColFor = (dateStr: string | null): number | null => {
+    if (!anchorDate || !dateStr) return null
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return null
+    const diff = Math.round((d.getTime() - anchorDate.getTime()) / 86400000)
+    return GANTT_COL_BASE + diff
+  }
+  const inferStatus = (t: ProjectTask): ProjectTask['status'] => {
+    if (t.progress >= 100) return 'COMPLETED'
+    if (t.status === 'DELAYED') return 'DELAYED'
+    if (t.progress > 0) return 'IN_PROGRESS'
+    return 'PENDING'
+  }
+  const STATUS_HEX: Record<ProjectTask['status'], string> = {
+    PENDING: 'BFBFBF', IN_PROGRESS: '1677FF', DELAYED: 'FF4D4F', COMPLETED: '52C41A',
+  }
+  const STATUSH_HEX: Record<ProjectTask['status'], string> = {
+    PENDING: 'E6E6E6', IN_PROGRESS: 'D6EBFF', DELAYED: 'FFD6D6', COMPLETED: 'D5F2D5',
+  }
+  tasks.forEach((t, i) => {
+    const r = START_ROW + i
+    const s = dayColFor(t.start_date)
+    const e = dayColFor(t.end_date)
+    if (s === null || e === null || s > e) return
+    if (s > range.e.c) return
+    const status = inferStatus(t)
+    const span = e - s + 1
+    const progCells = Math.max(1, Math.round(span * Math.min(100, Math.max(0, t.progress)) / 100))
+    const fullCol = Math.min(s + progCells, e + 1)
+    for (let c = s; c <= e && c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c })
+      const style = c < fullCol
+        ? { patternType: 'solid', fgColor: { rgb: STATUS_HEX[status] } }
+        : { patternType: 'solid', fgColor: { rgb: STATUSH_HEX[status] } }
+      ws[addr] = { v: '', t: 's', s: { fill: style } }
+    }
+  })
+
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true })
   return new Blob([buf], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })

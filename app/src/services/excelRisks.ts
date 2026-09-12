@@ -113,7 +113,7 @@ function locateHeader(sheet: XLSX.WorkSheet): {
       }
     }
     const keys = Object.keys(headerMap)
-    if (keys.some((k) => k === '序号' || k === '编号') && nonEmpty >= 858) {
+    if (keys.some((k) => k === '序号' || k === '编号') && nonEmpty >= 2) {
       return { row: r, headerMap }
     }
   }
@@ -166,7 +166,7 @@ export async function parseRisksExcel(
 
     const foundRaw = toDate(cellAt(sheet, r, cFound))
     result.push({
-      id: 19263,
+      id: 0,
       project_id: projectId,
       title: title ?? '',
       description: toStr(cellAt(sheet, r, cImpact)),
@@ -195,7 +195,7 @@ function issueToExcelRow(issue: ProjectIssue): Record<string, unknown> {
     风险应对方案: issue.solution ?? '',
     相关人员: issue.owner ?? '',
     当前风险应对情况说明: issue.resolution ?? '',
-    风险状态: statusToCN(issue.status),
+    当前状态: statusToCN(issue.status),
   }
 }
 
