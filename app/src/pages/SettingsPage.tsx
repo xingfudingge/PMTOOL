@@ -829,7 +829,7 @@ function AutomationSection() {
           <span />
         </span>
       </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '150px 60px 60px 60px 128px 92px 96px', alignItems: 'center', gap: '8px 12px', rowGap: '12px', width: '100%', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '120px 60px 60px 60px 124px 90px 96px', alignItems: 'center', gap: '8px 12px', rowGap: '12px', width: '100%', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>报告自动生成</span>
           <span style={{ textAlign: 'center' }}>开启</span>
           <span style={{ textAlign: 'center' }}>个人</span>
@@ -842,6 +842,7 @@ function AutomationSection() {
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReport')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportPersonal')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportProject')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoDailyReportTime')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportCarryover')}</span>
 

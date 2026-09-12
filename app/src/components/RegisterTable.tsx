@@ -34,7 +34,6 @@ interface RegisterTableProps<R> {
   onCommit: (item: R, next: Partial<R>) => void
   onDelete: (item: R) => void
   onExport: () => Promise<void>
-  onImportClick: () => void
   onImportFile: (f: File) => void
   importPreview: { title: string; meta: string }[] | null
   existingCount: number
@@ -63,7 +62,7 @@ function useResizable<K extends string>() {
 
 export function RegisterTable<R>({
   title, icon: Icon, accent, addLabel, emptyText, columns, items, draft, saving, error,
-  onAdd, onCommit, onDelete, onExport, onImportClick, onImportFile, importPreview, existingCount,
+  onAdd, onCommit, onDelete, onExport, onImportFile, importPreview, existingCount,
   onImportAppend, onImportReplace, onImportCancel, rowText,
 }: RegisterTableProps<R>) {
   const [maximized, setMaximized] = useState(false)
@@ -78,7 +77,7 @@ export function RegisterTable<R>({
         <h3 style={titleStyle}>{title} · {items.length} 条</h3>
         <div style={barRightStyle}>
           <button type="button" style={ghostBtnStyle} onClick={() => void onExport()} data-testid={title + '-export'}><Download size={11} /> 导出</button>
-          <button type="button" style={ghostBtnStyle} onClick={onImportClick} data-testid={title + '-import'}><Upload size={11} /> 导入</button>
+          <button type="button" style={ghostBtnStyle} onClick={() => fileInputRef.current?.click()} data-testid={title + '-import'}><Upload size={11} /> 导入</button>
           <button type="button" style={{ ...accentBtnStyle, background: 'var(--color-accent)' }} onClick={onAdd} disabled={saving} data-testid={title + '-add'}><Plus size={11} /> {addLabel}</button>
           <button type="button" style={ghostBtnStyle} onClick={() => setMaximized((m) => !m)} title={maximized ? '还原' : '全屏最大化'}>{maximized ? <Minimize size={11} /> : <Maximize size={11} />}{maximized ? '还原' : '最大化'}</button>
         </div>

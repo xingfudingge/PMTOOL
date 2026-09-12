@@ -228,7 +228,7 @@ function RequirementRegister({ projectId }: { projectId: number }) {
     { key: 'proposer', label: '提出人', width: 463, type: 'text', placeholder: '提出人' },
     { key: 'status', label: '需求响应状态', width: 197, type: 'select', options: ['PENDING', 'EVALUATING', 'CONFIRMED', 'IMPLEMENTED', 'REJECTED'], optionLabels: REQ_STATUS },
   ]
-  return <RegisterTable title="需求登记册" icon={ClipboardList} accent="var(--color-accent)" addLabel="登记需求" emptyText="该项目暂无需求 · 点 [登记需求] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportClick={() => r.fileInputRef.current?.click()} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
+  return <RegisterTable title="需求登记册" icon={ClipboardList} accent="var(--color-accent)" addLabel="登记需求" emptyText="该项目暂无需求 · 点 [登记需求] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
 }
 
 function IssueLogRegister({ projectId }: { projectId: number }) {
@@ -257,7 +257,7 @@ function IssueLogRegister({ projectId }: { projectId: number }) {
     { key: 'actual_date', label: '实际处理时间', width: 191, type: 'date' },
     { key: 'status', label: '问题状态', width: 778, type: 'select', options: ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'], optionLabels: ISSUE_STATUS },
   ]
-  return <RegisterTable title="问题登记册" icon={FileQuestion} accent="var(--color-accent)" addLabel="登记问题" emptyText="该项目暂无问题 · 点 [登记问题] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportClick={() => r.fileInputRef.current?.click()} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
+  return <RegisterTable title="问题登记册" icon={FileQuestion} accent="var(--color-accent)" addLabel="登记问题" emptyText="该项目暂无问题 · 点 [登记问题] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
 }
 
 function TodoItemRegister({ projectId }: { projectId: number }) {
@@ -283,7 +283,7 @@ function TodoItemRegister({ projectId }: { projectId: number }) {
     { key: 'status', label: '任务状态', width: 660, type: 'select', options: ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'DELAYED'], optionLabels: TODO_STATUS },
     { key: 'remark', label: '备注', width: 153, type: 'text', placeholder: '备注' },
   ]
-  return <RegisterTable title="其他待办事项" icon={ListTodo} accent="var(--color-accent)" addLabel="登记任务" emptyText="该项目暂无待办事项 · 点 [登记任务] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportClick={() => r.fileInputRef.current?.click()} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
+  return <RegisterTable title="其他待办事项" icon={ListTodo} accent="var(--color-accent)" addLabel="登记任务" emptyText="该项目暂无待办事项 · 点 [登记任务] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
 }
 function RiskRegister({ projectId }: { projectId: number }) {
   const api: RegisterApi<ProjectIssue> = {
@@ -309,5 +309,5 @@ function RiskRegister({ projectId }: { projectId: number }) {
     { key: 'resolution', label: '当前风险应对情况说明', width: 460, type: 'multiline', placeholder: '当前应对情况' },
     { key: 'status', label: '风险状态', width: 523, type: 'select', options: ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'], optionLabels: RISK_STATUS },
   ]
-  return <RegisterTable title="项目风险登记册" icon={AlertOctagon} accent="var(--color-status-danger)" addLabel="登记风险" emptyText="该项目暂无风险 · 点 [登记风险] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportClick={() => r.fileInputRef.current?.click()} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
+  return <RegisterTable title="项目风险登记册" icon={AlertOctagon} accent="var(--color-status-danger)" addLabel="登记风险" emptyText="该项目暂无风险 · 点 [登记风险] 或 [导入] 从 Excel 加载" columns={columns} items={r.items} draft={r.draft} saving={r.saving} error={r.error} onAdd={r.handleAdd} onCommit={r.handleCommit} onDelete={r.handleDelete} onExport={r.handleExport} onImportFile={r.handleImportFile} importPreview={r.importPreview} existingCount={r.items.length} onImportAppend={r.handleImportAppend} onImportReplace={r.handleImportReplace} onImportCancel={r.onImportCancel} rowText={r.rowText} />
 }
