@@ -238,6 +238,7 @@ function DataSection() {
   const { get, save } = useSettings()
   const [dirs, setDirs] = useState<[string, string] | null>(null)
   const [backupDir, setBackupDir] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [backups, setBackups] = useState<BackupItem[]>([])
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -266,6 +267,9 @@ function DataSection() {
   }
   const doDeleteBackup = async (name: string) => {
     if (!backupDir) return
+    // 二次确认：第一次点击仅进入待确认态，第二次才真正删除
+    if (confirmDelete !== name) { setConfirmDelete(name); return }
+    setConfirmDelete(null)
     setBusy(true)
     try {
       await deleteBackup(backupDir, name)
@@ -307,7 +311,15 @@ function DataSection() {
                 <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{b.name}</span>
                 <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button type="button" className="pm-btn" onClick={() => doRestore(b.name)}>从备份还原</button>
-                  <button type="button" className="pm-btn-danger" onClick={() => doDeleteBackup(b.name)}>删除</button>
+                  {confirmDelete === b.name ? (
+                    <>
+                      <span style={{ fontSize: 12, color: 'var(--color-status-danger)' }}>确认删除？</span>
+                      <button type="button" className="pm-btn-danger" onClick={() => doDeleteBackup(b.name)}>确认</button>
+                      <button type="button" className="pm-btn" onClick={() => setConfirmDelete(null)}>取消</button>
+                    </>
+                  ) : (
+                    <button type="button" className="pm-btn-danger" onClick={() => doDeleteBackup(b.name)}>删除</button>
+                  )}
                 </span>
               </span>
             ))}

@@ -202,45 +202,84 @@ function parseSection(
     'week_number' | 'week_start_date' | 'week_end_date' | 'id' | 'project_id' | 'created_at' | 'updated_at' | 'sort_order'
   >[] = []
 
-  // 跳过 section title 行 → 找主表头行（序号） → 找 sub-header 行（甲方/乙方）→ 开始读任务
-  let r = startRowIdx + 1
-  // 跳主表头
-  while (r < rows.length && rowStringAt(rows[r], COL.serial) !== HEADER_MARKER) {
-    r++
+  // 找主表头行（col0 = 序号）· 忽略 section title 行
+  let headerRow = -1
+  for (let r = startRowIdx + 1; r < rows.length; r++) {
+    if (rowStringAt(rows[r], 0) === HEADER_MARKER) { headerRow = r; break }
   }
-  // 跳 sub-header（含 甲方）
-  if (r < rows.length) {
-    r++
-    while (
-      r < rows.length &&
-      rowStringAt(rows[r], COL.ownerPartyA) !== SUBHEADER_PARTY_A_MARKER
-    ) {
-      r++
-    }
-    if (r < rows.length) r++
-  }
+  if (headerRow === -1) return { entries, nextSectionRow: startRowIdx + 1 }
 
-  // 读取任务行，直到下一个 section title 或末尾
-  let sortOrder = 0
-  while (r < rows.length) {
-    const a = rowStringAt(rows[r], COL.serial)
-    if (
-      a === SECTION_CURRENT_TITLE ||
-      a === SECTION_NEXT_TITLE
-    ) {
+  // 从表头行动态定位列（兼容 8 列 / 10 列两种模板布局）
+  const head = rows[headerRow]
+  const findHeader = (needle: string): number => {
+    for (let c = 0; c < head.length; c++) {
+      const v = toStr(head[c])
+      if (v && v.includes(needle)) return c
+    }
+    return -1
+  }
+  const cSerial = findHeader('序号')
+  const cTask = findHeader('任务')
+  const cActualStart = findHeader('实际开始')
+  const cActualEnd = findHeader('实际完成')
+  const cPlanStart = findHeader('计划开始')
+  const cPlanEnd = findHeader('计划完成')
+  const cNote = findHeader('完成情况')
+  const cDone = findHeader('是否完成')
+
+  // 找 sub-header 行（甲方/乙方）· 动态定位列；找不到则回退到「主要负责人」列及其相邻列
+  let cPartyA = -1
+  let cPartyB = -1
+  for (let r = headerRow + 1; r < rows.length; r++) {
+    const row = rows[r]
+    for (let c = 0; c < row.length; c++) {
+      const v = toStr(row[c])
+      if (v === '甲方') cPartyA = c
+      else if (v === '乙方') cPartyB = c
+    }
+    if (cPartyA !== -1 || cPartyB !== -1) {
+      const subStartRow = r
+      void subStartRow
       break
     }
-    const taskName = rowStringAt(rows[r], COL.task)
+  }
+  if (cPartyA === -1) {
+    const base = findHeader('主要负责')
+    cPartyA = base >= 0 ? base : 4
+  }
+  if (cPartyB === -1) cPartyB = cPartyA >= 0 ? cPartyA + 1 : 5
+
+  // 读取任务行，直到下一个 section title 或末尾
+  let r = headerRow + 1
+  // 跳过 sub-header 行（含 甲方/乙方的行）
+  while (r < rows.length) {
+    const row = rows[r]
+    let isSub = false
+    for (let c = 0; c < row.length; c++) {
+      const v = toStr(row[c])
+      if (v === '甲方' || v === '乙方') { isSub = true; break }
+    }
+    if (!isSub) break
+    r++
+  }
+
+  const cell = (row: unknown[], c: number) => (c >= 0 && c < row.length ? row[c] : '')
+  let sortOrder = 0
+  while (r < rows.length) {
+    const a = rowStringAt(rows[r], 0)
+    if (a === SECTION_CURRENT_TITLE || a === SECTION_NEXT_TITLE) break
+
+    const taskName = cTask >= 0 ? rowStringAt(rows[r], cTask) : ''
     if (!taskName) {
       // 空行跳过（含模板里空白行）
       r++
       continue
     }
 
-    const planStart = excelSerialToLocalDate(getCell(rows[r], COL.planStart))
-    const planEnd = excelSerialToLocalDate(getCell(rows[r], COL.planEnd))
-    const actualStart = excelSerialToLocalDate(getCell(rows[r], COL.actualStart))
-    const actualEnd = excelSerialToLocalDate(getCell(rows[r], COL.actualEnd))
+    const actualStart = excelSerialToLocalDate(cell(rows[r], cActualStart))
+    const actualEnd = excelSerialToLocalDate(cell(rows[r], cActualEnd))
+    const planStart = excelSerialToLocalDate(cell(rows[r], cPlanStart))
+    const planEnd = excelSerialToLocalDate(cell(rows[r], cPlanEnd))
 
     entries.push({
       task_name: taskName,
@@ -248,10 +287,10 @@ function parseSection(
       plan_end_date: planEnd,
       actual_start_date: actualStart,
       actual_end_date: actualEnd,
-      owner_party_a: toStr(getCell(rows[r], COL.ownerPartyA)),
-      owner_party_b: toStr(getCell(rows[r], COL.ownerPartyB)),
-      completion_note: toStr(getCell(rows[r], COL.completionNote)),
-      is_completed: mapIsCompleted(getCell(rows[r], COL.isCompleted)),
+      owner_party_a: cPartyA >= 0 ? toStr(cell(rows[r], cPartyA)) : null,
+      owner_party_b: cPartyB >= 0 ? toStr(cell(rows[r], cPartyB)) : null,
+      completion_note: cNote >= 0 ? toStr(cell(rows[r], cNote)) : null,
+      is_completed: cDone >= 0 ? mapIsCompleted(cell(rows[r], cDone)) : 'PENDING',
       section,
     })
     sortOrder++
