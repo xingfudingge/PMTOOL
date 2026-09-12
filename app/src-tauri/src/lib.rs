@@ -221,6 +221,7 @@ pub fn run() {
             commands::backup::set_backup_location,
             commands::backup::list_backups,
             commands::backup::reveal_path,
+            commands::backup::delete_backup,
             // 工作日同步（维护者 2026-09-09 · 节假日源同步）
             commands::holidays::sync_holidays,
             commands::holidays::clear_holidays,

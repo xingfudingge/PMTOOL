@@ -26,7 +26,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { LicenseStatus, ActivateLicenseResult } from '@/types/license'
 import { useSettings, SETTING_KEYS } from '@/state/SettingsProvider'
-import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, setBackupLocation, setDataRoot, revealPath, syncHolidays, clearHolidays, type BackupItem } from '@/services/settings'
+import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, setBackupLocation, setDataRoot, revealPath, syncHolidays, clearHolidays, deleteBackup, type BackupItem } from '@/services/settings'
 import { pickProjectDirectory } from '@/services/projectFiles'
 import { TimePicker } from '@/components/TimePicker'
 
@@ -264,6 +264,16 @@ function DataSection() {
     catch (e) { setMsg('还原失败：' + String(e)) }
     finally { setBusy(false) }
   }
+  const doDeleteBackup = async (name: string) => {
+    if (!backupDir) return
+    setBusy(true)
+    try {
+      await deleteBackup(backupDir, name)
+      setMsg('已删除备份：' + name)
+      await loadBackups(backupDir)
+    } catch (e) { setMsg('删除失败：' + String(e)) }
+    finally { setBusy(false) }
+  }
   return (
     <>
       <SectionHeader title="数据" desc="存储位置 · 备份恢复" />
@@ -288,14 +298,17 @@ function DataSection() {
           <button type="button" className="pm-btn" disabled={busy} onClick={doBackup}>立即备份</button>
         </span>
       </Field>
-      {msg && <div className="pms-msg">{msg}</div>}
+      {msg && <div className={/重启|还原|迁移/.test(msg) ? 'pms-msg-warn' : 'pms-msg'}>{msg}</div>}
       {backups.length > 0 && (
         <Field label="备份列表">
           <div>
             {backups.map((b) => (
               <span key={b.name} className="pms-row" style={{ justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border-thin)' }}>
-                <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{b.name} · {b.size} B</span>
-                <button type="button" className="pm-btn-danger" onClick={() => doRestore(b.name)}>从备份还原</button>
+                <span style={{ fontSize: 12, color: 'var(--color-text)' }}>{b.name}</span>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button type="button" className="pm-btn" onClick={() => doRestore(b.name)}>从备份还原</button>
+                  <button type="button" className="pm-btn-danger" onClick={() => doDeleteBackup(b.name)}>删除</button>
+                </span>
               </span>
             ))}
           </div>

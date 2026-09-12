@@ -437,7 +437,7 @@ export async function exportWeeklyToExcel(
   })
 
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  XLSX.utils.book_append_sheet(wb, ws, '每周工作情况以及下周计划')
+  XLSX.utils.book_append_sheet(wb, ws, '每周工作情况以及和下周计划')
 
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
   return new Blob([buf], {

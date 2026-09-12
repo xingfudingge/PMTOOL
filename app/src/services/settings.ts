@@ -40,6 +40,11 @@ export async function restoreData(srcDir: string): Promise<string> {
   return await invoke<string>('restore_data', { srcDir })
 }
 
+/** 删除指定备份目录 */
+export async function deleteBackup(dir: string, name: string): Promise<boolean> {
+  return await invoke<boolean>('delete_backup', { dir, name })
+}
+
 /** 把当前数据目录切换到自选位置（需重启生效） */
 export async function setDataRoot(path: string): Promise<string> {
   return await invoke<string>('set_data_root', { path })

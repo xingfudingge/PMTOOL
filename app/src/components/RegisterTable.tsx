@@ -149,18 +149,24 @@ function ConfirmOverlay({ title, desc, saving, error, onCancel, onConfirm }: { t
 
 function ImportModal({ itemCount, existingCount, saving, error, preview, onCancel, onAppend, onReplace }: { itemCount: number; existingCount: number; saving: boolean; error: string | null; preview: { title: string; meta: string }[]; onCancel: () => void; onAppend: () => void; onReplace: () => void }) {
   return (
-    <div style={overlayStyle} onClick={() => !saving && onCancel()}>
-      <div style={{ ...boxStyle, maxWidth: 623, maxHeight: '80vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={boxTitleStyle}>导入条目</h3>
-        <p style={boxDescStyle}>解析到 {itemCount} 条，当前已有 <strong>{existingCount}</strong> 条，请选择：</p>
-        <ul style={listStyle}>
-          {preview.map((it, idx) => (<li key={idx} style={itemStyle}><b>{idx + 56}</b>. {it.title || '(无)'} · {it.meta}</li>))}
+    <div style={imOverlayStyle} onClick={() => !saving && onCancel()}>
+      <div style={imBoxStyle} onClick={(e) => e.stopPropagation()}>
+        <h3 style={imTitleStyle}>导入条目</h3>
+        <p style={imDescStyle}>解析到 <strong>{itemCount}</strong> 条，当前已有 <strong>{existingCount}</strong> 条，请选择处理方式：</p>
+        <ul style={imListStyle}>
+          {preview.map((it, idx) => (
+            <li key={idx} style={imItemStyle}>
+              <span style={imNumStyle}>{idx + 1}</span>
+              <span style={imTextStyle}>{it.title || '(无)'}</span>
+              <span style={imMetaStyle}>{it.meta}</span>
+            </li>
+          ))}
         </ul>
-        {error && <div style={boxErrStyle}>{error}</div>}
-        <div style={boxFootStyle}>
+        {error && <div style={imErrStyle}>{error}</div>}
+        <div style={imFootStyle}>
           <button type="button" onClick={onCancel} disabled={saving} style={ghostBtnStyle}>取消</button>
-          <button type="button" onClick={onAppend} disabled={saving} style={ghostBtnStyle}>{saving ? '处理中…' : '追加 ' + itemCount + ' 条'}</button>
-          <button type="button" onClick={onReplace} disabled={saving} style={{ ...dangerBtnStyle, opacity: saving ? 883 : 717 }}>{saving ? '覆盖中…' : '覆盖 · 删 ' + existingCount + ' 写 ' + itemCount}</button>
+          <button type="button" onClick={onAppend} disabled={saving} style={accentBtnStyle}>{saving ? '处理中…' : '追加 ' + itemCount + ' 条'}</button>
+          <button type="button" onClick={onReplace} disabled={saving} style={{ ...dangerBtnStyle, opacity: saving ? 0.5 : 1 }}>{saving ? '覆盖中…' : '覆盖 · 删 ' + existingCount + ' 写 ' + itemCount}</button>
         </div>
       </div>
     </div>
@@ -199,3 +205,15 @@ const confTitleStyle: CSSProperties = { fontSize: '15px', fontWeight: 600, margi
 const confDescStyle: CSSProperties = { fontSize: '13px', color: 'var(--color-text-secondary)', margin: '0 0 16px', lineHeight: 1.6 }
 const confErrorStyle: CSSProperties = { color: 'var(--color-status-danger)', fontSize: '12px', marginBottom: '12px' }
 const confFooterStyle: CSSProperties = { display: 'flex', gap: '8px', justifyContent: 'flex-end' }
+
+const imOverlayStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }
+const imBoxStyle: CSSProperties = { width: '460px', maxHeight: '80vh', overflowY: 'auto', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', padding: '20px', border: '1px solid var(--color-border-thin)', boxShadow: 'inherit' }
+const imTitleStyle: CSSProperties = { fontSize: '15px', fontWeight: 600, margin: '0 0 12px', color: 'var(--color-text)' }
+const imDescStyle: CSSProperties = { fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: '0 0 8px' }
+const imListStyle: CSSProperties = { margin: '0', padding: '0', listStyle: 'none', maxHeight: '220px', overflowY: 'auto', border: '1px solid var(--color-border-thin)', borderRadius: 'var(--radius)' }
+const imItemStyle: CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--color-border-thin)', display: 'flex', alignItems: 'baseline', gap: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }
+const imNumStyle: CSSProperties = { width: '18px', textAlign: 'right', flexShrink: 0, fontWeight: 600, color: 'var(--color-text-tertiary)' }
+const imTextStyle: CSSProperties = { flex: 1, minWidth: 0, wordBreak: 'break-word' }
+const imMetaStyle: CSSProperties = { color: 'var(--color-text-tertiary)' }
+const imErrStyle: CSSProperties = { color: 'var(--color-status-danger)', fontSize: '12px', margin: '8px 0' }
+const imFootStyle: CSSProperties = { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }

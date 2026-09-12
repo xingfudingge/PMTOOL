@@ -109,6 +109,18 @@ function excelSerialToLocalDate(value: unknown): string | null {
   return null
 }
 
+/**
+ * 本地 YYYY-MM-DD → Excel 日期序列数（整数，时区无关）
+ * 与 excelSerialToLocalDate 互逆：用 UTC 构造避免时区小数位。
+ * 计划启动/完成日期以序列数写入，模板 NETWORKDAYS 等公式才能正确计算。
+ */
+function localDateToExcelSerial(dateStr: string | null): number | null {
+  if (!dateStr) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr)
+  if (!m) return null
+  return (Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) - Date.UTC(1899, 11, 30)) / 86400000
+}
+
 /** 安全转 number（失败回 0）*/
 function toNumber(v: unknown): number {
   if (typeof v === 'number') return isFinite(v) ? v : 0
@@ -293,15 +305,15 @@ export async function parseProjectsExcel(
  */
 function projectTaskToExcelRow(task: ProjectTask): (string | number | null)[] {
   return [
-    task.id > 0 ? String(task.id) : '',     // A 序号
-    task.task_name,                          // B 任务
-    task.owner ?? '',                        // C 跟进人
-    task.start_date ?? '',                   // D 计划启动日期（驱动公式）
-    task.end_date ?? '',                     // E 计划完成日期（驱动公式）
+    task.id > 0 ? String(task.id) : '',        // A 序号
+    task.task_name,                            // B 任务
+    task.owner ?? '',                          // C 跟进人
+    localDateToExcelSerial(task.start_date) ?? '', // D 计划启动日期（序列数，驱动公式）
+    localDateToExcelSerial(task.end_date) ?? '',   // E 计划完成日期（序列数，驱动公式）
     // F 自然日工时（公式）· 不写
-    Math.round(task.progress),               // G 当前完成度%
+    Math.round(task.progress),                 // G 当前完成度%
     // H 工作日工时（公式）· 不写
-    task.remark ?? '',                       // I 任务完成情况说明（覆盖公式）
+    task.remark ?? '',                         // I 任务完成情况说明（覆盖公式）
   ]
 }
 
@@ -321,8 +333,8 @@ export async function exportProjectsToExcel(
     { col: 0, extract: (r) => r[0] as string }, // A 序号
     { col: 1, extract: (r) => r[1] as string }, // B 任务
     { col: 2, extract: (r) => r[2] as string }, // C 跟进人
-    { col: 3, extract: (r) => r[3] as string }, // D 计划启动日期
-    { col: 4, extract: (r) => r[4] as string }, // E 计划完成日期
+    { col: 3, extract: (r) => r[3] as string | number }, // D 计划启动日期（序列数）
+    { col: 4, extract: (r) => r[4] as string | number }, // E 计划完成日期（序列数）
     // F (5) = 公式列 · 跳过
     { col: 6, extract: (r) => r[5] as number }, // G 当前完成度%
     // H (7) = 公式列 · 跳过
@@ -383,6 +395,14 @@ export async function exportProjectsToExcel(
       ws[addr] = { v: '', t: 's', s: { fill: style } }
     }
   })
+
+  // 清除数据区以下模板遗留的默认行（空行/示例数据/残留条形）· 只删数据行，保留 0-4 表头
+  const LAST_TEMPLATE_ROW = 45 // 0-indexed 最后一行（即第 46 行）· 数据区写到 45 为止
+  for (let r = START_ROW + tasks.length; r < LAST_TEMPLATE_ROW; r++) {
+    for (let c = 0; c <= range.e.c; c++) {
+      delete ws[XLSX.utils.encode_cell({ r, c })]
+    }
+  }
 
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true })
   return new Blob([buf], {

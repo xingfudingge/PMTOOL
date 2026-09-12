@@ -21,6 +21,8 @@ import {
   Rows3,
   CircleDot,
 } from 'lucide-react'
+import { toast } from '@/components/Toast'
+import { exportProjectToFile } from '@/services/projectTemplateExport'
 import {
   listProjects,
   createProject,
@@ -130,6 +132,18 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
       await reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const handleExport = async (id: number, name: string) => {
+    try {
+      const ok = await exportProjectToFile(id, name)
+      if (ok) toast.success('已导出整个项目模板', name)
+      else toast.error('导出失败', '导出已取消或写入失败')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      toast.error('导出失败', msg)
+      setError(msg)
     }
   }
 
@@ -277,6 +291,7 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
         <CardGrid
           overviews={filteredOverviews}
           onOpenProject={onOpenProject}
+          onExport={handleExport}
           onDelete={requestDelete}
         />
       ) : (
@@ -310,10 +325,12 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
 function CardGrid({
   overviews,
   onOpenProject,
+  onExport,
   onDelete,
 }: {
   overviews: import('@/services/projectSummary').ProjectOverview[]
   onOpenProject?: (id: number) => void
+  onExport?: (id: number, name: string) => void
   onDelete?: (id: number) => void
 }) {
   if (overviews.length === 0) {
@@ -346,6 +363,7 @@ function CardGrid({
           overview={o}
           expanded={false}
           onToggleExpand={() => onOpenProject?.(o.project.id)}
+          onExport={() => onExport?.(o.project.id, o.project.project_name)}
           onDelete={() => onDelete?.(o.project.id)}
         />
       ))}

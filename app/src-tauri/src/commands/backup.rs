@@ -158,6 +158,16 @@ pub fn list_backups(state: State<'_, AppState>, dir: String) -> Result<Vec<Backu
     Ok(out)
 }
 
+/// 删除指定备份目录
+#[tauri::command]
+pub fn delete_backup(dir: String, name: String) -> Result<bool, String> {
+    let base = PathBuf::from(&dir);
+    let target = base.join(&name);
+    if !target.is_dir() { return Err(format!("备份不存在：{}", name)); }
+    std::fs::remove_dir_all(&target).map_err(|e| format!("删除备份失败：{}", e))?;
+    Ok(true)
+}
+
 /// 在系统文件管理器中打开一个路径（Finder / 资源管理器）
 #[tauri::command]
 pub fn reveal_path(path: String) -> Result<bool, String> {
