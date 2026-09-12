@@ -291,7 +291,6 @@ export function DocumentEditor(props: DocumentEditorProps) {
           folderId: noteMeta?.folderId ?? null,
           category: noteMeta?.category ?? null,
           sourceType: noteMeta?.sourceType ?? 'USER',
-          isAiGenerated: noteMeta?.isAiGenerated ?? false,
           createdBy: noteMeta?.createdBy ?? null,
           systemType: noteMeta?.systemType ?? 'USER',
         })

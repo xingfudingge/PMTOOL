@@ -106,12 +106,79 @@ export const projectIssues = sqliteTable(
     actualDate: text('actual_date'),
     discoveredAt: text('discovered_at'),
     solution: text('solution'),
+    resolution: text('resolution'), // 2026-09-11 补 · 风险登记册「当前风险应对情况说明」
     status: text('status').notNull().default('OPEN'), // OPEN/IN_PROGRESS/RESOLVED/CLOSED
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
   (t) => ({
     idxProject: index('idx_issue_project').on(t.projectId),
+  }),
+)
+
+/** 需求登记册（与 Excel 需求登记册 sheet 对齐 · 2026-09-11 补）*/
+export const projectRequirements = sqliteTable(
+  'project_requirements',
+  {
+    id: integer('id').primaryKey(),
+    projectId: integer('project_id').notNull(),
+    type: text('type').notNull().default('NEW'), // NEW/CHANGE/OPTIMIZE/OTHER
+    system: text('system'), // 归属系统
+    summary: text('summary').notNull(), // 需求简述（必填）
+    detail: text('detail'), // 需求详述
+    proposedAt: text('proposed_at'), // 提出时间
+    proposer: text('proposer'), // 提出人
+    status: text('status').notNull().default('PENDING'), // PENDING/EVALUATING/CONFIRMED/IMPLEMENTED/REJECTED
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => ({
+    idxProject: index('idx_req_project').on(t.projectId),
+  }),
+)
+
+/** 问题登记册（与 Excel 问题登记册 sheet 对齐 · 2026-09-11 补）*/
+export const projectIssueLog = sqliteTable(
+  'project_issue_log',
+  {
+    id: integer('id').primaryKey(),
+    projectId: integer('project_id').notNull(),
+    title: text('title').notNull(), // 问题描述（必填）
+    proposer: text('proposer'), // 提出人
+    module: text('module'), // 涉及系统及模块（参考需规）
+    discoveredAt: text('discovered_at'), // 发现时间
+    planDate: text('plan_date'), // 计划解决时间
+    planSolution: text('plan_solution'), // 计划解决方案
+    handler: text('handler'), // 问题处理人
+    progressNote: text('progress_note'), // 当前处理进度说明
+    actualDate: text('actual_date'), // 实际处理时间
+    status: text('status').notNull().default('OPEN'), // OPEN/IN_PROGRESS/RESOLVED/CLOSED
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => ({
+    idxProject: index('idx_issuelog_project').on(t.projectId),
+  }),
+)
+
+/** 其他待办事项（与 Excel 其他待办事项 sheet 对齐 · 2026-09-11 补）*/
+export const projectTodoItems = sqliteTable(
+  'project_todo_items',
+  {
+    id: integer('id').primaryKey(),
+    projectId: integer('project_id').notNull(),
+    content: text('content').notNull(), // 代办事项说明（必填）
+    relatedPeople: text('related_people'), // 涉及人员（软件）
+    planDate: text('plan_date'), // 计划完成时间
+    completionNote: text('completion_note'), // 当前完成情况说明
+    actualDate: text('actual_date'), // 实际完成时间
+    status: text('status').notNull().default('PENDING'), // PENDING/IN_PROGRESS/COMPLETED/DELAYED
+    remark: text('remark'), // 备注
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => ({
+    idxProject: index('idx_todoitem_project').on(t.projectId),
   }),
 )
 
@@ -167,8 +234,7 @@ export const knowledgeNotes = sqliteTable(
     contentType: text('content_type').notNull().default('MARKDOWN'), // MARKDOWN/TEXT/IMAGE/FILE/LINK
     folderId: integer('folder_id'), // 所属目录，指向 knowledge_folders.id
     category: text('category'),
-    sourceType: text('source_type').notNull().default('USER'), // USER/AI/IMPORT
-    isAiGenerated: integer('is_ai_generated').notNull().default(0),
+    sourceType: text('source_type').notNull().default('USER'), // USER/IMPORT
     createdBy: text('created_by'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
@@ -193,16 +259,6 @@ export const knowledgeNoteTags = sqliteTable('knowledge_note_tags', {
   tagId: integer('tag_id').notNull(),
 })
 
-/** AI 操作记录 */
-export const knowledgeAiRecords = sqliteTable('knowledge_ai_records', {
-  id: integer('id').primaryKey(),
-  noteId: integer('note_id').notNull(),
-  action: text('action').notNull(), // SUMMARY/REWRITE/EXTRACT/GENERATE
-  inputContent: text('input_content'),
-  outputContent: text('output_content'),
-  createdAt: text('created_at').notNull(),
-})
-
 // ============================================================
 // 6. 模板表
 // ============================================================
@@ -210,7 +266,7 @@ export const knowledgeAiRecords = sqliteTable('knowledge_ai_records', {
 export const templates = sqliteTable('templates', {
   id: integer('id').primaryKey(),
   name: text('name').notNull(),
-  type: text('type').notNull().default('BASE'), // BASE/AI
+  type: text('type').notNull().default('BASE'), // BASE
   category: text('category').notNull(), // DAILY_REPORT/WEEKLY_REPORT/MONTHLY_REPORT/PROJECT_DOC
   content: text('content').notNull(),
   isSystem: integer('is_system').notNull().default(0),
@@ -225,39 +281,6 @@ export const templateVariables = sqliteTable('template_variables', {
   variableName: text('variable_name').notNull(), // 项目名称
   required: integer('required').notNull().default(1),
   defaultValue: text('default_value'),
-})
-
-// ============================================================
-// 7. AI 表
-// ============================================================
-
-/** AI 模型配置 */
-export const aiModels = sqliteTable('ai_models', {
-  id: integer('id').primaryKey(),
-  provider: text('provider').notNull(), // OPENAI/CLAUDE/GEMINI/DEEPSEEK/QWEN/ZHIPU/OLLAMA/CUSTOM
-  modelName: text('model_name').notNull(),
-  apiUrl: text('api_url'),
-  apiKey: text('api_key'),
-  enabled: integer('enabled').notNull().default(1),
-  createdAt: text('created_at').notNull(),
-})
-
-/** AI 会话 */
-export const aiSessions = sqliteTable('ai_sessions', {
-  id: integer('id').primaryKey(),
-  title: text('title'),
-  modelId: integer('model_id').notNull(),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-})
-
-/** AI 消息 */
-export const aiMessages = sqliteTable('ai_messages', {
-  id: integer('id').primaryKey(),
-  sessionId: integer('session_id').notNull(),
-  role: text('role').notNull(), // USER/ASSISTANT/SYSTEM
-  content: text('content').notNull(),
-  createdAt: text('created_at').notNull(),
 })
 
 // ============================================================

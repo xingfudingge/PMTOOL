@@ -150,7 +150,7 @@ function repDayKeyFromCreatedAt(createdAt: string): string {
   return createdAt.slice(0, 10)
 }
 
-async function prepareToWrite(params: GeneratorParams): Promise<ToWrite> {
+export async function prepareToWrite(params: GeneratorParams): Promise<ToWrite> {
   const r = periodRange(params.type, params.period)
   const [allTodos, projects] = await Promise.all([listTodos({}), listProjects()])
   const periodTodos: Todo[] = r
@@ -316,7 +316,7 @@ async function findExistingReports(
   )
 }
 
-async function writeReports(type: GeneratorType, toWrite: ToWrite): Promise<void> {
+export async function writeReports(type: GeneratorType, toWrite: ToWrite): Promise<void> {
   if (toWrite.personal) {
     await createReport({
       reportType: type,
@@ -337,7 +337,7 @@ async function writeReports(type: GeneratorType, toWrite: ToWrite): Promise<void
   }
 }
 
-function typeLabelOf(t: GeneratorType): string {
+export function typeLabelOf(t: GeneratorType): string {
   return ({ daily: '日报', weekly: '周报', monthly: '月报' } as const)[t]
 }
 
@@ -419,4 +419,51 @@ export function ReportGenProvider({ children }: { children: ReactNode }) {
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+}
+
+// ============================================================
+// 自动化调度接入（维护者 2026-09-11 · 自动化任务真正落库）
+// 调度器只负责判断"该不该触发"，报告内容生成+落库统一走这里，
+// 而非直接调 generator 的纯函数（那只会返回字符串、不写库）。
+// ============================================================
+
+/**
+ * 当前/指定日期所属周期 key：
+ *   日报 → YYYY-MM-DD · 周报 → ISO 周 YYYY-Www · 月报 → YYYY-MM
+ * 与 periodRange() 解析格式保持一致。
+ */
+export function getPeriodKey(type: GeneratorType, base?: Date): string {
+  const d = base ?? new Date()
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+  if (type === 'daily') return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+  if (type === 'monthly') return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+  // weekly：ISO 8601 周数（周一为一周起点）
+  const cur = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const dayOfWeek = (cur.getDay() + 6) % 7 // 周一=0 ... 周日=6
+  const thursday = new Date(cur)
+  thursday.setDate(cur.getDate() + (4 - dayOfWeek))
+  const yearStart = new Date(thursday.getFullYear(), 0, 1)
+  const weekNo = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return `${thursday.getFullYear()}-W${pad2(weekNo)}`
+}
+
+/**
+ * 自动化生成报告并落库（日报/周报/月报通用）。
+ * 直接写库（自动化不弹覆盖确认 · 不打扰用户）。
+ * @param scope 'personal'=仅个人 · 'project'=该用户全部项目各生成一份
+ */
+export async function generateAutomationReport(
+  type: GeneratorType,
+  scope: GeneratorScope = 'personal',
+): Promise<{ written: boolean }> {
+  const period = getPeriodKey(type)
+  const toWrite = await prepareToWrite({
+    type,
+    scope,
+    period,
+    todayContent: '',
+    nextContent: '',
+  })
+  await writeReports(type, toWrite)
+  return { written: true }
 }

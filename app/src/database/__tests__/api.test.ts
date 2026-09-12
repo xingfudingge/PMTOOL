@@ -35,7 +35,7 @@ describe('Project API 业务命名', () => {
         project_code: 'PM-001',
         project_name: '测试项目',
         customer_name: '测试客户',
-        status: 'IN_PROGRESS',
+        status: 'EXECUTING',
         priority: 'HIGH',
         owner: '张三',
         start_date: '2026-08-21',
@@ -51,9 +51,9 @@ describe('Project API 业务命名', () => {
     ]
     vi.mocked(invoke).mockResolvedValueOnce(mockProjects)
 
-    const result = await listProjects({ status: 'IN_PROGRESS' })
+    const result = await listProjects({ status: 'EXECUTING' })
 
-    expect(invoke).toHaveBeenCalledWith('list_projects', { status: 'IN_PROGRESS' })
+    expect(invoke).toHaveBeenCalledWith('list_projects', { status: 'EXECUTING' })
     expect(result).toEqual(mockProjects)
   })
 

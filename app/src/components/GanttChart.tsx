@@ -18,6 +18,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { formatLocalDate } from '@/services/datetime'
 
 export interface GanttTask {
   id: number
@@ -92,7 +93,7 @@ export function GanttChart({
   const maxDate = endDate ?? allDates.reduce((a, b) => (a > b ? a : b))
   const totalDays = daysBetween(minDate, maxDate) + 1
 
-  const todayStr = today ?? new Date().toISOString().split('T')[0]
+  const todayStr = today ?? formatLocalDate(new Date())
   const todayOffset = daysBetween(minDate, todayStr)
 
   return (

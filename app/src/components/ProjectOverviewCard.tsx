@@ -14,9 +14,11 @@
 
 import {
   AlertOctagon,
+  BookOpen,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  FileQuestion,
   FileText,
   ListTodo,
   type LucideIcon,
@@ -49,6 +51,10 @@ export function ProjectOverviewCard({
     pendingTaskCount,
     overdueTaskCount,
     attachmentCount,
+    riskCount,
+    issueCount,
+    todoCount,
+    requirementCount,
   } = overview
 
   const hasUrgent = urgentIssueCount > 0 || overdueTaskCount > 0 || isOverdue
@@ -153,16 +159,17 @@ export function ProjectOverviewCard({
         <Chip
           icon={AlertOctagon}
           label="风险"
-          count={openIssueCount}
+          count={riskCount}
           urgent={urgentIssueCount > 0}
         />
+        <Chip icon={FileQuestion} label="问题" count={issueCount} />
         <Chip
           icon={ListTodo}
-          label="待办"
-          count={pendingTaskCount}
+          label="代办"
+          count={todoCount}
           urgent={overdueTaskCount > 0}
         />
-        <Chip icon={FileText} label="资料" count={attachmentCount} />
+        <Chip icon={BookOpen} label="新增需求" count={requirementCount} />
       </div>
 
       {/* 底部：展开按钮 + 删除 */}

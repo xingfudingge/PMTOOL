@@ -22,6 +22,7 @@ import { useState } from 'react'
 import type { MutableRefObject, ReactNode } from 'react'
 import { useEditingMaximizedHotkeys } from '@/components/DocumentEditor/editingMaximized'
 import type { SaveStatus } from '@/components/DocumentEditor/types'
+import { parseStoredUtc } from '@/services/datetime'
 
 interface PreviewToolbarProps {
   fileName: string
@@ -131,7 +132,7 @@ const badgeStyle: React.CSSProperties = {
 function formatSavedAt(iso: string | null | undefined): string {
   if (!iso) return ''
   try {
-    const d = new Date(iso)
+    const d = parseStoredUtc(iso)
     if (Number.isNaN(d.getTime())) return ''
     const diff = Date.now() - d.getTime()
     if (diff < 60_000) return '刚刚'

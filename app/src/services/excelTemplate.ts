@@ -6,7 +6,7 @@
  */
 
 import templateUrl from '@/assets/templates/pmtool_project_template.xlsx?url'
-import { triggerDownload } from './excel'
+import { saveBlobToDirectory } from './excel'
 
 /** 内置模板默认文件名 */
 const TEMPLATE_FILENAME = 'xx项目实施计划模板.xlsx'
@@ -20,7 +20,7 @@ export async function downloadProjectTemplate(): Promise<boolean> {
     const res = await fetch(templateUrl)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const blob = await res.blob()
-    triggerDownload(blob, TEMPLATE_FILENAME)
+    await saveBlobToDirectory(blob, TEMPLATE_FILENAME)
     return true
   } catch (err) {
     console.error('[template] 下载内置模板失败', err)

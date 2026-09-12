@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS projects (
     project_code    TEXT NOT NULL UNIQUE,
     project_name    TEXT NOT NULL,
     customer_name   TEXT,
-    status          TEXT NOT NULL DEFAULT 'PLANNING',  -- PLANNING/IN_PROGRESS/SUSPENDED/COMPLETED/CANCELLED
+    status          TEXT NOT NULL DEFAULT 'PLANNING',  -- 五态：START/PLANNING/EXECUTING/MONITORING/CLOSING
     priority        TEXT NOT NULL DEFAULT 'NORMAL',    -- LOW/NORMAL/HIGH/URGENT
     owner           TEXT,                                -- 项目负责人
     start_date      DATE,
@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS project_issues (
     actual_date DATE,
     discovered_at DATE,                                  -- 维护者 2026-08-26 补 · 与 Excel 风险登记册「发现时间」列对齐
     solution    TEXT,
+    resolution  TEXT,                                    -- 2026-09-11 补 · 风险登记册「当前风险应对情况说明」
     status      TEXT NOT NULL DEFAULT 'OPEN',             -- OPEN/IN_PROGRESS/RESOLVED/CLOSED
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -119,7 +120,7 @@ CREATE TABLE IF NOT EXISTS reports (
     title        TEXT NOT NULL,
     content      TEXT,
     template_id  INTEGER,
-    generate_type TEXT NOT NULL DEFAULT 'MANUAL',           -- MANUAL/AUTO/AI
+    generate_type TEXT NOT NULL DEFAULT 'MANUAL',           -- MANUAL/AUTO
     status       TEXT NOT NULL DEFAULT 'DRAFT',             -- DRAFT/PUBLISHED/ARCHIVED
     created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -140,8 +141,7 @@ CREATE TABLE IF NOT EXISTS knowledge_notes (
     content_type  TEXT NOT NULL DEFAULT 'MARKDOWN',         -- MARKDOWN/TEXT/IMAGE/FILE/LINK
     folder_id     INTEGER,                                  -- 所属目录，指向 knowledge_folders.id
     category      TEXT,
-    source_type   TEXT NOT NULL DEFAULT 'USER',             -- USER/AI/IMPORT
-    is_ai_generated INTEGER NOT NULL DEFAULT 0,
+    source_type   TEXT NOT NULL DEFAULT 'USER',             -- USER/IMPORT
     created_by    TEXT,
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -166,17 +166,6 @@ CREATE TABLE IF NOT EXISTS knowledge_note_tags (
     FOREIGN KEY (tag_id) REFERENCES knowledge_tags(id) ON DELETE CASCADE
 );
 
--- AI 操作记录
-CREATE TABLE IF NOT EXISTS knowledge_ai_records (
-    id             INTEGER PRIMARY KEY,
-    note_id        INTEGER NOT NULL,
-    action         TEXT NOT NULL,                          -- SUMMARY/REWRITE/EXTRACT/GENERATE
-    input_content  TEXT,
-    output_content TEXT,
-    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (note_id) REFERENCES knowledge_notes(id) ON DELETE CASCADE
-);
-
 -- ============================================================
 -- 6. 模板表
 -- ============================================================
@@ -184,7 +173,7 @@ CREATE TABLE IF NOT EXISTS knowledge_ai_records (
 CREATE TABLE IF NOT EXISTS templates (
     id         INTEGER PRIMARY KEY,
     name       TEXT NOT NULL,
-    type       TEXT NOT NULL DEFAULT 'BASE',              -- BASE/AI
+    type       TEXT NOT NULL DEFAULT 'BASE',              -- BASE
     category   TEXT NOT NULL,                              -- DAILY_REPORT/WEEKLY_REPORT/MONTHLY_REPORT/PROJECT_DOC
     content    TEXT NOT NULL,
     is_system  INTEGER NOT NULL DEFAULT 0,
@@ -205,43 +194,7 @@ CREATE TABLE IF NOT EXISTS template_variables (
 );
 
 -- ============================================================
--- 7. AI 表
--- ============================================================
-
--- AI 模型配置
-CREATE TABLE IF NOT EXISTS ai_models (
-    id         INTEGER PRIMARY KEY,
-    provider   TEXT NOT NULL,                              -- OPENAI/CLAUDE/GEMINI/DEEPSEEK/QWEN/ZHIPU/OLLAMA/CUSTOM
-    model_name TEXT NOT NULL,
-    api_url    TEXT,
-    api_key    TEXT,
-    enabled    INTEGER NOT NULL DEFAULT 1,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(provider, model_name)
-);
-
--- AI 会话
-CREATE TABLE IF NOT EXISTS ai_sessions (
-    id         INTEGER PRIMARY KEY,
-    title      TEXT,
-    model_id   INTEGER NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (model_id) REFERENCES ai_models(id) ON DELETE CASCADE
-);
-
--- AI 消息
-CREATE TABLE IF NOT EXISTS ai_messages (
-    id         INTEGER PRIMARY KEY,
-    session_id INTEGER NOT NULL,
-    role       TEXT NOT NULL,                               -- USER/ASSISTANT/SYSTEM
-    content    TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES ai_sessions(id) ON DELETE CASCADE
-);
-
--- ============================================================
--- 8. 日历和节假日
+-- 7. 日历和节假日
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS holidays (
@@ -307,7 +260,6 @@ CREATE INDEX IF NOT EXISTS idx_report_type          ON reports(type);
 CREATE INDEX IF NOT EXISTS idx_report_project       ON reports(project_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_project    ON knowledge_notes(project_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_source     ON knowledge_notes(source_type);
-CREATE INDEX IF NOT EXISTS idx_ai_msg_session       ON ai_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_holiday_date         ON holidays(date);
 CREATE INDEX IF NOT EXISTS idx_audit_action         ON audit_logs(action);
 CREATE INDEX IF NOT EXISTS idx_audit_target         ON audit_logs(target_type, target_id);
@@ -334,7 +286,6 @@ INSERT OR IGNORE INTO system_config (config_key, config_value) VALUES
     ('report_weekly_time', 'fri_18:00'),   -- 每周五 18:00 生成周报
     ('report_monthly_time', 'last_day_18:00'), -- 每月最后一天 18:00 生成月报
     ('data_dir', '~/PMToolData'),          -- 默认数据目录
-    ('ai_enabled', '1'),                   -- 默认开启 AI
     ('theme', 'light');                    -- 默认主题
 
 -- ============================================================
@@ -414,3 +365,57 @@ CREATE TABLE IF NOT EXISTS knowledge_folders (
 );
 CREATE INDEX IF NOT EXISTS idx_kf_parent ON knowledge_folders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_kf_space ON knowledge_folders(space, project_id);
+
+-- ============================================================
+-- 25. 登记册体系（2026-09-11 维护者拍板 · 与 Excel 登记册 sheet 对齐）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_requirements (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL,
+    type        TEXT NOT NULL DEFAULT 'NEW',     -- 需求类型：NEW/CHANGE/OPTIMIZE/OTHER
+    system      TEXT,                            -- 归属系统
+    summary     TEXT NOT NULL,                   -- 需求简述（必填）
+    detail      TEXT,                            -- 需求详述
+    proposed_at DATE,                            -- 提出时间
+    proposer    TEXT,                            -- 提出人
+    status      TEXT NOT NULL DEFAULT 'PENDING', -- 需求响应状态：PENDING/EVALUATING/CONFIRMED/IMPLEMENTED/REJECTED
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_req_project ON project_requirements(project_id);
+
+CREATE TABLE IF NOT EXISTS project_issue_log (
+    id            INTEGER PRIMARY KEY,
+    project_id    INTEGER NOT NULL,
+    title         TEXT NOT NULL,                 -- 问题描述（必填）
+    proposer      TEXT,                          -- 提出人
+    module        TEXT,                          -- 涉及系统及模块（参考需规）
+    discovered_at DATE,                          -- 发现时间
+    plan_date     DATE,                          -- 计划解决时间
+    plan_solution TEXT,                          -- 计划解决方案
+    handler       TEXT,                          -- 问题处理人
+    progress_note TEXT,                          -- 当前处理进度说明
+    actual_date   DATE,                          -- 实际处理时间
+    status        TEXT NOT NULL DEFAULT 'OPEN',  -- 问题状态：OPEN/IN_PROGRESS/RESOLVED/CLOSED
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_issuelog_project ON project_issue_log(project_id);
+
+CREATE TABLE IF NOT EXISTS project_todo_items (
+    id              INTEGER PRIMARY KEY,
+    project_id      INTEGER NOT NULL,
+    content         TEXT NOT NULL,               -- 代办事项说明（必填）
+    related_people  TEXT,                        -- 涉及人员（软件）
+    plan_date       DATE,                        -- 计划完成时间
+    completion_note TEXT,                        -- 当前完成情况说明
+    actual_date     DATE,                        -- 实际完成时间
+    status          TEXT NOT NULL DEFAULT 'PENDING', -- 任务状态：PENDING/IN_PROGRESS/COMPLETED/DELAYED
+    remark          TEXT,                        -- 备注
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_todoitem_project ON project_todo_items(project_id);

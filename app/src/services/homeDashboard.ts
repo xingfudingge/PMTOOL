@@ -209,7 +209,7 @@ export async function loadHomeDashboard(): Promise<HomeDashboard> {
       o.remainingDays !== null &&
       o.remainingDays < 7 &&
       o.remainingDays >= 0 &&
-      o.project.status === 'IN_PROGRESS'
+      o.project.status === 'EXECUTING'
     ) {
       riskItems.push({
         projectId: o.project.id,
@@ -303,7 +303,7 @@ export async function loadHomeDashboard(): Promise<HomeDashboard> {
 
   // ========== 4. 我的项目进度概览（取 IN_PROGRESS 状态 · 按剩余天数排序） ==========
   const myProjects = overviews
-    .filter((o) => o.project.status === 'IN_PROGRESS')
+    .filter((o) => o.project.status === 'EXECUTING')
     .slice(0, 6)
 
   // ========== 5. 最近操作（recentActivities 已加载） ==========

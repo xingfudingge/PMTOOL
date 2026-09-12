@@ -52,7 +52,7 @@ export interface TodayPlanItem {
  *   - 合并并排序（按 end_date 升序 · 无日期放最后）
  */
 export async function loadActiveProjectTasks(): Promise<ProjectTaskWithProject[]> {
-  const projects = await listProjects({ status: 'IN_PROGRESS' })
+  const projects = await listProjects({ status: 'EXECUTING' })
   const allTasks: ProjectTaskWithProject[] = []
 
   await Promise.all(
@@ -121,7 +121,7 @@ export async function loadTodayPlan(): Promise<TodayPlanItem[]> {
   const todayProjectTasks: TodayPlanItem[] = []
   await Promise.all(
     projects
-      .filter((p) => p.status === 'IN_PROGRESS')
+      .filter((p) => p.status === 'EXECUTING')
       .map(async (p) => {
         try {
           const tasks = await listProjectTasks(p.id)

@@ -71,11 +71,12 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
       <div
         style={{
           height: editingMaximized ? 0 : 'auto',
-          overflow: 'hidden',
+          // 编辑最大化时折叠顶栏需要 hidden；正常时用 visible，否则绝对定位的下拉菜单会被裁掉
+          overflow: editingMaximized ? 'hidden' : 'visible',
           flexShrink: 0,
         }}
       >
-        <TopBar
+              <TopBar
           currentPage={currentPage}
           theme={resolvedTheme}
           onToggleTheme={() => save('theme', resolvedTheme === 'dark' ? 'light' : 'dark')}

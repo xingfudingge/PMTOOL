@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { parseStoredUtc } from '@/services/datetime'
 import {
   BookOpen,
   CirclePlus,
@@ -243,7 +244,7 @@ const editorEmptyStyle: React.CSSProperties = {
 }
 
 function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime()
+  const t = parseStoredUtc(iso).getTime()
   if (Number.isNaN(t)) return ''
   const now = Date.now()
   const diff = Math.floor((now - t) / 60000)
@@ -252,7 +253,7 @@ function formatRelative(iso: string): string {
   if (diff < 60 * 24) return `${Math.floor(diff / 60)} 小时前`
   const days = Math.floor(diff / (60 * 24))
   if (days < 30) return `${days} 天前`
-  return new Date(iso).toLocaleDateString('zh-CN')
+  return parseStoredUtc(iso).toLocaleDateString('zh-CN')
 }
 
 // ============================================================
@@ -428,7 +429,6 @@ export function KnowledgeSpaceView({
         pinned: false,
         folderId: selectedFolderId && selectedFolderId > 0 ? selectedFolderId : null,
         sourceType: 'USER',
-        isAiGenerated: false,
       })
       await refresh()
       openNote(created)

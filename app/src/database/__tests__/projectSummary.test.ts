@@ -36,7 +36,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 function makeProject(overrides: Partial<{
   id: number
   customer_name: string | null
-  status: 'PLANNING' | 'IN_PROGRESS' | 'SUSPENDED' | 'COMPLETED' | 'CANCELLED'
+  status: 'START' | 'PLANNING' | 'EXECUTING' | 'MONITORING' | 'CLOSING'
   end_date: string | null
   owner: string | null
   overallProgress: number
@@ -46,7 +46,7 @@ function makeProject(overrides: Partial<{
     project_code: 'P001',
     project_name: '测试项目',
     customer_name: '客户A',
-    status: 'IN_PROGRESS' as const,
+    status: 'EXECUTING' as const,
     priority: 'NORMAL' as const,
     owner: '张三',
     start_date: null as string | null,
@@ -91,50 +91,50 @@ describe('STAGES 常量', () => {
 
 describe('inferStage', () => {
   it('PLANNING → 启动（阶段 1）', () => {
-    const r = inferStage(makeProject({ status: 'PLANNING' }), 0)
+    const r = inferStage(makeProject({ status: 'PLANNING' }),0)
     expect(r.stage).toBe('启动')
     expect(r.stageOrder).toBe(1)
   })
 
   it('COMPLETED → 已验收（阶段 5）', () => {
-    const r = inferStage(makeProject({ status: 'COMPLETED' }), 100)
+    const r = inferStage(makeProject({ status: 'CLOSING' }), 100)
     expect(r.stage).toBe('已验收')
     expect(r.stageOrder).toBe(5)
   })
 
-  it('CANCELLED → 已终止（特殊）', () => {
-    const r = inferStage(makeProject({ status: 'CANCELLED' }), 50)
-    expect(r.stage).toBe('已终止')
-    expect(r.stageOrder).toBe(0)
+  it('MONITORING + 中等进度 → 实施（按进度推断）', () => {
+    const r = inferStage(makeProject({ status: 'MONITORING' }), 50)
+    expect(r.stage).toBe('实施')
+    expect(r.stageOrder).toBe(3)
   })
 
   it('IN_PROGRESS + 进度<20 → 启动', () => {
-    const r = inferStage(makeProject({ status: 'IN_PROGRESS' }), 10)
+    const r = inferStage(makeProject({ status: 'EXECUTING' }), 10)
     expect(r.stage).toBe('启动')
   })
 
   it('IN_PROGRESS + 进度 20-40 → 需求确认', () => {
-    const r = inferStage(makeProject({ status: 'IN_PROGRESS' }), 30)
+    const r = inferStage(makeProject({ status: 'EXECUTING' }), 30)
     expect(r.stage).toBe('需求确认')
   })
 
   it('IN_PROGRESS + 进度 40-80 → 实施', () => {
-    const r = inferStage(makeProject({ status: 'IN_PROGRESS' }), 60)
+    const r = inferStage(makeProject({ status: 'EXECUTING' }), 60)
     expect(r.stage).toBe('实施')
   })
 
   it('IN_PROGRESS + 进度 80-100 → 试运行', () => {
-    const r = inferStage(makeProject({ status: 'IN_PROGRESS' }), 90)
+    const r = inferStage(makeProject({ status: 'EXECUTING' }), 90)
     expect(r.stage).toBe('试运行')
   })
 
   it('SUSPENDED + 高进度 → 保持高阶段', () => {
-    const r = inferStage(makeProject({ status: 'SUSPENDED' }), 60)
+    const r = inferStage(makeProject({ status: 'MONITORING' }), 60)
     expect(r.stage).toBe('实施')
   })
 
   it('stageTotal 始终为 5', () => {
-    for (const status of ['PLANNING', 'IN_PROGRESS', 'SUSPENDED', 'COMPLETED', 'CANCELLED'] as const) {
+    for (const status of ['START', 'PLANNING', 'EXECUTING', 'MONITORING', 'CLOSING'] as const) {
       const r = inferStage(makeProject({ status }), 50)
       expect(r.stageTotal).toBe(5)
     }
@@ -160,7 +160,7 @@ describe('loadProjectOverviews', () => {
   })
 
   it('返回的项目含 5 要素计数', async () => {
-    const project = makeProject({ id: 1, status: 'IN_PROGRESS', end_date: '2026-12-31' })
+    const project = makeProject({ id: 1, status: 'EXECUTING', end_date: '2026-12-31' })
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'list_projects') return [project]
       if (cmd === 'list_project_tasks') return []
@@ -327,7 +327,7 @@ describe('loadProjectSummary', () => {
 
   it('isOverdue：end_date 已过 + 未完成', async () => {
     const yesterday = new Date(Date.now() - 86400000 * 5).toISOString().split('T')[0]
-    const project = makeProject({ id: 1, end_date: yesterday, status: 'IN_PROGRESS' })
+    const project = makeProject({ id: 1, end_date: yesterday, status: 'EXECUTING' })
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'get_project') return project
       return []
@@ -338,7 +338,7 @@ describe('loadProjectSummary', () => {
 
   it('isOverdue false：COMPLETED 即使 end_date 已过也不算逾期', async () => {
     const yesterday = new Date(Date.now() - 86400000 * 5).toISOString().split('T')[0]
-    const project = makeProject({ id: 1, end_date: yesterday, status: 'COMPLETED' })
+    const project = makeProject({ id: 1, end_date: yesterday, status: 'CLOSING' })
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'get_project') return project
       return []

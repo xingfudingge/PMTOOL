@@ -29,6 +29,7 @@ pub struct ProjectIssue {
     pub actual_date: Option<String>,     // actual_resolve_date 字段
     pub discovered_at: Option<String>,   // 维护者 2026-08-26 补 · 风险首次发现时间（Excel 列「发现时间」）
     pub solution: Option<String>,
+    pub resolution: Option<String>,      // 2026-09-11 补 · 风险登记册「当前风险应对情况说明」
     pub status: String, // OPEN / IN_PROGRESS / RESOLVED / CLOSED
     pub created_at: String,
     pub updated_at: String,
@@ -46,16 +47,17 @@ fn row_to_issue(row: &Row) -> rusqlite::Result<ProjectIssue> {
         actual_date: row.get(7)?,
         discovered_at: row.get(8)?,
         solution: row.get(9)?,
-        status: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
+        resolution: row.get(10)?,
+        status: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
     })
 }
 
 /// 列出项目的问题
 pub fn list_by_project(conn: &Connection, project_id: i64) -> rusqlite::Result<Vec<ProjectIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, title, description, level, owner, plan_date, actual_date, discovered_at, solution, status, created_at, updated_at FROM project_issues WHERE project_id = ?1 ORDER BY id DESC",
+        "SELECT id, project_id, title, description, level, owner, plan_date, actual_date, discovered_at, solution, resolution, status, created_at, updated_at FROM project_issues WHERE project_id = ?1 ORDER BY id DESC",
     )?;
     let rows = stmt.query_map([project_id], row_to_issue)?;
     rows.collect()
@@ -64,7 +66,7 @@ pub fn list_by_project(conn: &Connection, project_id: i64) -> rusqlite::Result<V
 /// 获取单个问题
 pub fn get_by_id(conn: &Connection, id: i64) -> rusqlite::Result<Option<ProjectIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT id, project_id, title, description, level, owner, plan_date, actual_date, discovered_at, solution, status, created_at, updated_at FROM project_issues WHERE id = ?1",
+        "SELECT id, project_id, title, description, level, owner, plan_date, actual_date, discovered_at, solution, resolution, status, created_at, updated_at FROM project_issues WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map([id], row_to_issue)?;
     rows.next().transpose()
@@ -73,7 +75,7 @@ pub fn get_by_id(conn: &Connection, id: i64) -> rusqlite::Result<Option<ProjectI
 /// 创建问题
 pub fn create(conn: &Connection, issue: &ProjectIssue) -> rusqlite::Result<i64> {
     conn.execute(
-        "INSERT INTO project_issues (project_id, title, description, level, owner, plan_date, actual_date, discovered_at, solution, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO project_issues (project_id, title, description, level, owner, plan_date, actual_date, discovered_at, solution, resolution, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             issue.project_id,
             issue.title,
@@ -84,6 +86,7 @@ pub fn create(conn: &Connection, issue: &ProjectIssue) -> rusqlite::Result<i64> 
             issue.actual_date,
             issue.discovered_at,
             issue.solution,
+            issue.resolution,
             issue.status,
         ],
     )?;
@@ -93,7 +96,7 @@ pub fn create(conn: &Connection, issue: &ProjectIssue) -> rusqlite::Result<i64> 
 /// 更新问题
 pub fn update(conn: &Connection, id: i64, issue: &ProjectIssue) -> rusqlite::Result<bool> {
     let n = conn.execute(
-        "UPDATE project_issues SET title=?2, description=?3, level=?4, owner=?5, plan_date=?6, actual_date=?7, discovered_at=?8, solution=?9, status=?10, updated_at=CURRENT_TIMESTAMP WHERE id=?1",
+        "UPDATE project_issues SET title=?2, description=?3, level=?4, owner=?5, plan_date=?6, actual_date=?7, discovered_at=?8, solution=?9, resolution=?10, status=?11, updated_at=CURRENT_TIMESTAMP WHERE id=?1",
         params![
             id,
             issue.title,
@@ -104,6 +107,7 @@ pub fn update(conn: &Connection, id: i64, issue: &ProjectIssue) -> rusqlite::Res
             issue.actual_date,
             issue.discovered_at,
             issue.solution,
+            issue.resolution,
             issue.status,
         ],
     )?;

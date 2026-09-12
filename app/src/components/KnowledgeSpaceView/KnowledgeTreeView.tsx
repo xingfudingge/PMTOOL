@@ -9,7 +9,6 @@
  *   │ │  ├ 📄 知识    │  BlockNote                    │
  *   │ │  └ 📄 知识    │                              │
  *   │ ├ 项目根(PROJECT_ROOT, 仅项目模式)               │
- *   │ └ ✨ AI 生成(SYSTEM_AI)                         │
  *   └────────────────┴──────────────────────────────┘
  *
  * 节点操作（悬停 ⋯ 菜单）按 nodeKind 控制：
@@ -17,7 +16,6 @@
  *   - project-root 项目根：删除 + 添加子目录（不可直接建知识）
  *   - folder       普通目录：删除 / 重命名 / 添加子目录 / 新建知识
  *   - note         知识节点：删除 / 重命名
- *   - ai           系统 AI 生成目录：添加子目录 / 新建知识（不可删 / 不可重命名）
  *
  * 删除一律走 DeleteConfirmDialog（设计文档 §2）。
  * 真删除在后端已级联（数据库 + BlockNote 内容 + 附件记录 + 本地文件）。
@@ -35,7 +33,6 @@ import {
   Pencil,
   Trash2,
   FolderPlus,
-  Sparkles,
   BookOpen,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -60,11 +57,9 @@ import {
   listPersonalKnowledgeSpaces,
   upsertKnowledgeFolder,
   upsertKnowledgeNote,
-  ensureAiKnowledgeFolder,
   deleteKnowledgeFolder,
   deleteKnowledgeNote,
   getKnowledgeNote,
-  ensureKnowledgeAiFolder,
   type KnowledgeNote as DbNote,
   type KnowledgeFolder as DbFolder,
 } from '@/services/knowledge'
@@ -238,7 +233,7 @@ export function KnowledgeTreeView({
     setLoading(true)
     try {
       if (mode === 'project' && aggregate) {
-        // 项目知识中心：以「知识库」为顶层，每个库独立挂目录 + AI 生成；库间互不干扰。
+        // 项目知识中心：以「知识库」为顶层，每个库独立挂目录；库间互不干扰。
         const projects = await listProjects()
         const pMap = new Map(projects.map((p) => [p.id, p.project_name]))
         const spaces = await listAllProjectSpaces()
@@ -246,7 +241,6 @@ export function KnowledgeTreeView({
         const nm = new Map<number, DbNote[]>()
         const meta: { id: number; name: string; boundText: string }[] = []
         for (const s of spaces) {
-          await ensureKnowledgeAiFolder(s.id)
           fm.set(s.id, await listKnowledgeFoldersBySpaceId(s.id))
           nm.set(s.id, await listKnowledgeNotes(s.id))
           const binds = await listSpaceBindings(s.id)
@@ -263,8 +257,6 @@ export function KnowledgeTreeView({
           const spaces = await listPersonalKnowledgeSpaces()
           const spaceId = spaces[0]?.id
           if (spaceId != null) {
-            // 确保该知识库有独立的 AI 生成目录（一库一 AI 目录 · 不跨库共享）
-            await ensureKnowledgeAiFolder(spaceId)
             resolvedNotes = await listKnowledgeNotes(spaceId)
             resolvedFolders = await listKnowledgeFoldersBySpaceId(spaceId)
           }
@@ -278,8 +270,6 @@ export function KnowledgeTreeView({
             targetSpaceId = spaces[0]?.id
           }
           if (targetSpaceId != null) {
-            // 确保该知识库有独立的 AI 生成目录（存量库补建 · 一库一 AI 目录）
-            await ensureKnowledgeAiFolder(targetSpaceId)
             resolvedNotes = await listKnowledgeNotes(targetSpaceId)
             resolvedFolders = await listKnowledgeFoldersBySpaceId(targetSpaceId)
           }
@@ -384,7 +374,6 @@ export function KnowledgeTreeView({
           folderId: note.folderId,
           category: note.category,
           sourceType: note.sourceType,
-          isAiGenerated: note.isAiGenerated,
           createdBy: note.createdBy,
           systemType: note.systemType,
         })
@@ -426,7 +415,6 @@ export function KnowledgeTreeView({
       const spaces = await listProjectKnowledgeSpaces(pid)
       if (!spaces[0]) throw new Error('该项目尚未绑定知识库')
       const lib = spaces[0]
-      await ensureKnowledgeAiFolder(lib.id)
       return lib.id
     },
     [],
@@ -484,7 +472,6 @@ export function KnowledgeTreeView({
           pinned: false,
           folderId: null,
           sourceType: 'USER',
-          isAiGenerated: false,
         })
         await refresh()
         await openNote(created)
@@ -498,7 +485,7 @@ export function KnowledgeTreeView({
   // ───────── 创建目录 ─────────
   const createFolder = useCallback(
     async (parentId: number | null) => {
-      const spaceId = await resolveSpaceId()
+      const spaceId = await folderSpaceId(parentId)
       const name = await askName('新建目录', '')
       if (!name || !name.trim()) return null
       try {
@@ -517,14 +504,14 @@ export function KnowledgeTreeView({
         return null
       }
     },
-    [mode, projectId, spaceId, refresh, resolveSpaceId, askName],
+    [mode, projectId, spaceId, refresh, resolveSpaceId, folderSpaceId, askName],
   )
 
   // ───────── 创建知识 ─────────
   const createNote = useCallback(
     async (folderId: number | null) => {
       try {
-        const spaceId = await resolveSpaceId()
+        const spaceId = await folderSpaceId(folderId)
         const created = await upsertKnowledgeNote({
           spaceId,
           space: mode,
@@ -535,7 +522,6 @@ export function KnowledgeTreeView({
           pinned: false,
           folderId,
           sourceType: 'USER',
-          isAiGenerated: false,
         })
         await refresh()
         await openNote(created)
@@ -543,7 +529,7 @@ export function KnowledgeTreeView({
         toast.error(`新建知识失败：${e instanceof Error ? e.message : String(e)}`)
       }
     },
-    [mode, refresh, resolveSpaceId, openNote],
+    [mode, refresh, resolveSpaceId, folderSpaceId, openNote],
   )
 
   // ───────── 重命名 ─────────
@@ -898,7 +884,7 @@ function TreeNodeRow({
   }, [menuOpen])
 
   const isActive = node.kind === 'note' && node.note?.id === activeNoteId
-  const isSystem = node.kind === 'root' || node.kind === 'ai'
+  const isSystem = node.kind === 'root'
   const isProjectRoot = node.kind === 'project-root'
   const isFolder = node.kind === 'folder'
   const hasChildren = node.children.length > 0
@@ -913,7 +899,6 @@ function TreeNodeRow({
 
   // 节点图标
   const icon = (() => {
-    if (node.kind === 'ai') return <Sparkles size={11} color={isActive ? 'var(--color-accent)' : '#9333ea'} />
     if (node.kind === 'note') return <FileText size={11} color={isActive ? 'var(--color-accent)' : 'var(--color-text-tertiary)'} />
     if (node.kind === 'root') return <Folder size={11} color="var(--color-text-tertiary)" />
     if (isProjectRoot) return <FolderOpen size={11} color="var(--color-text-tertiary)" />
@@ -1031,18 +1016,17 @@ function TreeNodeRow({
                 }}
               />
             )}
-            {(node.kind === 'folder' || node.kind === 'root' || node.kind === 'ai') && (
+            {(node.kind === 'folder' || node.kind === 'root') && (
               <MenuItem
                 icon={<FolderPlus size={11} />}
                 label="添加子目录"
                 onClick={async () => {
                   setMenuOpen(false)
-                  // ai 目录 id 是真实 DB 主键，可以直接作 parent
                   await onCreateChildFolder(node.kind === 'root' ? null : node.id)
                 }}
               />
             )}
-            {(node.kind === 'folder' || node.kind === 'ai') && (
+            {node.kind === 'folder' && (
               <MenuItem
                 icon={<Plus size={11} />}
                 label="新建知识"
@@ -1074,7 +1058,7 @@ function TreeNodeRow({
                 }}
               />
             )}
-            {/* 删除：folder（除 SYSTEM_AI 与 PROJECT_ROOT） 与 note 均可 */}
+            {/* 删除：folder（除 PROJECT_ROOT） 与 note 均可 */}
             {(node.kind === 'folder' || node.kind === 'note') && (
               <MenuItem
                 icon={<Trash2 size={11} />}

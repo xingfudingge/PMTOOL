@@ -13,8 +13,10 @@
 import { useEffect, useState } from 'react'
 import {
   AlertOctagon,
+  BookOpen,
   Calendar,
   CheckCircle2,
+  FileQuestion,
   FileText,
   ListTodo,
   Loader2,
@@ -95,7 +97,7 @@ export function ProjectExpandedPanel({ projectId }: Props) {
     )
   }
 
-  const { project, issues, pendingTasks, attachments, stageOrder } = summary
+  const { project, issues, pendingTasks, attachments, stageOrder, riskCount, issueCount, todoCount, requirementCount } = summary
   const openIssues = issues.filter((i) => i.status === 'OPEN')
   const closedIssues = issues.length - openIssues.length
 
@@ -111,6 +113,14 @@ export function ProjectExpandedPanel({ projectId }: Props) {
         gap: '14px',
       }}
     >
+      {/* 0. 登记册汇总 chips（风险 / 问题 / 代办 / 新增需求）*/}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Chip icon={AlertOctagon} label="风险" count={riskCount} />
+        <Chip icon={FileQuestion} label="问题" count={issueCount} />
+        <Chip icon={ListTodo} label="代办" count={todoCount} />
+        <Chip icon={BookOpen} label="新增需求" count={requirementCount} />
+      </div>
+
       {/* 1. 当前风险 */}
       <Section title="当前风险" icon={AlertOctagon} count={openIssues.length}>
         {openIssues.length === 0 ? (
@@ -524,6 +534,16 @@ function MetaRow({ label, value }: { label: string; value: string }) {
 // ============================================================
 // 工具函数
 // ============================================================
+
+function Chip({ icon: Icon, label, count }: { icon: LucideIcon; label: string; count: number }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 506, padding: '3px 17px', background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-thin)', borderRadius: 'var(--radius)', fontSize: 35, color: 'var(--color-text-secondary)' }}>
+      <Icon size={11} strokeWidth={1.658} />
+      <span>{label}</span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 281, color: 'var(--color-text)' }}>{count}</span>
+    </span>
+  )
+}
 
 function levelRank(level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'): number {
   return { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 }[level]

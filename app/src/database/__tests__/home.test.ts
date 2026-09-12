@@ -278,7 +278,7 @@ describe('Phase A P0 · 进行中任务（按项目分组）', () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'list_projects') {
         return [
-          { id: 1, project_code: 'P001', project_name: '项目A', customer_name: '客户X', status: 'IN_PROGRESS', priority: 'NORMAL', owner: null, start_date: null, end_date: null, contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
+          { id: 1, project_code: 'P001', project_name: '项目A', customer_name: '客户X', status: 'EXECUTING', priority: 'NORMAL', owner: null, start_date: null, end_date: null, contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
         ]
       }
       if (cmd === 'list_todos') return []
@@ -303,7 +303,7 @@ describe('Phase A P0 · 进行中任务（按项目分组）', () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'list_projects') {
         return [
-          { id: 1, project_code: 'P001', project_name: '项目A', customer_name: null, status: 'IN_PROGRESS', priority: 'NORMAL', owner: null, start_date: null, end_date: null, contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
+          { id: 1, project_code: 'P001', project_name: '项目A', customer_name: null, status: 'EXECUTING', priority: 'NORMAL', owner: null, start_date: null, end_date: null, contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
         ]
       }
       if (cmd === 'list_todos') return []
@@ -328,8 +328,8 @@ describe('Phase A P0 · 近期项目（含进度）', () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'list_projects') {
         return [
-          { id: 1, project_code: 'P001', project_name: '远期项目', customer_name: 'A', status: 'IN_PROGRESS', priority: 'LOW', owner: null, start_date: null, end_date: '2099-12-31', contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
-          { id: 2, project_code: 'P002', project_name: '紧急项目', customer_name: 'B', status: 'IN_PROGRESS', priority: 'URGENT', owner: null, start_date: null, end_date: '2026-08-30', contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
+          { id: 1, project_code: 'P001', project_name: '远期项目', customer_name: 'A', status: 'EXECUTING', priority: 'LOW', owner: null, start_date: null, end_date: '2099-12-31', contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
+          { id: 2, project_code: 'P002', project_name: '紧急项目', customer_name: 'B', status: 'EXECUTING', priority: 'URGENT', owner: null, start_date: null, end_date: '2026-08-30', contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
         ]
       }
       if (cmd === 'list_todos') return []
@@ -358,8 +358,8 @@ describe('Phase A P0 · 待关注事项', () => {
       if (cmd === 'list_projects') return []
       if (cmd === 'list_todos') {
         return [
-          { id: 1, title: '已延期 3 天的任务', status: 'PENDING', due_date: '2026-08-21', priority: 'HIGH', source_type: 'MANUAL', content: null, start_date: null, completed_at: null, source_id: null, remind_time: null, created_at: '', updated_at: '' },
-          { id: 2, title: '未来 5 天的任务', status: 'PENDING', due_date: '2026-08-29', priority: 'NORMAL', source_type: 'MANUAL', content: null, start_date: null, completed_at: null, source_id: null, remind_time: null, created_at: '', updated_at: '' },
+          { id: 1, title: '已延期 3 天的任务', status: 'PENDING', due_date: formatLocalDate(new Date(Date.now() - 432000000)), priority: 'HIGH', source_type: 'MANUAL', content: null, start_date: null, completed_at: null, source_id: null, remind_time: null, created_at: '', updated_at: '' },
+          { id: 2, title: '未来 5 天的任务', status: 'PENDING', due_date: formatLocalDate(new Date(Date.now() + 400000000)), priority: 'NORMAL', source_type: 'MANUAL', content: null, start_date: null, completed_at: null, source_id: null, remind_time: null, created_at: '', updated_at: '' },
         ]
       }
       return []
@@ -392,7 +392,7 @@ describe('Phase A P0 · 待关注事项', () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'list_projects') {
         return [
-          { id: 1, project_code: 'P001', project_name: '5天后截止', customer_name: null, status: 'IN_PROGRESS', priority: 'URGENT', owner: null, start_date: null, end_date: '2026-08-29', contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
+          { id: 1, project_code: 'P001', project_name: '5天后截止', customer_name: null, status: 'EXECUTING', priority: 'URGENT', owner: null, start_date: null, end_date: formatLocalDate(new Date(Date.now() + 399000000)), contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
         ]
       }
       if (cmd === 'list_todos') return []
@@ -411,7 +411,7 @@ describe('Phase A P0 · 待关注事项', () => {
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
       if (cmd === 'list_projects') {
         return [
-          { id: 1, project_code: 'P001', project_name: '项目X', customer_name: null, status: 'IN_PROGRESS', priority: 'NORMAL', owner: null, start_date: null, end_date: '2099-12-31', contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
+          { id: 1, project_code: 'P001', project_name: '项目X', customer_name: null, status: 'EXECUTING', priority: 'NORMAL', owner: null, start_date: null, end_date: '2099-12-31', contract_amount: null, background: null, objective: null, scope: null, description: null, created_at: '', updated_at: '' },
         ]
       }
       if (cmd === 'list_todos') return []

@@ -59,9 +59,9 @@ import {
 } from '@/services/projectTasks'
 import { parseProjectsExcel, exportProjectsToExcel } from '@/services/excelProjects'
 import { downloadProjectTemplate } from '@/services/excelTemplate'
-import { triggerDownload } from '@/services/excel'
+import { saveBlobToDirectory } from '@/services/excel'
 import { toast } from './Toast'
-import { defaultHolidayService } from '@/services/holiday'
+import { defaultHolidayProvider } from '@/services/holidayProvider'
 import { listProjectMembers, type ProjectMember } from '@/services/projectMembers'
 
 export interface ParentTaskDetailModalProps {
@@ -482,10 +482,10 @@ export function ParentTaskDetailModal({
   }, [open, busy, deletingTask, importConfirm, editingTaskId, showCreateForm, onClose])
 
   // ---------- 计算 ----------
-  // 节日 Set（一次性生成 · 传给 networkdaysWithHolidays）
+  // 节日 Set（一次性生成 · 传给 networkdaysWithHolidays 按工作日计算）
   const holidaySet = useMemo(() => {
     const set = new Set<string>()
-    // 用 defaultHolidayService 的 isHoliday 判定 · 这里只扫 ±1 年保证覆盖
+    // 读数据库同步的法定节假日（与设置中心一致 · 并保留周末兜底）
     const cur = new Date()
     cur.setFullYear(cur.getFullYear() - 1)
     for (let i = 0; i < 365 * 3; i++) {
@@ -493,8 +493,7 @@ export function ParentTaskDetailModal({
       const m = String(cur.getMonth() + 1).padStart(2, '0')
       const d = String(cur.getDate()).padStart(2, '0')
       const ds = `${y}-${m}-${d}`
-      const entry = defaultHolidayService.get(ds)
-      if (entry && entry.type === 'HOLIDAY' && entry.isWorkday === 0) {
+      if (defaultHolidayProvider.isHoliday(ds)) {
         set.add(ds)
       }
       cur.setDate(cur.getDate() + 1)
@@ -520,6 +519,11 @@ export function ParentTaskDetailModal({
       data.tasks.reduce((s, t) => s + (Number.isFinite(t.work_days) ? t.work_days : 0), 0),
     )
   }, [data.tasks])
+
+  // 打开甘特图时刷新法定节假日缓存（读数据库同步数据 · 与设置中心一致）
+  useEffect(() => {
+    if (open) void defaultHolidayProvider.load()
+  }, [open])
 
   // displayWeek 改变 → 横向滚动到对应周
   useEffect(() => {
@@ -641,7 +645,7 @@ export function ParentTaskDetailModal({
     try {
       const blob = await exportProjectsToExcel(data.tasks)
       const filename = `${data.project.project_name}_任务清单_${todayLocal()}.xlsx`
-      triggerDownload(blob, filename)
+      await saveBlobToDirectory(blob, filename)
       toast.success(`已导出 ${data.tasks.length} 条任务`, filename)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -1581,13 +1585,12 @@ function GanttSvg({
     const mm = String(d.getMonth() + 1).padStart(2, '0')
     const dd = String(d.getDate()).padStart(2, '0')
     const dateStr = `${yyyy}-${mm}-${dd}`
-    const holidayEntry = defaultHolidayService.get(dateStr)
     let kind: DayMarkerKind = 'none'
-    if (holidayEntry && holidayEntry.type === 'HOLIDAY' && holidayEntry.isWorkday === 0) {
+    if (defaultHolidayProvider.isHoliday(dateStr)) {
       kind = 'holiday'
     } else if (d.getDay() === 0 || d.getDay() === 6) {
-      const isWorkdayShift = holidayEntry?.type === 'WORKDAY_SHIFT' && holidayEntry.isWorkday === 1
-      if (!isWorkdayShift) kind = 'weekend'
+      // 周末但被调休成上班日 → 不算 weekend
+      if (!defaultHolidayProvider.isWorkday(dateStr)) kind = 'weekend'
     }
     dayMarkers.push({ x: LABEL_W + i * DAY_W, kind, date: d })
   }

@@ -22,6 +22,7 @@ import { BookOpen, FileText, Search, X } from 'lucide-react'
 import { listProjects, type Project } from '@/services/project'
 import { searchKnowledgeNotesBySpace, searchKnowledgeNotesBySpaceType, type KnowledgeNote as DbNote, type KnowledgeSpace } from '@/services/knowledge'
 import { ActiveNoteEditor, EmptyEditor, emptyStyle, iconBtnStyle, titleStyle, headerStyle } from './parts'
+import { parseStoredUtc } from '@/services/datetime'
 
 interface GlobalSearchResultsProps {
   query: string
@@ -94,7 +95,7 @@ export function GlobalSearchResults({ query, onExported = () => {}, onDeleted = 
       ...personalNotes.map((n) => ({ ...n, source: 'personal' as const })),
       ...projectNotes.map((n) => ({ ...n, source: 'project' as const })),
     ]
-    return merged.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    return merged.sort((a, b) => parseStoredUtc(b.updatedAt).getTime() - parseStoredUtc(a.updatedAt).getTime())
   }, [personalNotes, projectNotes])
 
   // 注意：formatSource 定义在 NoteRow 组件内部使用，不在这里重复

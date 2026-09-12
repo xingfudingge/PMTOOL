@@ -41,7 +41,6 @@ export async function importMarkdownFile(opts: ImportOpts): Promise<KnowledgeNot
     contentMd: content,
     pinned: false,
     sourceType: 'IMPORT',
-    isAiGenerated: false,
     systemType: 'USER',
   })
   return created

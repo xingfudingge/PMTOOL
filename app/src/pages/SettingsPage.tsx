@@ -28,11 +28,20 @@ import type { LicenseStatus, ActivateLicenseResult } from '@/types/license'
 import { useSettings, SETTING_KEYS } from '@/state/SettingsProvider'
 import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, setBackupLocation, setDataRoot, revealPath, syncHolidays, clearHolidays, type BackupItem } from '@/services/settings'
 import { pickProjectDirectory } from '@/services/projectFiles'
+import { TimePicker } from '@/components/TimePicker'
 
 interface SettingsSection {
   id: string
   label: string
   Icon: LucideIcon
+}
+
+/** 把后端存的 UTC 时间戳转成本地时间显示；空/非法 → '从未' */
+function formatLocalDateTime(iso: string | null | undefined): string {
+  if (!iso) return '从未'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '从未'
+  return d.toLocaleString('zh-CN', { hour12: false })
 }
 
 const SECTIONS: SettingsSection[] = [
@@ -41,7 +50,6 @@ const SECTIONS: SettingsSection[] = [
   { id: 'data', label: '数据', Icon: Database },
   { id: 'automation', label: '自动化', Icon: Sparkles },
   { id: 'workday', label: '法定节假日', Icon: CalendarDays },
-  { id: 'ai', label: 'AI 配置', Icon: Sparkles },
   { id: 'license', label: '授权', Icon: Shield },
   { id: 'about', label: '关于', Icon: Info },
 ]
@@ -129,7 +137,6 @@ export function SettingsPage() {
         {active === 'data' && <DataSection />}
         {active === 'automation' && <AutomationSection />}
         {active === 'workday' && <WorkdaySection />}
-        {active === 'ai' && <AISection />}
         {active === 'license' && <LicenseSection />}
         {active === 'about' && <AboutSection />}
       </main>
@@ -297,38 +304,6 @@ function DataSection() {
     </>
   )
 }
-
-function AISection() {
-  const { get, save } = useSettings()
-  return (
-    <>
-      <SectionHeader title="AI 配置" desc="模型选择 · API · 参数" />
-      <Field label="默认模型">
-        <Select
-          options={[
-            { value: 'claude', label: 'Claude Sonnet 4' },
-            { value: 'gpt', label: 'GPT-4o' },
-            { value: 'deepseek', label: 'DeepSeek V3' },
-            { value: 'qwen', label: '通义千问' },
-            { value: 'ollama', label: 'Ollama（本地）' },
-          ]}
-          value={get('aiModel') || 'claude'}
-          onSelect={(v) => save('aiModel', v)}
-        />
-      </Field>
-      <Field label="API Key">
-        <Input type="password" value={get('aiApiKey') ?? ''} onChange={(v) => save('aiApiKey', v)} placeholder="sk-…" />
-      </Field>
-      <Field label="Base URL">
-        <Input value={get('aiBaseUrl') ?? ''} onChange={(v) => save('aiBaseUrl', v)} placeholder="https://api…" />
-      </Field>
-      <Field label="温度">
-        <Input value={get('aiTemperature') ?? ''} onChange={(v) => save('aiTemperature', v)} placeholder="0.3" />
-      </Field>
-    </>
-  )
-}
-
 
 function LicenseSection() {
   const [loading, setLoading] = useState(true)
@@ -615,6 +590,41 @@ function LicenseSection() {
 }
 
 function AboutSection() {
+  const [status, setStatus] = useState<string>('loading')
+
+  // 读真实授权状态，避免写死"待激活"
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const r = await invoke<LicenseStatus>('get_license_status')
+        if (!alive) return
+        if (r.activated) {
+          if (r.license?.expire_date) {
+            setStatus(`已激活 · 有效期至 ${r.license.expire_date}`)
+          } else {
+            setStatus('已激活 · 永久授权')
+          }
+        } else {
+          const trial = await invoke<{ is_trial: boolean; days_remaining: number | null }>('check_trial_status')
+          if (!alive) return
+          if (trial.is_trial && trial.days_remaining !== null) {
+            setStatus(`试用中 · 剩 ${trial.days_remaining} 天`)
+          } else {
+            setStatus('待激活')
+          }
+        }
+      } catch (e) {
+        if (alive) setStatus('待激活')
+      }
+    }
+    load()
+    return () => {
+      alive = false
+    }
+  }, [])
+
   return (
     <>
       <SectionHeader title="关于" desc="PMTool V2.0" />
@@ -630,10 +640,10 @@ function AboutSection() {
         }}
       >
         <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: 'var(--color-text)' }}>版本</span> · 2.0.0 (Phase A)
+          <span style={{ color: 'var(--color-text)' }}>版本</span> · 2.0.0
         </div>
         <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: 'var(--color-text)' }}>授权</span> · 待激活
+          <span style={{ color: 'var(--color-text)' }}>授权</span> · {status === 'loading' ? '读取中…' : status}
         </div>
         <div
           style={{
@@ -678,7 +688,7 @@ function WorkdaySection() {
   }
   const doClear = async () => {
     setBusy(true); setMsg(null)
-    try { const n = await clearHolidays(); setMsg('已清除 ' + n + ' 条法定节假日数据（用于测试与工作日历的关联）') }
+    try { const n = await clearHolidays(); setMsg('已清除 ' + n + ' 条法定节假日数据') }
     catch (e) { setMsg('清除失败：' + String(e)) }
     finally { setBusy(false) }
   }
@@ -697,6 +707,31 @@ function WorkdaySection() {
           ))}
           <button type="button" className="pm-btn" onClick={addSource}>+ 添加同步源</button>
         </div>
+        {/* 接入规范提示：告诉用户什么样的源可以直接用 */}
+        <details style={{ marginTop: 12, fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.8 }}>
+          <summary style={{ cursor: 'pointer', color: 'var(--color-text)', fontWeight: 500 }}>
+            📋 接入规范：什么样的接口可以直接用？
+          </summary>
+          <div style={{ padding: '10px 12px', marginTop: 8, background: 'var(--color-bg-muted)', borderRadius: 'var(--radius)', maxWidth: 780 }}>
+            接口要求：
+            <br />
+            · 直接返回 JSON（GET 即可访问，无需登录 / 鉴权 / 请求头）
+            <br />
+            · 地址中可用 <code>{'{year}'}</code> 占位符表示年份，同步时自动替换（如 {'{year}'}=2026）
+            <br />
+            支持两种返回结构，任选其一：
+            <br />
+            &nbsp;&nbsp;① holiday-cn 格式：{'{"year":2026,"days":[{"name":"元旦","date":"2026-01-01","isOffDay":true}]}'}
+            <br />
+            &nbsp;&nbsp;&nbsp;&nbsp;isOffDay：true 放假 · false 调休上班（默认源 ②③ 即此格式）
+            <br />
+            &nbsp;&nbsp;② 日期映射格式：{'{"01-01":{"name":"元旦","holiday":true}}'}
+            <br />
+            &nbsp;&nbsp;&nbsp;&nbsp;键为「月-日」 · holiday/isOffDay：true 放假 · false 调休上班（默认源 ① 即此格式）
+            <br />
+            · 找不到自己的接口？使用上方三个默认源即可（均为可直接访问的节假日数据）
+          </div>
+        </details>
       </Field>
       <Field label="自动同步">
         <span className="pms-row">
@@ -714,7 +749,7 @@ function WorkdaySection() {
         </span>
       </Field>
       {msg && <div className="pms-msg">{msg}</div>}
-      <Field label="上次同步"><ReadonlyRow value={get('holidayLastSync') ?? '从未'} /></Field>
+      <Field label="上次同步"><ReadonlyRow value={formatLocalDateTime(get('holidayLastSync'))} /></Field>
     </>
   )
 }
@@ -722,25 +757,122 @@ function WorkdaySection() {
 function AutomationSection() {
   const { get, save } = useSettings()
   const timeField = (key: string) => (
-    <input type="time" className="pm-time" defaultValue={get(key) ?? '09:00'} onChange={(e) => save(key, e.target.value)} />
+    <TimePicker value={get(key) ?? '09:00'} onChange={(v) => saveSchedule(key, v)} testid={`${key}-picker`} />
   )
   const toggleField = (key: string) => <Toggle checked={get(key) === '1'} onChange={(v) => save(key, v ? '1' : '0')} />
+  // 变更调度配置（周几/几号/时间/顺延）时，清掉该任务的 lastRun/ignored。
+  // 否则旧时间已触发并写入 lastRun=今天，改新时间后 shouldFire 判定「今天已执行」永不触发。
+  const saveSchedule = (key: string, value: string) => {
+    const task = key.startsWith('autoWeekly')
+      ? 'weekly'
+      : key.startsWith('autoMonthly')
+        ? 'monthly'
+        : key.startsWith('autoDaily')
+          ? 'daily'
+          : null
+    save(key, value)
+    if (!task) return
+    // 只有报告主开关开着，且改的是该任务的调度键，才需要重置执行记录
+    const mainKey = 'auto' + (task === 'daily' ? 'Daily' : task === 'weekly' ? 'Weekly' : 'Monthly') + 'Report'
+    if (key !== mainKey && key !== mainKey + 'Time' && key !== mainKey + 'Day' && key !== mainKey + 'Carryover') return
+    if (get(mainKey) !== '1') return
+    void save('autoTask_lastRun_' + task, '')
+    void save('autoTask_ignored_' + task, '')
+  }
+
+  const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  const DAY_OPTIONS = ['last', ...Array.from({ length: 31 }, (_, i) => String(i + 1))]
+  const keyToDayLabel = (k: string) => (k === 'last' ? '每月最后一天' : `每月 ${parseInt(k, 10)} 日`)
+  const weekSelect = (
+    <select
+      className="pm-time"
+      value={get('autoWeeklyReportDay') ?? '5'}
+      style={{ maxWidth: '110px', flexShrink: 0 }}
+      onChange={(e) => saveSchedule('autoWeeklyReportDay', e.target.value)}
+    >
+      {WEEKDAYS.map((w, i) => (
+        <option key={String(i + 1)} value={String(i + 1)}>{w}</option>
+      ))}
+    </select>
+  )
+  const daySelect = (
+    <select
+      className="pm-time"
+      value={get('autoMonthlyReportDay') ?? 'last'}
+      style={{ maxWidth: '150px', flexShrink: 0 }}
+      onChange={(e) => save('autoMonthlyReportDay', e.target.value)}
+    >
+      {DAY_OPTIONS.map((d) => (
+        <option key={d} value={d}>{keyToDayLabel(d)}</option>
+      ))}
+    </select>
+  )
+  const carrySwitch = (key: string, label: string) => (
+    <span className="ms-carry">
+      {toggleField(key)}
+      <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>{label}</span>
+    </span>
+  )
+  const miniToggle = (key: string, label: string) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+      {toggleField(key)}
+      <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{label}</span>
+    </span>
+  )
   return (
     <>
       <SectionHeader title="自动化" desc="自动顺延 · 自动生成日报/周报/月报" />
       <Field label="任务自动顺延">
-        <span className="pms-row">{toggleField('autoPostpone')}{timeField('postponeTime')}</span>
+        <span style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) max-content', alignItems: 'center', gap: '10px', width: '100%' }}>
+          {toggleField('autoPostpone')}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{timeField('postponeTime')}<span style={{ flex: 1 }} /></span>
+          <span />
+        </span>
       </Field>
-      <Field label="日报自动生成">
-        <span className="pms-row">{toggleField('autoDailyReport')}{timeField('autoDailyReportTime')}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '150px 60px 60px 60px 128px 92px 96px', alignItems: 'center', gap: '8px 12px', rowGap: '12px', width: '100%', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>报告自动生成</span>
+          <span style={{ textAlign: 'center' }}>开启</span>
+          <span style={{ textAlign: 'center' }}>个人</span>
+          <span style={{ textAlign: 'center' }}>项目</span>
+          <span style={{ textAlign: 'center' }}>日期</span>
+          <span style={{ textAlign: 'center' }}>时间</span>
+          <span style={{ textAlign: 'center' }}>工作日顺延</span>
+
+          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>日报</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReport')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportPersonal')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportProject')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoDailyReportTime')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportCarryover')}</span>
+
+          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>周报</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReport')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportPersonal')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportProject')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{weekSelect}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoWeeklyReportTime')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportCarryover')}</span>
+
+          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>月报</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReport')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportPersonal')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportProject')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{daySelect}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoMonthlyReportTime')}</span>
+          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportCarryover')}</span>
+        </div>
+      <Field label="启动补偿提醒">
+        <span className="pms-row">
+          {toggleField('autoCompensationReminder')}
+          <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+            应用开启时，提醒未执行的定时任务（可在弹窗选「不再提醒」关闭本提醒）
+          </span>
+        </span>
       </Field>
-      <Field label="周报自动生成">
-        <span className="pms-row">{toggleField('autoWeeklyReport')}{timeField('autoWeeklyReportTime')}</span>
-      </Field>
-      <Field label="月报自动生成">
-        <span className="pms-row">{toggleField('autoMonthlyReport')}{timeField('autoMonthlyReportTime')}</span>
-      </Field>
-      <div className="pms-msg">到点后自动执行对应任务（应用开启时有效）。周报/月报需报告中心已有周期日报数据。</div>
+      <div className="pms-msg">
+        到点后自动执行对应任务（应用开启时有效）。周报/月报需报告中心已有周期日报数据。
+        开启「工作日顺延」后，若触发日为节假日/周末，自动顺延到下一个工作日执行；应用未开启期间错过的任务，启动时补偿提示。
+      </div>
     </>
   )
 }
@@ -1047,13 +1179,16 @@ function Select({
   options,
   value,
   onSelect,
+  className,
 }: {
   options: { value: string; label: string }[]
   value?: string
   onSelect?: (v: string) => void
+  className?: string
 }) {
   return (
     <select
+      className={className}
       value={value}
       onChange={(e) => onSelect?.(e.target.value)}
       style={{

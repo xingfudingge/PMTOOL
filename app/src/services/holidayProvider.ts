@@ -34,6 +34,9 @@ export interface HolidayProvider {
 
   /** 获取节假日列表 */
   list(): HolidayEntry[]
+
+  /** 读取某日的节假日记录（无则 undefined）。供项目中心复用 */
+  get(date: string): HolidayEntry | undefined
 }
 
 export interface HolidayEntry {
@@ -101,6 +104,11 @@ export class LocalHolidayProvider implements HolidayProvider {
     return Array.from(this.cache.values())
   }
 
+  /** 读取某日的节假日记录（无则 undefined）。与 HolidayService.get 同构，便于项目中心复用 */
+  get(date: string): HolidayEntry | undefined {
+    return this.cache.get(date)
+  }
+
   isLoaded(): boolean {
     return this.loaded
   }
@@ -123,6 +131,9 @@ export class ApiHolidayProvider implements HolidayProvider {
   }
   list(): HolidayEntry[] {
     return []
+  }
+  get(_date: string): HolidayEntry | undefined {
+    return undefined
   }
 }
 

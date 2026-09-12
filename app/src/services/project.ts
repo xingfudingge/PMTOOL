@@ -139,8 +139,7 @@ export function computeProjectProgress(
   const isOverdue = !!(
     project.end_date &&
     today > project.end_date &&
-    project.status !== 'COMPLETED' &&
-    project.status !== 'CANCELLED'
+    project.status !== 'CLOSING'
   )
   return {
     overallProgress,

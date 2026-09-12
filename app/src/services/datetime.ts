@@ -125,3 +125,31 @@ export function endOfMonth(d: Date): string {
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0)
   return formatLocalDate(lastDay)
 }
+
+/**
+ * 解析后端存储的时间字符串。
+ *
+ * 根因：SQLite 的 CURRENT_TIMESTAMP / datetime('now') 返回 UTC 但**不带时区后缀**
+ * （如 `2026-09-11 04:28:57`）。若直接 `new Date("2026-09-11 04:28:57")`，JS 会按
+ * **本地时区**解析，导致比 UTC+8 正确值差 8 小时。
+ *
+ * 本函数识别「无时区后缀且形如 YYYY-MM-DD HH:MM 的串」→ 视为 UTC 并补 Z 再解析，
+ * 得到正确本地时间。带 Z / offset 或纯日期（YYYY-MM-DD）的串保持原语义。
+ */
+export function parseStoredUtc(value: string): Date {
+  const s = String(value ?? '').trim()
+  // 无后缀且形如 YYYY-MM-DD HH:MM(:SS) → SQLite UTC 时间
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    const norm = s.replace(' ', 'T')
+    return new Date(norm + 'Z')
+  }
+  return new Date(s)
+}
+
+/** 后端存储的时间戳（无后缀 UTC）→ 本地时间字符串，用于展示 */
+export function formatStoredDateTime(value: string | null | undefined): string {
+  if (!value) return ''
+  const d = parseStoredUtc(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString('zh-CN', { hour12: false })
+}

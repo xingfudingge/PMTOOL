@@ -3,10 +3,8 @@
  * 维护者 2026-08-25 反馈重构
  *
  * 结构：
- *   Tabs：[常规报告] | [AI 报告]
- *   常规报告下：
- *     - 日报 / 周报 / 月报 三种类型
- *     - 每种类型下分 [个人] | [项目] 两种 scope
+ *   - 日报 / 周报 / 月报 三种类型
+ *   - 每种类型下分 [个人] | [项目] 两种 scope
  *     - 水平日期条（维护者要求）：
  *         日报：7 天 · 今天默认在中间 · 可前后切换
  *         周报：7 周 · 本周默认在中间 · 可前后切换
@@ -27,7 +25,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Sparkles,
   CalendarDays,
   FileText,
   Trash2,
@@ -45,14 +42,8 @@ import { listReports, updateReport, deleteReport } from '@/services/reports'
 import { useReportGen } from '@/services/reportGenerator'
 import type { Report } from '@/database/api'
 
-type TabKey = 'normal' | 'ai'
 type ReportTypeKey = 'daily' | 'weekly' | 'monthly'
 type ScopeKey = 'personal' | 'project'
-
-const TAB_DEFS: { key: TabKey; label: string }[] = [
-  { key: 'normal', label: '常规报告' },
-  { key: 'ai', label: 'AI 报告' },
-]
 
 const TYPE_DEFS: {
   key: ReportTypeKey
@@ -151,7 +142,6 @@ function periodKeyOf(reportType: ReportTypeKey, report: Report): string {
 // ============================================================
 
 export function ReportsPage() {
-  const [tab, setTab] = useState<TabKey>('normal')
   const [typeKey, setTypeKey] = useState<ReportTypeKey>('daily')
   const [scope, setScope] = useState<ScopeKey>('personal')
   const [allReports, setAllReports] = useState<Report[]>([])
@@ -198,9 +188,9 @@ export function ReportsPage() {
   }
 
   useEffect(() => {
-    if (tab === 'normal') void load()
+    void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, typeKey])
+  }, [typeKey])
 
   // 当前选中周期 + scope 的报告
   const filteredReports = useMemo(
@@ -339,52 +329,11 @@ export function ReportsPage() {
             margin: 0,
           }}
         >
-          常规报告（日报 / 周报 / 月报 · 分个人和项目） · AI 报告（项目总结 / 阶段汇报 · 即将开放）
+          日报 / 周报 / 月报 · 分个人和项目
         </p>
       </div>
 
-      {/* Tabs：常规 / AI */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          padding: 4,
-          background: 'var(--color-bg-subtle)',
-          border: '1px solid var(--color-border-thin)',
-          borderRadius: 'var(--radius)',
-          width: 'fit-content',
-          marginBottom: '14px',
-        }}
-      >
-        {TAB_DEFS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            data-testid={`reports-tab-${t.key}`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '6px 14px',
-              border: 'none',
-              background: tab === t.key ? 'var(--color-surface)' : 'transparent',
-              color: tab === t.key ? 'var(--color-text)' : 'var(--color-text-tertiary)',
-              fontSize: '12.5px',
-              fontWeight: tab === t.key ? 500 : 400,
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-            }}
-          >
-            {t.key === 'ai' && <Sparkles size={12} strokeWidth={1.75} />}
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'ai' ? (
-        <AIPlaceholder />
-      ) : (
-        <>
+      <>
           {/* 报告类型选择：日报 / 周报 / 月报 */}
           <div
             style={{
@@ -585,7 +534,6 @@ export function ReportsPage() {
             </ul>
           )}
         </>
-      )}
 
       {/* 报告内容 Modal */}
       {viewing && (
@@ -902,7 +850,7 @@ function ReportRow({
           width: 32,
           height: 32,
           borderRadius: 'var(--radius)',
-          background: report.generateType === 'AI' ? 'var(--color-accent-subtle)' : 'var(--color-bg-subtle)',
+          background: 'var(--color-bg-subtle)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -923,20 +871,6 @@ function ReportRow({
           <span style={{ fontSize: '13.5px', fontWeight: 500, color: 'var(--color-text)' }}>
             {report.title}
           </span>
-          {report.generateType === 'AI' && (
-            <span
-              style={{
-                fontSize: '9.5px',
-                color: 'var(--color-accent)',
-                background: 'var(--color-accent-subtle)',
-                padding: '1px 5px',
-                borderRadius: 3,
-                fontWeight: 500,
-              }}
-            >
-              AI
-            </span>
-          )}
         </div>
         <div
           style={{
@@ -1410,46 +1344,3 @@ function EmptyHint({
   )
 }
 
-function AIPlaceholder() {
-  return (
-    <div
-      style={{
-        padding: '60px 20px',
-        textAlign: 'center',
-        background: 'var(--color-surface)',
-        border: '1px dashed var(--color-border-thin)',
-        borderRadius: 'var(--radius-md)',
-        marginTop: 8,
-      }}
-    >
-      <div
-        style={{
-          width: 48,
-          height: 48,
-          borderRadius: '50%',
-          background: 'var(--color-accent-subtle)',
-          margin: '0 auto 12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Sparkles size={20} strokeWidth={1.5} color="var(--color-accent)" />
-      </div>
-      <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--color-text)', marginBottom: 4 }}>
-        AI 报告 · 即将开放
-      </div>
-      <div
-        style={{
-          fontSize: '12.5px',
-          color: 'var(--color-text-tertiary)',
-          maxWidth: 480,
-          margin: '0 auto',
-          lineHeight: 1.6,
-        }}
-      >
-        维护者说"AI 报告后面做报告中心的时候，再详细设计" · 届时会支持：项目总结、阶段汇报、按需自由生成等
-      </div>
-    </div>
-  )
-}

@@ -380,10 +380,11 @@ function aggregatePeriodReport(input: {
     (nextPlan || '（暂无）')
 
   // 2. 项目报告：聚合该项目当周/当月的所有项目 daily reports
+  // 维护者 2026-09-12：无论是否有项目日报，每个项目都生成周报/月报（无数据落「（暂无）」）
+  // 之前的实现用 continue 跳过无日报/无内容的项目，导致项目周报/月报「静默不生成」。
   const projectReports: { project: Project; period: string; content: string }[] = []
   for (const p of input.projects) {
     const projectDaily = input.dailyReports.filter((r) => r.projectId === p.id)
-    if (projectDaily.length === 0) continue
     const projToday: string[] = []
     for (const r of projectDaily) {
       const { today } = parseDailyContent(r.content ?? '')
@@ -395,10 +396,9 @@ function aggregatePeriodReport(input: {
       seenProj.add(t)
       return true
     })
-    if (uniqueProjToday.length === 0) continue
     const projContent =
       `${section1}：\n` +
-      renumber(uniqueProjToday).join('\n') +
+      (uniqueProjToday.length > 0 ? renumber(uniqueProjToday).join('\n') : '（暂无）') +
       '\n\n' +
       `${section2}：\n` +
       '（暂无）'

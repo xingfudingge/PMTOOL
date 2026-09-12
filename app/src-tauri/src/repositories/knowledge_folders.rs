@@ -5,7 +5,7 @@
  *   - 0009_knowledge_spaces_and_bindings.sql 定义（新增 system_type 字段）
  *
  * 设计变更：
- *   - system_type 字段：USER（用户创建）/ SYSTEM_AI（AI 生成目录）/ PROJECT_ROOT（项目根目录）
+ *   - system_type 字段：USER（用户创建）/ PROJECT_ROOT（项目根目录）
  *   - 个人知识中心只有一个 personal 空间（project_id=NULL）
  *   - 项目知识中心每个项目一个 PROJECT 空间（project_id 指向项目）
  *
@@ -27,7 +27,7 @@ pub struct KnowledgeFolder {
     pub project_id: Option<i64>,    // 兼容字段；共享空间为空
     pub name: String,
     pub sort_order: i64,
-    pub system_type: String,        // USER / SYSTEM_AI / PROJECT_ROOT
+    pub system_type: String,        // USER / PROJECT_ROOT
     pub created_at: String,
     pub updated_at: String,
 }
@@ -309,74 +309,3 @@ pub fn ensure_project_root(
     upsert(conn, input)
 }
 
-/// 确保 AI 生成目录存在（SYSTEM_AI 类型）
-/// 每个空间应该有一个 AI 生成目录
-pub fn ensure_ai_folder(
-    conn: &Connection,
-    space: &str,
-    project_id: Option<i64>,
-) -> rusqlite::Result<KnowledgeFolder> {
-    // 检查是否已存在
-    let folders = if project_id.is_some() {
-        list_by_project(conn, project_id.unwrap())?
-    } else {
-        list_by_space(conn, space)?
-    };
-
-    if let Some(existing) = folders.iter().find(|f| f.system_type == "SYSTEM_AI") {
-        return Ok(existing.clone());
-    }
-
-    // 创建 AI 目录
-    let input = KnowledgeFolderInput {
-        id: None,
-        parent_id: None,
-        space: space.to_string(),
-        space_id: None,
-        project_id,
-        name: "AI 生成".to_string(),
-        sort_order: Some(0),
-        system_type: Some("SYSTEM_AI".to_string()),
-    };
-
-    upsert(conn, input)
-}
-
-/// 确保某知识空间（知识库）有且仅有一个独立的 AI 生成目录（SYSTEM_AI 类型）
-///
-/// 2026-09-09 · 一库多项目：AI 目录按 space_id 归属（每库唯一、独立，不跨库共享），
-/// 不再用全局 space 字符串 / project_id 定位 —— 共享库下 project_id 为 NULL，按 space
-/// 字符串查会把所有库的 AI 目录混成全局一个（即此前 AI 目录“全局共享”的根因）。
-/// 新建知识库时调用，保证“一库一 AI 生成目录、跟随知识库”。
-pub fn ensure_ai_folder_for_space(
-    conn: &Connection,
-    space_id: i64,
-    space_type: &str,
-) -> rusqlite::Result<KnowledgeFolder> {
-    // 该库已有 AI 目录（每库唯一）则直接返回
-    let sql = format!(
-        "SELECT {} FROM knowledge_folders \
-         WHERE space_id = ?1 AND system_type = 'SYSTEM_AI' LIMIT 1",
-        SELECT_COLS
-    );
-    {
-        let mut stmt = conn.prepare(&sql)?;
-        let mut rows = stmt.query(params![space_id])?;
-        if let Some(row) = rows.next()? {
-            return Ok(row_to_knowledge_folder(row)?);
-        }
-    }
-
-    let input = KnowledgeFolderInput {
-        id: None,
-        parent_id: None,
-        space: space_type.to_string(),
-        space_id: Some(space_id),
-        project_id: None,
-        name: "AI 生成".to_string(),
-        sort_order: Some(0),
-        system_type: Some("SYSTEM_AI".to_string()),
-    };
-
-    upsert(conn, input)
-}

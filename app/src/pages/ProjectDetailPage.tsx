@@ -85,9 +85,10 @@ import { parseWeeklyExcel, exportWeeklyToExcel } from '@/services/excelWeekly'
 import { parseMembersExcel, exportMembersToExcel } from '@/services/excelMembers'
 import { parseProjectsExcel, exportProjectsToExcel } from '@/services/excelProjects'
 import { toast } from '@/components/Toast'
+import { RegistersSection } from '@/components/RegistersSection'
 import { InlineEditableCell } from '@/components/InlineEditableCell'
 import { downloadProjectTemplate } from '@/services/excelTemplate'
-import { triggerDownload } from '@/services/excel'
+import { saveBlobToDirectory } from '@/services/excel'
 import { formatLocalDate } from '@/services/datetime'
 import {
   createProjectTask,
@@ -96,7 +97,7 @@ import {
   updateProjectTask,
   type ProjectTask,
 } from '@/services/projectTasks'
-import { defaultHolidayService } from '@/services/holiday'
+import { defaultHolidayProvider } from '@/services/holidayProvider'
 import { ProjectOverviewEditModal } from '@/components/ProjectOverviewEditModal'
 import { FileTree } from '@/components/FileTree'
 import { FilePreview } from '@/components/FilePreview'
@@ -131,8 +132,8 @@ type PrimaryTab =
   | 'knowledge'
   | 'files'
   | 'members'
-  | 'risks'
-type PlanningTab = 'overall' | 'gantt'
+  | 'registers'
+type PlanningTab = 'overview' | 'overall' | 'gantt'
 
 interface PrimaryTabDef {
   key: PrimaryTab
@@ -151,10 +152,11 @@ const PRIMARY_TABS: PrimaryTabDef[] = [
   { key: 'knowledge', label: '项目知识库', Icon: BookOpen },
   { key: 'files', label: '项目文件管理', Icon: FolderOpen },
   { key: 'members', label: '项目成员', Icon: Users },
-  { key: 'risks', label: '风险登记册', Icon: AlertOctagon },
+  { key: 'registers', label: '登记册', Icon: AlertOctagon },
 ]
 
 const PLANNING_TABS: PlanningTabDef[] = [
+  { key: 'overview', label: '项目概况' },
   { key: 'overall', label: '整体计划' },
   { key: 'gantt', label: '甘特图' },
 ]
@@ -203,6 +205,11 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
     refresh()
   }, [projectId])
 
+  // 进入项目详情前刷新法定节假日缓存（读数据库同步数据 · 与设置中心一致）
+  useEffect(() => {
+    void defaultHolidayProvider.load()
+  }, [])
+
   if (loading && !data) {
     return (
       <div
@@ -221,7 +228,7 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
             display: 'inline-flex',
             alignItems: 'center',
             gap: '4px',
-            padding: '6px 12px',
+            padding: '6px 6px',
             border: '1px solid var(--color-border-thin)',
             borderRadius: 'var(--radius)',
             background: 'transparent',
@@ -263,9 +270,6 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
       <Header
         data={data}
         onBack={onBack}
-        onAiSummary={() => console.log('[AI 总结] TODO')}
-        onAiRisk={() => console.log('[AI 风险] TODO')}
-        onAiReport={() => console.log('[AI 汇报] TODO')}
         onEditOverview={() => setEditOpen(true)}
       />
 
@@ -333,7 +337,7 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
               onClick={() => setPlanning(t.key)}
               data-testid={`planning-tab-${t.key}`}
               style={{
-                padding: '6px 12px',
+                padding: '6px 6px',
                 border: 'none',
                 background: 'transparent',
                 borderRadius: 'var(--radius)',
@@ -394,9 +398,7 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
         {primary === 'members' && (
           <MembersTab projectId={projectId} data={data} onRefresh={refresh} />
         )}
-        {primary === 'risks' && (
-          <RisksTab projectId={projectId} data={data} onRefresh={refresh} />
-        )}
+        {primary === 'registers' && <RegistersSection projectId={projectId} />}
       </div>
 
       <ProjectOverviewEditModal
@@ -416,16 +418,10 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
 function Header({
   data,
   onBack,
-  onAiSummary,
-  onAiRisk,
-  onAiReport,
   onEditOverview,
 }: {
   data: ProjectDetailData
   onBack: () => void
-  onAiSummary?: () => void
-  onAiRisk?: () => void
-  onAiReport?: () => void
   onEditOverview?: () => void
 }) {
   return (
@@ -484,32 +480,7 @@ function Header({
           {data.project.project_name}
         </h1>
 
-        {/* 右：AI 按钮组 + 编辑 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <button
-            onClick={onAiSummary}
-            data-testid="ai-summary-btn"
-            style={aiBtnStyle}
-          >
-            <Sparkles size={12} strokeWidth={1.75} />
-            AI 总结
-          </button>
-          <button
-            onClick={onAiRisk}
-            data-testid="ai-risk-btn"
-            style={aiBtnStyle}
-          >
-            <AlertTriangle size={12} strokeWidth={1.75} />
-            AI 风险
-          </button>
-          <button
-            onClick={onAiReport}
-            data-testid="ai-report-btn"
-            style={aiBtnStyle}
-          >
-            <FileText size={12} strokeWidth={1.75} />
-            AI 汇报
-          </button>
+        {/* 右：编辑 */}
           <button
             onClick={onEditOverview}
             data-testid="edit-overview-btn"
@@ -518,25 +489,9 @@ function Header({
             <Pencil size={12} strokeWidth={1.75} />
             编辑项目
           </button>
-        </div>
       </div>
     </div>
   )
-}
-
-/** AI 按钮样式（淡背景） */
-const aiBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  padding: '5px 10px',
-  border: '1px solid var(--color-accent-subtle)',
-  borderRadius: 'var(--radius)',
-  background: 'var(--color-accent-subtle)',
-  color: 'var(--color-accent)',
-  fontSize: '12px',
-  fontWeight: 500,
-  cursor: 'pointer',
 }
 
 /** 主操作按钮样式（蓝色填充） */
@@ -975,15 +930,15 @@ function PlanningSection({
       data-testid="planning-section"
       style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
     >
+      {planning === 'overview' && (
+        <ProjectOverviewPanel data={data} onRefresh={onRefresh} />
+      )}
       {planning === 'overall' && (
-        <>
-          <ProjectOverviewPanel data={data} onRefresh={onRefresh} />
-          <TaskPlanPanel
-            projectId={projectId}
-            data={data}
-            onRefresh={onRefresh}
-          />
-        </>
+        <TaskPlanPanel
+          projectId={projectId}
+          data={data}
+          onRefresh={onRefresh}
+        />
       )}
       {planning === 'gantt' && (
         <GanttTab projectId={projectId} data={data} onRefresh={onRefresh} />
@@ -1028,7 +983,7 @@ function PlanningSection({
  *
  * 复用 service：
  *   - createProjectTask / updateProjectTask / deleteProjectTask
- *   - defaultHolidayService.get(dateStr) → HolidayEntry | undefined
+ *   - defaultHolidayProvider.get(dateStr) → HolidayEntry | undefined
  */
 const GANTT_LABEL_W = 200
 const GANTT_STATS_W = 130 // 自然日 65 + 工作日 65
@@ -1131,7 +1086,7 @@ function GanttTab({
     return { start, end }
   }, [data])
 
-  // ----- 每天的节假日 / 补班标记（按 §5 spec · 复用 defaultHolidayService）-----
+  // ----- 每天的节假日 / 补班标记（按 §5 spec · 复用 defaultHolidayProvider）-----
   //   - isHoliday：HOLIDAY + isWorkday=0 → 节假日（浅红）
   //   - isShift  ：WORKDAY_SHIFT + isWorkday=1 → 调休（保留旧字段）
   //   - isMakeup ：任意 type + isWorkday=1 → 补班（浅绿 + ▲ 标记）· 涵盖
@@ -1147,7 +1102,7 @@ function GanttTab({
     const endD = new Date(range.end + 'T00:00:00')
     while (cur <= endD) {
       const ds = formatLocalDate(cur)
-      const h = defaultHolidayService.get(ds)
+      const h = defaultHolidayProvider.get(ds)
       const isHoliday = !!(h && h.type === 'HOLIDAY' && h.isWorkday === 0)
       const isShift = !!(h && h.type === 'WORKDAY_SHIFT' && h.isWorkday === 1)
       // 补班判定：直接看 isWorkday（HOLIDAY+isWorkday=1 或 WORKDAY_SHIFT+isWorkday=1）
@@ -1365,9 +1320,9 @@ function GanttTab({
     setError(null)
     try {
       const blob = await exportProjectsToExcel(data.tasks)
-      const ts = new Date().toISOString().slice(0, 10)
+      const ts = formatLocalDate(new Date())
       const filename = `项目管理-${data.project.project_name || projectId}-${ts}.xlsx`
-      const ok = triggerDownload(blob, filename)
+      const ok = await saveBlobToDirectory(blob, filename)
       if (ok) {
         toast.success(`已导出 ${data.tasks.length} 条任务`, `文件名：${filename}`)
       } else {
@@ -2563,7 +2518,7 @@ function ProjectOverviewPanel({ data, onRefresh }: { data: ProjectDetailData; on
   const saveProjectField = async (
     field:
       | 'projectName' | 'customerName' | 'owner' | 'contractAmount'
-      | 'background' | 'objective' | 'scope',
+      | 'status' | 'background' | 'objective' | 'scope',
     value: string,
   ) => {
     setSavingField(field)
@@ -2584,6 +2539,8 @@ function ProjectOverviewPanel({ data, onRefresh }: { data: ProjectDetailData; on
         patch.objective = value || null
       } else if (field === 'scope') {
         patch.scope = value || null
+      } else if (field === 'status') {
+        patch.status = value as 'START' | 'PLANNING' | 'EXECUTING' | 'MONITORING' | 'CLOSING'
       }
       await updateProject(project.id, patch)
       await onRefresh()
@@ -2668,7 +2625,7 @@ function ProjectOverviewPanel({ data, onRefresh }: { data: ProjectDetailData; on
           }}
         >
           {/* 项目名称（必填）· 横跨两列 */}
-          <div style={{ gridColumn: '1 / span 2' }}>
+          <div>
             <Label>项目名称 *</Label>
             <InlineEditableCell
               value={project.project_name}
@@ -2676,6 +2633,21 @@ function ProjectOverviewPanel({ data, onRefresh }: { data: ProjectDetailData; on
               placeholder="项目名称"
               onCommit={(v) => saveProjectField('projectName', v)}
             />
+          </div>
+          {/* 项目状态（五态 · 启动/规划/执行/监控/收尾）*/}
+          <div><Label>项目状态</Label>
+            <select
+              value={project.status}
+              onChange={(e) => saveProjectField('status', e.target.value)}
+              data-testid="project-status-select"
+              style={{ width: '100%', padding: '6px 6px', border: '1px solid var(--color-border-thin)', borderRadius: 'var(--radius)', background: 'var(--color-bg)', color: 'var(--color-text)', fontFamily: 'inherit' }}
+            >
+              <option value="START">启动</option>
+              <option value="PLANNING">规划</option>
+              <option value="EXECUTING">执行</option>
+              <option value="MONITORING">监控</option>
+              <option value="CLOSING">收尾</option>
+            </select>
           </div>
           {/* 客户 */}
           <div>
@@ -2698,7 +2670,7 @@ function ProjectOverviewPanel({ data, onRefresh }: { data: ProjectDetailData; on
             />
           </div>
           {/* 合同金额（元）· 横跨两列 */}
-          <div style={{ gridColumn: '1 / span 2' }}>
+          <div>
             <Label>合同金额（元）</Label>
             <InlineEditableCell
               value={project.contract_amount ? `¥${project.contract_amount.toLocaleString()}` : ''}
@@ -2730,7 +2702,7 @@ function ProjectOverviewPanel({ data, onRefresh }: { data: ProjectDetailData; on
             />
           </div>
           {/* 项目范围 · 横跨两列 */}
-          <div style={{ gridColumn: '1 / span 2' }}>
+          <div>
             <Label>项目范围</Label>
             <InlineEditableCell
               value={project.scope ?? ''}
@@ -2896,7 +2868,7 @@ function TaskPlanPanel({
       const blob = await exportProjectsToExcel(data.tasks)
       const ts = todayLocal()
       const filename = `项目管理-${data.project.project_name}-${ts}.xlsx`
-      const ok = triggerDownload(blob, filename)
+      const ok = await saveBlobToDirectory(blob, filename)
       if (ok) toast.success(`已导出 ${data.tasks.length} 条任务`, filename)
       else toast.error('导出 Excel 失败', '浏览器拦截了下载，请检查 WebView 设置')
     } catch (e) {
@@ -3187,7 +3159,7 @@ function TaskPlanPanel({
             alignItems: 'center',
             justifyContent: 'center',
             gap: 6,
-            padding: '6px 10px',
+            padding: '6px 6px',
             border: '1px solid var(--color-border-thin)',
             background: 'var(--color-bg-subtle)',
             color: 'var(--color-text-secondary)',
@@ -3392,7 +3364,7 @@ function TaskPlanPanel({
                 <li
                   key={idx}
                   style={{
-                    padding: '6px 12px',
+                    padding: '6px 6px',
                     borderBottom: '1px solid var(--color-border-thin)',
                     fontSize: 12,
                     color: 'var(--color-text-secondary)',
@@ -3408,7 +3380,7 @@ function TaskPlanPanel({
               {importConfirm.length > 50 && (
                 <li
                   style={{
-                    padding: '6px 12px',
+                    padding: '6px 6px',
                     fontSize: 11,
                     color: 'var(--color-text-tertiary)',
                   }}
@@ -3511,7 +3483,7 @@ function networkdaysPublic(start: string, end: string): number {
   while (cur <= endD) {
     const ds = formatLocalDate(cur)
     const day = cur.getDay()
-    if (day !== 0 && day !== 6 && !defaultHolidayService.isHoliday(ds)) count++
+    if (day !== 0 && day !== 6 && !defaultHolidayProvider.isHoliday(ds)) count++
     cur.setDate(cur.getDate() + 1)
   }
   return count
@@ -4324,7 +4296,7 @@ function WeeklyTab({
   const entryIsReadonly = (e: WeeklyModalEntry): boolean => {
     if (openWeekNumber === null) return false
     const weekEnd = computeWeekDateRange(openWeekNumber, projectStartDate).week_end_date
-    const isPastWeek = weekEnd < new Date().toISOString().split('T')[0]
+    const isPastWeek = weekEnd < formatLocalDate(new Date())
     return isPastWeek || e.is_completed === 'COMPLETED'
   }
   const handleWeeklyCellCommit = async (
@@ -4468,7 +4440,7 @@ function WeeklyTab({
       const weekEntries = entries.filter((e) => e.week_number === weekNumber)
       const blob = await exportWeeklyToExcel(weekEntries)
       const filename = `${data.project.project_name}-第${cn(weekNumber)}周周报-${todayLocal()}.xlsx`
-      const ok = triggerDownload(blob, filename)
+      const ok = await saveBlobToDirectory(blob, filename)
       if (ok) toast.success(`已导出第 ${cn(weekNumber)} 周周报`, filename)
       else toast.error('导出失败', '浏览器拦截了下载')
     } catch (e) {
@@ -5332,7 +5304,7 @@ function WeekDetailSection({
                 <td
                   colSpan={colCount}
                   style={{
-                    padding: '6px 10px',
+                    padding: '6px 6px',
                     borderBottom: '1px solid var(--color-border-thin)',
                   }}
                 >
@@ -5588,7 +5560,7 @@ function WeeklyImportConfirmModal({
             <li
               key={idx}
               style={{
-                padding: '6px 12px',
+                padding: '6px 6px',
                 borderBottom: '1px solid var(--color-border-thin)',
                 fontSize: '12px',
                 color: 'var(--color-text-secondary)',
@@ -5601,7 +5573,7 @@ function WeeklyImportConfirmModal({
           {items.length > 50 && (
             <li
               style={{
-                padding: '6px 12px',
+                padding: '6px 6px',
                 fontSize: '11px',
                 color: 'var(--color-text-tertiary)',
               }}
@@ -5760,7 +5732,7 @@ function CarryOverSourcePickerModal({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
-                    padding: '6px 12px',
+                    padding: '6px 6px',
                     borderBottom: '1px solid var(--color-border-thin)',
                     cursor: busy ? 'not-allowed' : 'pointer',
                     background:
@@ -5828,7 +5800,7 @@ function CarryOverSourcePickerModal({
                   <div
                     key={it.id}
                     style={{
-                      padding: '6px 10px',
+                      padding: '6px 6px',
                       borderBottom:
                         idx < sourceItems.length - 1
                           ? '1px solid var(--color-border-thin)'
@@ -6132,6 +6104,7 @@ function RisksTab({
       actual_date: null,
       discovered_at: todayLocal(),
       solution: null,
+      resolution: null,
       status: 'OPEN',
       created_at: '',
       updated_at: '',
@@ -6143,7 +6116,7 @@ function RisksTab({
     try {
       const blob = await exportRisksToExcel(issues)
       const filename = `${data.project.project_name}-风险登记册-${todayLocal()}.xlsx`
-      const ok = triggerDownload(blob, filename)
+      const ok = await saveBlobToDirectory(blob, filename)
       if (ok) toast.success(`已导出 ${issues.length} 条风险`, filename)
       else toast.error('导出失败', '浏览器拦截了下载')
     } catch (e) {
@@ -6699,7 +6672,7 @@ function IssueImportConfirmModal({
             <li
               key={idx}
               style={{
-                padding: '6px 12px',
+                padding: '6px 6px',
                 borderBottom: '1px solid var(--color-border-thin)',
                 fontSize: '12px',
                 color: 'var(--color-text-secondary)',
@@ -6711,7 +6684,7 @@ function IssueImportConfirmModal({
           {items.length > 50 && (
             <li
               style={{
-                padding: '6px 12px',
+                padding: '6px 6px',
                 fontSize: '11px',
                 color: 'var(--color-text-tertiary)',
               }}
@@ -6920,7 +6893,7 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
               type="button"
               onClick={() => setPickerOpen(true)}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 14px',
+                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 6px',
                 background: 'var(--color-accent)', color: 'var(--color-text-on-accent, #fff)',
                 border: 'none', borderRadius: 'var(--radius)', fontSize: 12, fontWeight: 500,
                 cursor: 'pointer', marginTop: 4,
@@ -6988,7 +6961,7 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
                 type="button"
                 onClick={() => setPickerOpen(false)}
                 style={{
-                  padding: '6px 14px', fontSize: 12, border: '1px solid var(--color-border)',
+                  padding: '6px 6px', fontSize: 12, border: '1px solid var(--color-border)',
                   background: 'var(--color-bg)', color: 'var(--color-text)', borderRadius: 'var(--radius)',
                   cursor: 'pointer',
                 }}
@@ -7499,7 +7472,7 @@ function FilesTab({
       {treeError && (
         <div
           style={{
-            padding: '6px 14px',
+            padding: '6px 6px',
             fontSize: 12,
             color: '#dc2626',
             background: '#fef2f2',
@@ -7572,7 +7545,7 @@ function FilesTab({
               placeholder={createMode === 'file' ? '例：会议纪要.md' : '例：02、需求调研'}
               style={{
                 width: '100%',
-                padding: '6px 10px',
+                padding: '6px 6px',
                 fontSize: 13,
                 border: '1px solid var(--color-border)',
                 borderRadius: 4,
@@ -7793,7 +7766,7 @@ function FilesTab({
                 type="button"
                 onClick={() => setPendingConfirm(null)}
                 style={{
-                  padding: '6px 14px',
+                  padding: '6px 6px',
                   fontSize: 13,
                   border: '1px solid var(--color-border)',
                   background: 'transparent',
@@ -7814,7 +7787,7 @@ function FilesTab({
                   }
                 }}
                 style={{
-                  padding: '6px 14px',
+                  padding: '6px 6px',
                   fontSize: 13,
                   border: 'none',
                   background: '#dc2626',
@@ -7999,7 +7972,7 @@ function MembersTab({
       const blob = await exportMembersToExcel([...membersA, ...membersB])
       const filename = `${data.project.project_name}-项目成员-${todayLocal()}.xlsx`
       const total = membersA.length + membersB.length
-      const ok = triggerDownload(blob, filename)
+      const ok = await saveBlobToDirectory(blob, filename)
       if (ok) toast.success(`已导出 ${total} 位成员`, filename)
       else toast.error('导出失败', '浏览器拦截了下载')
     } catch (e) {
@@ -8246,7 +8219,7 @@ function MembersTab({
                 <li
                   key={idx}
                   style={{
-                    padding: '6px 12px',
+                    padding: '6px 6px',
                     borderBottom: '1px solid var(--color-border-thin)',
                     fontSize: '12px',
                     color: 'var(--color-text-secondary)',
@@ -8258,7 +8231,7 @@ function MembersTab({
               {importConfirm.length > 50 && (
                 <li
                   style={{
-                    padding: '6px 12px',
+                    padding: '6px 6px',
                     fontSize: '11px',
                     color: 'var(--color-text-tertiary)',
                   }}
@@ -8471,7 +8444,7 @@ function MemberFormModal({
   }
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    padding: '6px 8px',
+    padding: '6px 6px',
     border: '1px solid var(--color-border-thin)',
     borderRadius: 'var(--radius)',
     background: 'var(--color-bg)',

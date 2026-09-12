@@ -28,12 +28,6 @@ describe('Sidebar · 布局修复回归', () => {
     expect(navStyle).not.toMatch(/flex:\s*['"]?1['"]?/)
   })
 
-  it('版本号 div 必须有 marginTop: auto（推到底部）', () => {
-    const versionMatch = src.match(/\{!\s*collapsed\s*&&\s*\(\s*<div\s+style=\{\{([^}]+)\}\}\s*>/)
-    expect(versionMatch).toBeTruthy()
-    const versionStyle = versionMatch![1]
-    expect(versionStyle).toMatch(/marginTop:\s*['"]auto['"]/)
-  })
 
   it('Sidebar aside 是 flex column（版本号能贴底的前提）', () => {
     expect(src).toMatch(/display:\s*['"]flex['"][^}]*flexDirection:\s*['"]column['"]/)

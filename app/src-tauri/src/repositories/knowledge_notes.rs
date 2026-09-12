@@ -35,7 +35,6 @@ pub struct KnowledgeNote {
     pub folder_id: Option<i64>,
     pub category: Option<String>,
     pub source_type: String,
-    pub is_ai_generated: bool,
     pub created_by: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -56,14 +55,13 @@ pub struct KnowledgeNoteInput {
     pub folder_id: Option<i64>,
     pub category: Option<String>,
     pub source_type: Option<String>,
-    pub is_ai_generated: Option<bool>,
     pub created_by: Option<String>,
 }
 
 /// 共享 SELECT 列顺序 · 所有 SELECT 必须按这个顺序
 const SELECT_COLS: &str = "id, space_id, space, title, content, content_type, \
                            content_md, pinned, folder_id, category, source_type, \
-                           is_ai_generated, created_by, created_at, updated_at";
+                           created_by, created_at, updated_at";
 
 fn row_to_knowledge_note(row: &Row) -> rusqlite::Result<KnowledgeNote> {
     Ok(KnowledgeNote {
@@ -78,10 +76,9 @@ fn row_to_knowledge_note(row: &Row) -> rusqlite::Result<KnowledgeNote> {
         folder_id: row.get(8)?,
         category: row.get(9)?,
         source_type: row.get(10)?,
-        is_ai_generated: row.get::<_, i64>(11)? != 0,
-        created_by: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        created_by: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
     })
 }
 
@@ -124,7 +121,6 @@ pub fn get_by_id(conn: &Connection, id: i64) -> rusqlite::Result<Option<Knowledg
 pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<KnowledgeNote> {
     let pinned_int: i64 = if input.pinned.unwrap_or(false) { 1 } else { 0 };
     let source_type = input.source_type.as_deref().unwrap_or("USER");
-    let is_ai_int: i64 = if input.is_ai_generated.unwrap_or(false) { 1 } else { 0 };
 
     let final_id: i64 = match input.id {
         Some(id) if id > 0 => {
@@ -132,7 +128,7 @@ pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<
                 "UPDATE knowledge_notes
                  SET space_id=?2, space=?3, title=?4, content=?5, content_type=?6,
                      content_md=?7, pinned=?8, folder_id=?9, category=?10, source_type=?11,
-                     is_ai_generated=?12, created_by=?13, updated_at=CURRENT_TIMESTAMP
+                     created_by=?12, updated_at=CURRENT_TIMESTAMP
                  WHERE id=?1",
                 params![
                     id,
@@ -146,7 +142,6 @@ pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<
                     input.folder_id,
                     input.category,
                     source_type,
-                    is_ai_int,
                     input.created_by,
                 ],
             )?;
@@ -155,7 +150,7 @@ pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<
                     "INSERT INTO knowledge_notes
                      (id, space_id, space, title, content, content_type,
                       content_md, pinned, folder_id, category, source_type,
-                      is_ai_generated, created_by, created_at, updated_at)
+                      created_by, created_at, updated_at)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                              CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                     params![
@@ -170,7 +165,6 @@ pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<
                         input.folder_id,
                         input.category,
                         source_type,
-                        is_ai_int,
                         input.created_by,
                     ],
                 )?;
@@ -182,8 +176,8 @@ pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<
                 "INSERT INTO knowledge_notes
                  (space_id, space, title, content, content_type,
                   content_md, pinned, folder_id, category, source_type,
-                  is_ai_generated, created_by, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                  created_by, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 params![
                     input.space_id,
@@ -196,7 +190,6 @@ pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<
                     input.folder_id,
                     input.category,
                     source_type,
-                    is_ai_int,
                     input.created_by,
                 ],
             )?;

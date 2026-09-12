@@ -16,6 +16,7 @@ export interface ProjectIssue {
   actual_date: string | null // actual_resolve_date
   discovered_at: string | null // 2026-08-26 补 · 风险首次发现时间（Excel 列「发现时间」）
   solution: string | null
+  resolution: string | null // 2026-09-11 补 · 风险登记册「当前风险应对情况说明」
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
   created_at: string
   updated_at: string
@@ -31,6 +32,7 @@ export interface NewIssue {
   actual_date?: string | null
   discovered_at?: string | null
   solution?: string | null
+  resolution?: string | null
   status?: ProjectIssue['status']
 }
 
@@ -54,6 +56,7 @@ export async function createProjectIssue(issue: NewIssue): Promise<number> {
     actual_date: issue.actual_date ?? null,
     discovered_at: issue.discovered_at ?? null,
     solution: issue.solution ?? null,
+    resolution: issue.resolution ?? null,
     status: issue.status ?? 'OPEN',
     created_at: '',
     updated_at: '',
@@ -77,6 +80,7 @@ export async function updateProjectIssue(
     actual_date: patch.actual_date !== undefined ? patch.actual_date : existing.actual_date,
     discovered_at: patch.discovered_at !== undefined ? patch.discovered_at : existing.discovered_at,
     solution: patch.solution !== undefined ? patch.solution : existing.solution,
+    resolution: patch.resolution !== undefined ? patch.resolution : existing.resolution,
     status: patch.status ?? existing.status,
   }
   return invoke<boolean>('update_project_issue', { id, issue: fullIssue })

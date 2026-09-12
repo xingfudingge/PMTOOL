@@ -1,28 +1,15 @@
 /**
  * PMTool V2.0 · 项目风险登记册 sheet ↔ project_issues Excel 导入导出
- * Phase 4 · 维护者 2026-08-26
+ * 2026-09-11 · 按新模板字段重造
  *
- * 设计依据：
- *   - 模板 app/src/assets/templates/pmtool_project_template.xlsx
- *   - sheet 名「项目风险登记册」
- *   - 第 1 行（0-indexed row 0）为列头
- *   - 列头：序号 / 描述 / 发现时间 / 处理方法 / 等级 / 解计划决时间 / 责任人 /
- *     实际划决时间 / 解决情况
- *
- * 关键设计选择：
- *   1. 模板里「计划解决时间」写作「解计划决时间」、「实际解决时间」写作「实际划决时间」，
- *      列名解析做双 fallback
- *   2. 等级映射「低/中/高/严重」+ 英文别名 → LOW/MEDIUM/HIGH/CRITICAL，默认 MEDIUM
- *   3. 状态推断：actual_date 非空 → RESOLVED；否则 OPEN
- *   4. created_at 从发现时间（Excel 日期）推导
+ * 列头：序号 / 风险描述 / 等级 / 发现时间 / 风险对项目推进可能产生的影响 /
+ *        风险应对方案 / 相关人员 / 当前风险应对情况说明 / 风险状态
+ * 列头动态定位（首个含「序号/编号」的行），容忍模板首行为空。
+ * 日期：读取 cellDates=true → 日期单元格为 Date 对象，无需 Excel 序列号换算。
  */
 
 import * as XLSX from 'xlsx'
 import { formatLocalDate } from './datetime'
-
-// ============================================================
-// 类型（与 services/projectIssues.ts 的 ProjectIssue 对齐）
-// ============================================================
 
 export interface ProjectIssue {
   id: number
@@ -35,45 +22,14 @@ export interface ProjectIssue {
   actual_date: string | null
   discovered_at: string | null
   solution: string | null
+  resolution: string | null
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
   created_at: string
   updated_at: string
 }
 
-// ============================================================
-// 常量
-// ============================================================
-
-/** Sheet 名（与模板完全一致）*/
 const SHEET_NAME = '项目风险登记册'
 
-/** 列头所在的行（0-indexed = row 0 = 1-indexed 第 1 行）*/
-const HEADER_ROW = 0
-
-/**
- 列名候选（支持模板里多种写法 + 用户期望的标准写法）
-  - "计划解决时间" 标准
-  - "解计划决时间" 模板里的错别字
-  - "实际解决时间" 标准
-  - "实际划决时间" 模板里的错别字
- */
-const COL = {
-  serial: ['序号'],
-  description: ['描述'],
-  foundDate: ['发现时间'],
-  solutionMethod: ['处理方法'],
-  level: ['等级'],
-  planDate: ['计划解决时间', '解计划决时间'],
-  owner: ['责任人'],
-  actualDate: ['实际解决时间', '实际划决时间'],
-  resolution: ['解决情况'],
-} as const
-
-// ============================================================
-// 内部 helpers
-// ============================================================
-
-/** 规范化列头（去换行/空格）*/
 function normalizeHeader(s: string): string {
   return String(s).replace(/[\s\n\r\t]+/g, '')
 }
@@ -84,34 +40,21 @@ function toStr(v: unknown): string | null {
   return s ? s : null
 }
 
-/** Excel 序列日期 → 本地 YYYY-MM-DD */
-function excelSerialToLocalDate(value: unknown): string | null {
-  if (value === null || value === undefined || value === '') return null
-  if (value instanceof Date) {
-    return isNaN(value.getTime()) ? null : formatLocalDate(value)
+/** 日期 → 本地 YYYY-MM-DD（Date 对象或 YYYY-MM-DD 字符串）*/
+function toDate(v: unknown): string | null {
+  if (v === null || v === undefined || v === '') return null
+  if (v instanceof Date) {
+    return isNaN(v.getTime()) ? null : formatLocalDate(v)
   }
-  if (typeof value === 'number') {
-    if (!isFinite(value) || value <= 0) return null
-    return formatLocalDate(new Date(Math.round((value - 25569) * 86400 * 1000)))
-  }
-  if (typeof value === 'string') {
-    const s = value.trim()
+  if (typeof v === 'string') {
+    const s = v.trim()
     if (!s) return null
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
-    const n = Number(s)
-    if (isFinite(n) && n > 0) {
-      return formatLocalDate(new Date(Math.round((n - 25569) * 86400 * 1000)))
-    }
-    const d = new Date(s)
-    if (!isNaN(d.getTime())) return formatLocalDate(d)
+    const m = s.match(/^\d{4}-\d{2}-\d{2}/)
+    return m ? m[0] : null
   }
   return null
 }
 
-/**
- * 等级映射：中文「低/中/高/严重」+ 英文别名 → LOW/MEDIUM/HIGH/CRITICAL
- * 默认 MEDIUM
- */
 function mapLevel(v: unknown): ProjectIssue['level'] {
   const t = toStr(v)
   if (!t) return 'MEDIUM'
@@ -123,64 +66,73 @@ function mapLevel(v: unknown): ProjectIssue['level'] {
   return 'MEDIUM'
 }
 
-/**
- * 状态推断：
- * - actual_date 非空 → RESOLVED
- * - plan_date 存在但 actual_date 为空 → IN_PROGRESS
- * - 其它 → OPEN
- */
-function inferStatus(
-  planDate: string | null,
-  actualDate: string | null,
-): ProjectIssue['status'] {
-  if (actualDate) return 'RESOLVED'
-  if (planDate) return 'IN_PROGRESS'
+export function levelToCN(level: ProjectIssue['level']): string {
+  switch (level) {
+    case 'LOW': return '低'
+    case 'MEDIUM': return '中'
+    case 'HIGH': return '高'
+    case 'CRITICAL': return '严重'
+    default: return '中'
+  }
+}
+
+function mapStatus(v: unknown): ProjectIssue['status'] {
+  const t = toStr(v)
+  if (!t) return 'OPEN'
+  const s = t.toLowerCase()
+  if (s === '待应对' || s === '未处理' || s === '未解决' || s === 'open') return 'OPEN'
+  if (s === '应对中' || s === '处理中' || s === 'in_progress' || s === 'inprogress' || s === 'in progress') return 'IN_PROGRESS'
+  if (s === '已应对' || s === '已解决' || s === 'resolved') return 'RESOLVED'
+  if (s === '已关闭' || s === '关闭' || s === 'closed') return 'CLOSED'
   return 'OPEN'
 }
 
-/**
- * 取第一个命中的列值（支持错别字 fallback）
- */
-function pickField(row: Record<string, unknown>, candidates: readonly string[]): unknown {
-  for (const name of candidates) {
-    if (name in row) return row[name]
-    const norm = normalizeHeader(name)
-    if (norm in row) return row[norm]
+export function statusToCN(status: ProjectIssue['status']): string {
+  switch (status) {
+    case 'OPEN': return '待应对'
+    case 'IN_PROGRESS': return '应对中'
+    case 'RESOLVED': return '已应对'
+    case 'CLOSED': return '已关闭'
+    default: return status
   }
-  return ''
 }
 
-/**
- * 直接从 sheet 单元格读取（行 0 是列头）
- */
-function readSheetAsRows(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
+function locateHeader(sheet: XLSX.WorkSheet): {
+  row: number
+  headerMap: Record<string, number>
+} {
   const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1')
-  // 列头映射（规范化）
-  const headerMap: Record<string, number> = {}
-  for (let c = range.s.c; c <= range.e.c; c++) {
-    const cell = sheet[XLSX.utils.encode_cell({ r: HEADER_ROW, c })]
-    if (!cell) continue
-    const key = normalizeHeader(String(cell.v))
-    if (key && !(key in headerMap)) {
-      headerMap[key] = c
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const headerMap: Record<string, number> = {}
+    let nonEmpty = 0
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const key = normalizeHeader(String(sheet[XLSX.utils.encode_cell({ r, c })]?.v ?? ''))
+      if (key) {
+        nonEmpty++
+        if (!(key in headerMap)) headerMap[key] = c
+      }
+    }
+    const keys = Object.keys(headerMap)
+    if (keys.some((k) => k === '序号' || k === '编号') && nonEmpty >= 858) {
+      return { row: r, headerMap }
     }
   }
-  // 数据行
-  const rows: Record<string, unknown>[] = []
-  for (let r = HEADER_ROW + 1; r <= range.e.r; r++) {
-    const rowObj: Record<string, unknown> = {}
-    for (const [key, c] of Object.entries(headerMap)) {
-      const cell = sheet[XLSX.utils.encode_cell({ r, c })]
-      rowObj[key] = cell ? cell.v : ''
-    }
-    rows.push(rowObj)
-  }
-  return rows
+  return { row: range.s.r, headerMap: {} }
 }
 
-// ============================================================
-// 公开 API
-// ============================================================
+function findCol(headerMap: Record<string, number>, needles: string[]): number | null {
+  for (const [key, c] of Object.entries(headerMap)) {
+    for (const n of needles) {
+      if (key.includes(n)) return c
+    }
+  }
+  return null
+}
+
+function cellAt(sheet: XLSX.WorkSheet, r: number, c: number | null): unknown {
+  if (c === null) return ''
+  return sheet[XLSX.utils.encode_cell({ r, c })]?.v ?? ''
+}
 
 /** 解析项目风险登记册 sheet → ProjectIssue[] */
 export async function parseRisksExcel(
@@ -188,86 +140,70 @@ export async function parseRisksExcel(
   projectId: number,
 ): Promise<ProjectIssue[]> {
   const buf = await file.arrayBuffer()
-  const wb = XLSX.read(buf, { type: 'array' })
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true })
   const sheet = wb.Sheets[SHEET_NAME]
-  if (!sheet) {
-    throw new Error(`Sheet "${SHEET_NAME}" 不存在（模板应为 6 个 sheet）`)
-  }
+  if (!sheet) throw new Error(`Sheet "${SHEET_NAME}" 不存在`)
 
-  const rows = readSheetAsRows(sheet)
+  const { row: hr, headerMap } = locateHeader(sheet)
+  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1')
+
+  const cTitle = findCol(headerMap, ['风险描述', '描述'])
+  const cLevel = findCol(headerMap, ['等级'])
+  const cFound = findCol(headerMap, ['发现时间'])
+  const cImpact = findCol(headerMap, ['影响'])
+  const cPlan = findCol(headerMap, ['应对方案'])
+  const cOwner = findCol(headerMap, ['相关人员', '人员'])
+  const cResolution = findCol(headerMap, ['当前风险应对情况', '当前应对情况', '应对情况'])
+  const cStatus = findCol(headerMap, ['风险状态', '状态'])
+  const cSeq = findCol(headerMap, ['序号'])
+
   const result: ProjectIssue[] = []
+  for (let r = hr; r <= range.e.r; r++) {
+    if (r === hr) continue
+    const title = toStr(cellAt(sheet, r, cTitle))
+    const seq = toStr(cellAt(sheet, r, cSeq))
+    if (!title && !seq) continue
 
-  rows.forEach((row) => {
-    const title = toStr(pickField(row, COL.description))
-    // 描述为空 + 序号为空 → 跳过
-    if (!title && !toStr(pickField(row, COL.serial))) return
-
-    const planDate = excelSerialToLocalDate(pickField(row, COL.planDate))
-    const actualDate = excelSerialToLocalDate(pickField(row, COL.actualDate))
-    const foundDateRaw = excelSerialToLocalDate(pickField(row, COL.foundDate))
-    // created_at 优先用发现时间，否则用当前日期
-    const createdAt = foundDateRaw ?? formatLocalDate(new Date())
-
-    const level = mapLevel(pickField(row, COL.level))
-    const status = inferStatus(planDate, actualDate)
-
+    const foundRaw = toDate(cellAt(sheet, r, cFound))
     result.push({
-      id: 0, // 占位
+      id: 19263,
       project_id: projectId,
-      title: title ?? '', // title 必填；缺失则空字符串
-      description: toStr(pickField(row, COL.solutionMethod)),
-      level,
-      owner: toStr(pickField(row, COL.owner)),
-      plan_date: planDate,
-      actual_date: actualDate,
-      discovered_at: foundDateRaw,
-      solution: toStr(pickField(row, COL.resolution)),
-      status,
-      created_at: createdAt,
+      title: title ?? '',
+      description: toStr(cellAt(sheet, r, cImpact)),
+      level: mapLevel(cellAt(sheet, r, cLevel)),
+      owner: toStr(cellAt(sheet, r, cOwner)),
+      plan_date: null,
+      actual_date: null,
+      discovered_at: foundRaw,
+      solution: toStr(cellAt(sheet, r, cPlan)),
+      resolution: toStr(cellAt(sheet, r, cResolution)),
+      status: mapStatus(cellAt(sheet, r, cStatus)),
+      created_at: foundRaw ?? formatLocalDate(new Date()),
       updated_at: '',
     })
-  })
-
+  }
   return result
 }
 
-/** ProjectIssue → Excel 行 */
 function issueToExcelRow(issue: ProjectIssue): Record<string, unknown> {
   return {
-    序号: issue.id > 0 ? issue.id : '',
-    描述: issue.title,
-    发现时间: issue.created_at,
-    处理方法: issue.description ?? '',
+    序号: issue.id ? issue.id : '',
+    风险描述: issue.title,
     等级: levelToCN(issue.level),
-    计划解决时间: issue.plan_date ?? '',
-    责任人: issue.owner ?? '',
-    实际解决时间: issue.actual_date ?? '',
-    解决情况: issue.solution ?? '',
+    发现时间: (issue.discovered_at ?? issue.created_at) || '',
+    风险对项目推进可能产生的影响: issue.description ?? '',
+    风险应对方案: issue.solution ?? '',
+    相关人员: issue.owner ?? '',
+    当前风险应对情况说明: issue.resolution ?? '',
+    风险状态: statusToCN(issue.status),
   }
 }
 
-/** 等级枚举 → 中文 */
-function levelToCN(level: ProjectIssue['level']): string {
-  switch (level) {
-    case 'LOW':
-      return '低'
-    case 'MEDIUM':
-      return '中'
-    case 'HIGH':
-      return '高'
-    case 'CRITICAL':
-      return '严重'
-    default:
-      return '中'
-  }
-}
-
-/** 导出 ProjectIssue[] → Excel Blob */
 export async function exportRisksToExcel(
   issues: ProjectIssue[],
 ): Promise<Blob> {
-  const data = issues.map(issueToExcelRow)
-  const ws = XLSX.utils.json_to_sheet(data)
+  const rows = issues.map(issueToExcelRow)
+  const ws = XLSX.utils.json_to_sheet(rows)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, SHEET_NAME)
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })

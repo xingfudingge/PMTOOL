@@ -25,11 +25,11 @@ import { invoke } from '@tauri-apps/api/core'
 // ============================================================
 
 export type ProjectStatus =
+  | 'START'
   | 'PLANNING'
-  | 'IN_PROGRESS'
-  | 'SUSPENDED'
-  | 'COMPLETED'
-  | 'CANCELLED'
+  | 'EXECUTING'
+  | 'MONITORING'
+  | 'CLOSING'
 
 export type ProjectPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 

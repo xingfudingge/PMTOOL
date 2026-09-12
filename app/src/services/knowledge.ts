@@ -41,7 +41,6 @@ export interface KnowledgeNote {
   folderId: number | null
   category: string | null
   sourceType: string
-  isAiGenerated: boolean
   createdBy: string | null
   createdAt: string
   updatedAt: string
@@ -60,7 +59,6 @@ export interface KnowledgeNoteInput {
   folderId?: number | null
   category?: string | null
   sourceType?: string
-  isAiGenerated?: boolean
   createdBy?: string | null
   systemType?: string          // 可选，默认 USER
 }
@@ -236,27 +234,6 @@ export async function ensureProjectKnowledgeLibrary(
     projectId,
     projectName,
   })
-}
-
-/**
- * 确保 AI 生成目录存在
- */
-export async function ensureAiKnowledgeFolder(
-  space: KnowledgeSpace,
-  projectId: number | null,
-): Promise<KnowledgeFolder> {
-  return await invoke<KnowledgeFolder>('ensure_ai_knowledge_folder', {
-    space,
-    projectId,
-  })
-}
-
-/**
- * 确保某知识空间（知识库）存在独立的 AI 生成目录（一库一 AI 目录 · 不跨库共享）
- * 2026-09-09 · 一库多项目：AI 目录按空间归属（替代 ensureAiKnowledgeFolder 的全局定位）。
- */
-export async function ensureKnowledgeAiFolder(spaceId: number): Promise<KnowledgeFolder> {
-  return await invoke<KnowledgeFolder>('ensure_knowledge_ai_folder', { spaceId })
 }
 
 /**

@@ -9,18 +9,13 @@
  *   - 不用 emoji · 统一 Lucide
  */
 
-import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   Search,
   Sun,
   Moon,
   Bell,
   Keyboard,
-  ChevronDown,
-  FolderOpen,
-  Cpu,
-  History,
-  type LucideIcon,
 } from 'lucide-react'
 import type { PageId } from '../App'
 
@@ -38,26 +33,10 @@ const PAGE_TITLE: Record<PageId, string> = {
   reports: '报告中心',
   knowledge: '知识中心',
   templates: '模板中心',
-  ai: 'AI助手',
   settings: '设置中心',
 }
 
 export function TopBar({ currentPage, theme, onToggleTheme }: TopBarProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // 点击外部关闭菜单
-  useEffect(() => {
-    if (!menuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [menuOpen])
-
   return (
     <header
       style={{
@@ -171,125 +150,13 @@ export function TopBar({ currentPage, theme, onToggleTheme }: TopBarProps) {
         >
           <Bell size={15} strokeWidth={1.75} />
         </IconButton>
-
-        {/* 用户头像 + 下拉菜单 */}
-        <div ref={menuRef} style={{ position: 'relative', marginLeft: '6px' }}>
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            data-testid="topbar-user"
-            aria-label="用户菜单"
-            aria-expanded={menuOpen}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '3px 8px 3px 3px',
-              borderRadius: '99px',
-              background: menuOpen ? 'var(--color-bg-active)' : 'transparent',
-              transition: 'background-color 0.12s',
-            }}
-            onMouseEnter={(e) => {
-              if (!menuOpen) e.currentTarget.style.background = 'var(--color-bg-hover)'
-            }}
-            onMouseLeave={(e) => {
-              if (!menuOpen) e.currentTarget.style.background = 'transparent'
-            }}
-          >
-            <ChevronDown
-              size={12}
-              strokeWidth={2}
-              color="var(--color-text-tertiary)"
-              style={{
-                transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.15s',
-              }}
-            />
-          </button>
-
-          {/* 下拉菜单 */}
-          {menuOpen && (
-            <div
-              data-testid="user-menu"
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                right: 0,
-                width: '260px',
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-                padding: '4px',
-                zIndex: 100,
-              }}
-            >
-              {/* 用户信息 */}
-              <div
-                style={{
-                  padding: '10px 12px',
-                  borderBottom: '1px solid var(--color-border-thin)',
-                  marginBottom: '4px',
-                }}
-              >
-                <div style={{ fontSize: '13px', fontWeight: 500 }}>刘海东</div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--color-text-tertiary)',
-                    marginTop: '2px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                >
-                  <Cpu size={10} strokeWidth={1.75} />
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>
-                    PM-DESKTOP-2H4F
-                  </span>
-                </div>
-              </div>
-
-              <MenuItem
-                Icon={FolderOpen}
-                label="数据目录"
-                onClick={() => {
-                  setMenuOpen(false)
-                  // TODO Phase C: 打开数据目录
-                }}
-              />
-              <MenuItem
-                Icon={History}
-                label="备份恢复"
-                onClick={() => {
-                  setMenuOpen(false)
-                  // TODO Phase C: 打开备份恢复
-                }}
-              />
-              <div
-                style={{
-                  height: '1px',
-                  background: 'var(--color-border-thin)',
-                  margin: '4px 8px',
-                }}
-              />
-              <MenuItem
-                Icon={theme === 'light' ? Moon : Sun}
-                label={theme === 'light' ? '深色模式' : '浅色模式'}
-                onClick={() => {
-                  setMenuOpen(false)
-                  onToggleTheme()
-                }}
-              />
-            </div>
-          )}
-        </div>
       </div>
     </header>
   )
 }
 
 interface IconButtonProps {
-  children: React.ReactNode
+  children: ReactNode
   onClick?: () => void
   title?: string
   'data-testid'?: string
@@ -326,49 +193,3 @@ function IconButton({ children, onClick, title, 'data-testid': testId }: IconBut
   )
 }
 
-interface MenuItemProps {
-  Icon: LucideIcon
-  label: string
-  shortcut?: string
-  onClick: () => void
-}
-
-function MenuItem({ Icon, label, shortcut, onClick }: MenuItemProps) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        width: '100%',
-        padding: '8px 10px',
-        borderRadius: 'var(--radius-sm)',
-        fontSize: '13px',
-        color: 'var(--color-text)',
-        textAlign: 'left',
-        transition: 'background-color 0.1s',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = 'var(--color-bg-hover)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent'
-      }}
-    >
-      <Icon size={14} strokeWidth={1.75} color="var(--color-text-secondary)" />
-      <span style={{ flex: 1 }}>{label}</span>
-      {shortcut && (
-        <kbd
-          style={{
-            fontSize: '10.5px',
-            color: 'var(--color-text-tertiary)',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          {shortcut}
-        </kbd>
-      )}
-    </button>
-  )
-}

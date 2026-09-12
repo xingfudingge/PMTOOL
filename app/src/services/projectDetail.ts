@@ -228,7 +228,7 @@ function computeIsOverdue(
   endDate: string | null,
   status: Project['status'],
 ): boolean {
-  if (!endDate || status === 'COMPLETED' || status === 'CANCELLED') return false
+  if (!endDate || status === 'CLOSING') return false
   return endDate < todayLocalStr()
 }
 

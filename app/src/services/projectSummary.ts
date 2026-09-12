@@ -33,6 +33,9 @@ import {
   type ProjectIssue,
 } from '@/services/projectIssues'
 import { invoke } from '@tauri-apps/api/core'
+import { listProjectRequirements } from './projectRequirements'
+import { listProjectIssueLog } from './projectIssueLog'
+import { listProjectTodoItems } from './projectTodoItems'
 
 // ============================================================
 // 类型定义
@@ -71,6 +74,14 @@ export interface ProjectSummary {
   overdueTaskCount: number
   /** 交付资料：附件数 */
   attachmentCount: number
+  /** 风险登记册条目数（project_issues）*/
+  riskCount: number
+  /** 问题登记册条目数（project_issue_log）*/
+  issueCount: number
+  /** 其他待办事项条目数（project_todo_items）*/
+  todoCount: number
+  /** 需求登记册条目数（project_requirements）*/
+  requirementCount: number
   /** 完整数据（按需懒加载）*/
   issues: ProjectIssue[]
   pendingTasks: ProjectTask[]
@@ -90,6 +101,10 @@ export interface ProjectOverview {
   pendingTaskCount: number
   overdueTaskCount: number
   attachmentCount: number
+  riskCount: number
+  issueCount: number
+  todoCount: number
+  requirementCount: number
   // ⚠️ 摘要不含 issues/tasks/attachments 详细数据（懒加载）
 }
 
@@ -108,27 +123,22 @@ export const STAGES = [
 /**
  * 根据项目状态 + 进度推断阶段
  * 优先级：status > 进度推断
- *   - PLANNING → 启动（阶段 1）
- *   - SUSPENDED → 保持上次阶段
- *   - COMPLETED → 验收（阶段 5）
- *   - CANCELLED → 终止（特殊状态）
- *   - IN_PROGRESS → 按进度推断
+ *   - CLOSING → 收尾（阶段 5）
+ *   - PLANNING / START → 启动（阶段 1）
+ *   - EXECUTING / MONITORING → 按进度推断
  */
 export function inferStage(
   project: Project,
   overallProgress: number,
 ): { stage: string; stageOrder: number; stageTotal: number } {
   const stageTotal = STAGES.length
-  if (project.status === 'CANCELLED') {
-    return { stage: '已终止', stageOrder: 0, stageTotal }
+  if (project.status === 'CLOSING') {
+    return { stage: '已验收', stageOrder: STAGES.length, stageTotal }
   }
-  if (project.status === 'COMPLETED') {
-    return { stage: '已验收', stageOrder: 5, stageTotal }
-  }
-  if (project.status === 'PLANNING') {
+  if (project.status === 'PLANNING' || project.status === 'START') {
     return { stage: '启动', stageOrder: 1, stageTotal }
   }
-  // IN_PROGRESS / SUSPENDED：按进度推断
+  // EXECUTING / MONITORING：按进度推断
   if (overallProgress < 20) return { stage: '启动', stageOrder: 1, stageTotal }
   if (overallProgress < 40) return { stage: '需求确认', stageOrder: 2, stageTotal }
   if (overallProgress < 80) return { stage: '实施', stageOrder: 3, stageTotal }
@@ -166,6 +176,12 @@ async function buildProjectOverview(p: Project): Promise<ProjectOverview> {
     listAttachments('PROJECT', p.id),
   ])
 
+  const [regs, issueLogs, todoItems] = await Promise.all([
+    listProjectRequirements(p.id),
+    listProjectIssueLog(p.id),
+    listProjectTodoItems(p.id),
+  ])
+
   const stats = computeIssueStats(issues)
   const tasks = await listProjectTasks(p.id)
   const pendingTasks = tasks.filter(
@@ -179,8 +195,7 @@ async function buildProjectOverview(p: Project): Promise<ProjectOverview> {
   const isOverdue = !!(
     p.end_date &&
     formatTodayLocal() > p.end_date &&
-    p.status !== 'COMPLETED' &&
-    p.status !== 'CANCELLED'
+    p.status !== 'CLOSING'
   )
 
   return {
@@ -199,6 +214,10 @@ async function buildProjectOverview(p: Project): Promise<ProjectOverview> {
     pendingTaskCount: pendingTasks.length,
     overdueTaskCount: overdueTasks.length,
     attachmentCount: attachments.length,
+    riskCount: issues.length,
+    issueCount: issueLogs.length,
+    todoCount: todoItems.length,
+    requirementCount: regs.length,
   }
 }
 
@@ -220,6 +239,12 @@ export async function loadProjectSummary(
     listAttachments('PROJECT', projectId),
   ])
 
+  const [regs, issueLogs, todoItems] = await Promise.all([
+    listProjectRequirements(projectId),
+    listProjectIssueLog(projectId),
+    listProjectTodoItems(projectId),
+  ])
+
   const stats = computeIssueStats(issues)
   const pendingTasks = tasks.filter(
     (t) => t.status === 'PENDING' || t.status === 'IN_PROGRESS',
@@ -232,8 +257,7 @@ export async function loadProjectSummary(
   const isOverdue = !!(
     project.end_date &&
     formatTodayLocal() > project.end_date &&
-    project.status !== 'COMPLETED' &&
-    project.status !== 'CANCELLED'
+    project.status !== 'CLOSING'
   )
 
   return {
@@ -252,6 +276,10 @@ export async function loadProjectSummary(
     pendingTaskCount: pendingTasks.length,
     overdueTaskCount: overdueTasks.length,
     attachmentCount: attachments.length,
+    riskCount: issues.length,
+    issueCount: issueLogs.length,
+    todoCount: todoItems.length,
+    requirementCount: regs.length,
     issues,
     pendingTasks: pendingTasks.sort((a, b) => {
       // 延期在前 + 按 end_date 升序

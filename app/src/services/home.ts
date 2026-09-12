@@ -130,7 +130,7 @@ export async function loadHomeData(): Promise<HomeData> {
 
   // 并行取基础数据
   const [activeProjects, allTodos] = await Promise.all([
-    listProjects({ status: 'IN_PROGRESS' }),
+    listProjects({ status: 'EXECUTING' }),
     listTodos({}),
   ])
 

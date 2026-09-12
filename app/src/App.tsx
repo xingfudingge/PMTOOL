@@ -23,7 +23,6 @@ import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { KnowledgePage } from './pages/KnowledgePage'
 import { TemplatesPage } from './pages/TemplatesPage'
-import { AIPage } from './pages/AIPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SettingsProvider } from './state/SettingsProvider'
 import { AutomationProvider } from './state/AutomationProvider'
@@ -36,7 +35,6 @@ export type PageId =
   | 'reports'
   | 'knowledge'
   | 'templates'
-  | 'ai'
   | 'settings'
 
 /**
@@ -105,8 +103,6 @@ function App() {
         return <KnowledgePage />
       case 'templates':
         return <TemplatesPage />
-      case 'ai':
-        return <AIPage />
       case 'settings':
         return <SettingsPage />
       default:

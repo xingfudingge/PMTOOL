@@ -207,11 +207,11 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
           style={selectStyle}
         >
           <option value="ALL">全部状态</option>
-          <option value="PLANNING">规划中</option>
-          <option value="IN_PROGRESS">进行中</option>
-          <option value="SUSPENDED">已暂停</option>
-          <option value="COMPLETED">已完成</option>
-          <option value="CANCELLED">已取消</option>
+          <option value="START">启动</option>
+          <option value="PLANNING">规划</option>
+          <option value="EXECUTING">执行</option>
+          <option value="MONITORING">监控</option>
+          <option value="CLOSING">收尾</option>
         </select>
 
         {/* 视图切换 */}
@@ -454,11 +454,10 @@ function TableList({
 // ============================================================
 
 function inferStage(p: Project): string {
-  if (p.status === 'PLANNING') return '启动'
-  if (p.status === 'IN_PROGRESS') return '实施'
-  if (p.status === 'SUSPENDED') return '暂停'
-  if (p.status === 'COMPLETED') return '已验收'
-  if (p.status === 'CANCELLED') return '已终止'
+  if (p.status === 'START' || p.status === 'PLANNING') return '启动'
+  if (p.status === 'EXECUTING') return '实施'
+  if (p.status === 'MONITORING') return '监控'
+  if (p.status === 'CLOSING') return '已验收'
   return '—'
 }
 
@@ -466,11 +465,11 @@ const STATUS_MAP: Record<
   Project['status'],
   { label: string; fg: string; bg: string }
 > = {
+  START: { label: '启动', fg: '#5b5ce2', bg: '#eeeefb' },
   PLANNING: { label: '规划', fg: '#5b5ce2', bg: '#eeeefb' },
-  IN_PROGRESS: { label: '实施', fg: '#d97706', bg: '#fff1e6' },
-  SUSPENDED: { label: '暂停', fg: '#6b7280', bg: '#f3f4f6' },
-  COMPLETED: { label: '完成', fg: '#059669', bg: '#ecfdf5' },
-  CANCELLED: { label: '终止', fg: '#6b7280', bg: '#f3f4f6' },
+  EXECUTING: { label: '执行', fg: '#d97706', bg: '#fff1e6' },
+  MONITORING: { label: '监控', fg: '#0891b2', bg: '#e6f7fb' },
+  CLOSING: { label: '收尾', fg: '#059669', bg: '#ecfdf5' },
 }
 
 function StatusBadge({ status }: { status: Project['status'] }) {

@@ -4,7 +4,7 @@
  * 拆出来独立文件以便 vitest 单元测试（不依赖 React/Tauri）。
  *
  * 两栏式重构（设计文档 §31）核心：
- *   - buildUnifiedTree：左侧单棵「统一树」，节点即目录或知识，固定追加 AI 生成系统目录
+ *   - buildUnifiedTree：左侧单棵「统一树」，节点即目录或知识
  *   - UnifiedNode.nodeKind 决定“悬停 ⋯”菜单允许的操作
  *   - 个人知识中心带虚拟根「目录」（不可删/不可改名）
  *
@@ -26,21 +26,12 @@ export interface FolderNode extends DbFolder {
   isSystem?: boolean
 }
 
-/** 虚拟目录 id · 用负数避免和真实 DB 自增 id 冲突 */
-export const SYSTEM_AI_KNOWLEDGE_ID = -1
-
-export function isSystemFolderId(id: number | null | undefined): boolean {
-  return id === SYSTEM_AI_KNOWLEDGE_ID
-}
-
 export function buildFolderTree(folders: DbFolder[], notes: DbNote[]): FolderNode[] {
   const map = new Map<number, FolderNode>()
   for (const f of folders) {
     map.set(f.id, { ...f, children: [], notes: [], expanded: true })
   }
   for (const n of notes) {
-    // 维护者 2026-08-31：AI 笔记只归 AI 知识虚拟目录，不挂真实目录
-    if (n.isAiGenerated) continue
     if (n.folderId != null && map.has(n.folderId)) {
       map.get(n.folderId)!.notes.push(n)
     }
@@ -55,25 +46,6 @@ export function buildFolderTree(folders: DbFolder[], notes: DbNote[]): FolderNod
       else roots.push(node)
     }
   }
-  // 虚拟系统目录「AI 生成知识目录」——所有 isAiGenerated=true 的笔记
-  const aiNotes = notes.filter((n) => n.isAiGenerated)
-  const fallbackSpace = roots[0]?.space ?? 'personal'
-  roots.push({
-    id: SYSTEM_AI_KNOWLEDGE_ID,
-    parentId: null,
-    space: fallbackSpace,
-    spaceId: null,
-    projectId: null,
-    name: 'AI 知识',
-    sortOrder: 0,
-    systemType: 'SYSTEM_AI',
-    createdAt: '',
-    updatedAt: '',
-    children: [],
-    notes: aiNotes,
-    expanded: true,
-    isSystem: true,
-  })
   return roots
 }
 
@@ -81,11 +53,8 @@ export function buildFolderTree(folders: DbFolder[], notes: DbNote[]): FolderNod
  * 根据当前选中目录 id 过滤笔记列表
  */
 export function filterNotesByFolder(notes: DbNote[], selectedFolderId: number | null): DbNote[] {
-  if (selectedFolderId === SYSTEM_AI_KNOWLEDGE_ID) {
-    return notes.filter((n) => n.isAiGenerated)
-  }
   if (selectedFolderId == null) return []
-  return notes.filter((n) => n.folderId === selectedFolderId && !n.isAiGenerated)
+  return notes.filter((n) => n.folderId === selectedFolderId)
 }
 
 // ============================================================
@@ -139,14 +108,11 @@ export function buildProjectBrowseTree(
 }
 
 export function filterNotesByProject(notes: DbNote[], sel: ProjectSelection): DbNote[] {
-  if (sel.folderId === SYSTEM_AI_KNOWLEDGE_ID) {
-    return notes.filter((n) => n.spaceId === sel.projectId && n.isAiGenerated)
-  }
   if (sel.folderId != null) {
-    return notes.filter((n) => n.folderId === sel.folderId && !n.isAiGenerated)
+    return notes.filter((n) => n.folderId === sel.folderId)
   }
   if (sel.projectId != null) {
-    return notes.filter((n) => n.spaceId === sel.projectId && !n.isAiGenerated)
+    return notes.filter((n) => n.spaceId === sel.projectId)
   }
   return []
 }
@@ -154,15 +120,14 @@ export function filterNotesByProject(notes: DbNote[], sel: ProjectSelection): Db
 // ============================================================
 // 统一知识树节点模型（2026-09-04 重构 · 设计文档 §31）
 // ============================================================
-// 两栏式：左侧一棵树，节点可以是「目录」或「知识」，固定系统「AI 生成」目录。
+// 两栏式：左侧一棵树，节点可以是「目录」或「知识」。
 // nodeKind 决定“悬停 ⋯”菜单允许操作：
 //   - root         个人知识中心“目录”虚拟根：仅 添加子目录（不可删/不可改名）
 //   - project-root 项目根节点：仅 删除 / 添加子目录（不可直接新建知识）
 //   - folder       普通目录（无限层级）：删除 / 重命名 / 添加子目录 / 新建知识
 //   - note         知识节点：删除 / 重命名
-//   - ai           系统 AI 生成目录：添加子目录 / 新建知识（不可删/不可重命名）
 
-export type UnifiedNodeKind = 'root' | 'project-root' | 'folder' | 'note' | 'ai'
+export type UnifiedNodeKind = 'root' | 'project-root' | 'folder' | 'note'
 
 export interface UnifiedNode extends DbFolder {
   kind: UnifiedNodeKind
@@ -200,7 +165,7 @@ function toNoteNode(n: DbNote): UnifiedNode {
 /**
  * 组装统一树。
  *
- * @param folders 该空间目录（至少含 SYSTEM_AI 目录与（项目）根目录）
+ * @param folders 该空间目录（至少含（项目）根目录）
  * @param notes   该空间全部知识
  * @param opts.withVirtualRoot 个人知识中心：在最上插“目录”虚拟根
  */
@@ -209,12 +174,8 @@ export function buildUnifiedTree(
   notes: DbNote[],
   opts: { withVirtualRoot?: boolean } = {},
 ): UnifiedNode[] {
-  const isAi = (f: DbFolder) => f.systemType === 'SYSTEM_AI'
-  const aiFolder = folders.find(isAi)
-
   const map = new Map<number, UnifiedNode>()
   for (const f of folders) {
-    if (isAi(f)) continue
     map.set(f.id, {
       ...f,
       kind: f.systemType === 'PROJECT_ROOT' ? 'project-root' : 'folder',
@@ -224,9 +185,8 @@ export function buildUnifiedTree(
     })
   }
 
-  // 挂普通知识到父目录（AI 知识只归 AI 系统目录）
+  // 挂普通知识到父目录
   for (const n of notes) {
-    if (n.isAiGenerated) continue
     const parent = n.folderId != null ? map.get(n.folderId) : undefined
     if (parent) parent.children.push(toNoteNode(n))
   }
@@ -242,21 +202,9 @@ export function buildUnifiedTree(
     }
   }
 
-  // AI 生成系统目录（固定放最后）
-  if (aiFolder) {
-    folderRoots.push({
-      ...aiFolder,
-      kind: 'ai',
-      name: aiFolder.name,
-      children: notes.filter((n) => n.isAiGenerated).map((n) => toNoteNode(n)),
-      expanded: true,
-      isSystem: true,
-    })
-  }
-
   // 个人知识中心：最上插“目录”虚拟根
   if (opts.withVirtualRoot) {
-    const rootNotes = notes.filter((n) => n.folderId == null && !n.isAiGenerated)
+    const rootNotes = notes.filter((n) => n.folderId == null)
     const virtual: UnifiedNode = {
       id: VIRTUAL_ROOT_ID,
       parentId: null,
@@ -280,16 +228,9 @@ export function buildUnifiedTree(
 }
 
 /**
- * 组装「项目知识中心」多项目聚合树（2026-09-09）
- *
- * 以项目为顶层节点（project-root），项目下 = 该项目绑定知识库的目录 + 各库的 AI 生成目录（固定在树底）。
- * M:N：多个项目可绑定同一知识库 —— 每个绑定了该库的项目节点都会展示该库内容（共享）。
- * 一个项目绑定多个知识库时，各库目录与 AI 目录依次并入该项目节点下。
- */
-/**
  * 组装「项目知识中心」知识库树（2026-09-09 · 以知识库为顶层，库与库独立）
  *
- * 顶层节点 = 知识空间（知识库），每个库独立挂自己的目录 + AI 生成目录（底部）。
+ * 顶层节点 = 知识空间（知识库），每个库独立挂自己的目录（底部）。
  * 一个库可被多个项目绑定（M:N）——共享只体现在库节点标注的绑定项目上，不改变库内容，
  * 也不会让库内容在多个项目下重复显示（知识库与知识库互不干扰）。
  */
@@ -335,7 +276,6 @@ export function buildProjectsAggregateTree(
   for (const p of projects) {
     const folders = foldersByProject.get(p.id) ?? []
     const notes = notesByProject.get(p.id) ?? []
-    // 该项目绑定知识库的目录+AI 树（去除嵌套的 project-root，防库内含实例根）
     const children = buildUnifiedTree(folders, notes, { withVirtualRoot: false }).filter(
       (c) => c.kind !== 'project-root',
     )

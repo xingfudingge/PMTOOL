@@ -16,6 +16,7 @@
  *   ⏳ 真实数据集成（Phase 0 commands 解冻后）
  */
 
+import { invoke } from '@tauri-apps/api/core'
 import type { ProjectTask } from './project'
 
 /** Excel 列定义（测试科技测试样板格式 · V8/页面规格/projects.md）*/
@@ -93,6 +94,28 @@ export async function exportProjectPlanToExcel(
   return new Blob(['placeholder'], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
+}
+
+/**
+ * 导出到用户选择的目录（Tauri 原生 rfd「另存为」对话框）
+ * @returns true 保存成功 / false 用户取消或失败（调用处可弹提示）
+ */
+export async function saveBlobToDirectory(blob: Blob, filename: string): Promise<boolean> {
+  try {
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    const path = await invoke<string | null>('save_export_file', {
+      defaultName: filename,
+      data: Array.from(bytes),
+    })
+    // Tauri：弹出原生保存对话框，用户选目录+文件名后由后端写入
+    if (path) return true
+    // 用户取消了保存对话框
+    return false
+  } catch (err) {
+    // 非 Tauri（浏览器开发模式）回退为直接浏览器下载
+    console.warn('[saveBlobToDirectory] 回退浏览器下载', err)
+    return triggerDownload(blob, filename)
+  }
 }
 
 /**

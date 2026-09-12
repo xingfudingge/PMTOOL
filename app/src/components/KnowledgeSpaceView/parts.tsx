@@ -13,8 +13,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { ChevronRight, ChevronDown, FolderOpen, Folder, FolderPlus, Trash2, FileText, X, Sparkles, BookOpen, Pencil, Check, Link2 } from 'lucide-react'
 import type { KnowledgeNote as DbNote, KnowledgeFolder as DbFolder } from '@/services/knowledge'
-import { DocumentEditor } from '@/components/DocumentEditor'
 import type { FolderNode } from './tree'
+import { DocumentEditor } from '@/components/DocumentEditor'
+import { parseStoredUtc } from '@/services/datetime'
 
 // ============================================================
 // 样式常量
@@ -212,7 +213,7 @@ export const editorEmptyStyle: React.CSSProperties = {
 }
 
 export function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime()
+  const t = parseStoredUtc(iso).getTime()
   if (Number.isNaN(t)) return ''
   const now = Date.now()
   const diff = Math.floor((now - t) / 60000)
@@ -221,7 +222,7 @@ export function formatRelative(iso: string): string {
   if (diff < 60 * 24) return `${Math.floor(diff / 60)} 小时前`
   const days = Math.floor(diff / (60 * 24))
   if (days < 30) return `${days} 天前`
-  return new Date(iso).toLocaleDateString('zh-CN')
+  return parseStoredUtc(iso).toLocaleDateString('zh-CN')
 }
 
 // ============================================================

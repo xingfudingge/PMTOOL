@@ -138,3 +138,22 @@ pub fn open_file_external(path: String) -> Result<String, String> {
     let p = PathBuf::from(&path);
     file_browser::open_file_external(&p)
 }
+
+/// 另存为导出（原生 rfd 保存对话框 · 让用户选目录+文件名）
+/// 返回 Some(保存路径) = 成功；None = 用户取消
+/// data 为前端传回的 xlsx 字节（Tauri 自动反序列化 number[] -> Vec<u8>）
+#[tauri::command]
+pub fn save_export_file(default_name: String, data: Vec<u8>) -> Result<Option<String>, String> {
+    use rfd::FileDialog;
+    match FileDialog::new()
+        .add_filter("Excel 文件", &["xlsx"])
+        .set_file_name(&default_name)
+        .save_file()
+    {
+        Some(path) => {
+            std::fs::write(&path, data).map_err(|e| format!("保存失败: {}", e))?;
+            Ok(Some(path.to_string_lossy().to_string()))
+        }
+        None => Ok(None),
+    }
+}

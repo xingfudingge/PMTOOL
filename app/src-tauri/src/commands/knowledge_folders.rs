@@ -3,7 +3,6 @@
  *
  * 设计变更：
  *   - knowledge_folders 现在关联到 knowledge_spaces（通过 space + project_id）
- *   - AI 生成目录是真实的系统目录（system_type='SYSTEM_AI'），不是虚拟节点
  *   - 项目根目录是 PROJECT_ROOT 类型
  *
  * 对应 Rust repositories/knowledge_folders.rs：
@@ -12,7 +11,6 @@
  *   - upsert()
  *   - delete()
  *   - ensure_project_root()
- *   - ensure_ai_folder()
  *
  * 删除规则（2026-09-03 设计文档 §2）：
  *   - 所有删除操作必须二次确认
@@ -88,32 +86,6 @@ pub fn ensure_project_knowledge_library(
     repo::ensure_project_root(&conn, project_id, &project_name).map_err(|e| e.to_string())
 }
 
-/// 创建或取得 AI 生成目录（SYSTEM_AI 类型）
-#[tauri::command]
-pub fn ensure_ai_knowledge_folder(
-    state: State<'_, AppState>,
-    space: String,
-    project_id: Option<i64>,
-) -> Result<KnowledgeFolder, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    repo::ensure_ai_folder(&conn, &space, project_id).map_err(|e| e.to_string())
-}
-
-/// 创建或取得某知识空间（知识库）的独立 AI 生成目录（一库一 AI 目录 · 跟随知识库）
-/// 2026-09-09 · 一库多项目：AI 目录按 space_id 归属，不跨库共享。
-#[tauri::command]
-pub fn ensure_knowledge_ai_folder(
-    state: State<'_, AppState>,
-    space_id: i64,
-) -> Result<KnowledgeFolder, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let space = crate::repositories::knowledge_spaces::get_by_id(&conn, space_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "知识空间不存在".to_string())?;
-    repo::ensure_ai_folder_for_space(&conn, space_id, &space.space_type)
-        .map_err(|e| e.to_string())
-}
-
 /// 删除目录（二次确认后执行）
 #[tauri::command]
 pub fn delete_knowledge_folder(
@@ -123,7 +95,7 @@ pub fn delete_knowledge_folder(
     // 维护者 2026-09-03：系统目录不允许删除
     let mut conn = state.db.lock().map_err(|e| e.to_string())?;
     if let Ok(Some(folder)) = repo::get_by_id(&conn, id) {
-        if folder.system_type == "SYSTEM_AI" || folder.system_type == "PROJECT_ROOT" {
+        if folder.system_type == "PROJECT_ROOT" {
             return Ok(false);
         }
     }

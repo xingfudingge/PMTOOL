@@ -32,7 +32,6 @@ vi.mock('@/services/knowledge', () => ({
     pinned: n.pinned,
     folderId: n.folderId,
     sourceType: n.sourceType,
-    isAiGenerated: n.isAiGenerated,
     createdAt: '2026-08-31T00:00:00Z',
     updatedAt: '2026-08-31T00:00:00Z',
   })),
@@ -123,30 +122,9 @@ describe('KnowledgeSpaceView · 真按钮事件测试（不进 modal）', () => 
         title: '未命名笔记',
         content: '[]',
         contentType: 'BLOCKNOTE_JSON',
-        isAiGenerated: false, folderId: 1,
+        folderId: 1,
       }),
     )
   })
 
-  it('AI 知识目录被选中时不允许从工具栏新建笔记', async () => {
-    render(<KnowledgeSpaceView space="personal" />)
-    // 先点 AI 知识目录（id=-1，由 tree.ts 注入）
-    await screen.findByTitle(/AI 知识.*系统目录/)
-    fireEvent.click(screen.getByTitle(/AI 知识.*系统目录/))
-    const newButton = await screen.findByTitle('新建笔记')
-    expect((newButton as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(newButton)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(svc.upsertKnowledgeNote).not.toHaveBeenCalled()
-  })
-
-  it('AI 知识目录不允许删除 —— deleteKnowledgeFolder 被 id<=0 guard 拦下', async () => {
-    render(<KnowledgeSpaceView space="personal" />)
-    await screen.findByTitle(/AI 知识.*系统目录/)
-    // AI 知识目录不应该渲染 trash 按钮
-    const aiFolderBtn = screen.getByTitle(/AI 知识.*系统目录/)
-    // 找它的兄弟节点中的删除按钮
-    const parent = aiFolderBtn.parentElement?.parentElement
-    expect(parent?.querySelector('button[title="删除目录"]')).toBeNull()
-  })
 })

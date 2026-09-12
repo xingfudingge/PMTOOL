@@ -8,7 +8,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Folder, FolderPlus, Plus, Trash2, Sparkles, ChevronRight, ChevronDown, Pencil, Check, X as XIcon, BookOpen } from 'lucide-react'
+import { Folder, FolderPlus, Plus, Trash2, ChevronRight, ChevronDown, Pencil, Check, X as XIcon, BookOpen } from 'lucide-react'
 import type { Project } from '@/services/project'
 import { listProjects } from '@/services/project'
 import type { KnowledgeSpace } from '@/services/knowledgeSpaces'
@@ -26,7 +26,7 @@ import {
   type KnowledgeNote as DbNote,
   type KnowledgeFolder as DbFolder,
 } from '@/services/knowledge'
-import { buildFolderTree, SYSTEM_AI_KNOWLEDGE_ID } from './tree'
+import { buildFolderTree } from './tree'
 import { importMarkdownFile } from './importMarkdown'
 
 interface ProjectKnowledgeBrowserProps {
@@ -175,13 +175,10 @@ export function ProjectKnowledgeBrowser({ onExported = () => {}, onDeleted = () 
     if (!projectData) return []
 
     const pnotes = projectData.notes
-    if (selection.folderId === SYSTEM_AI_KNOWLEDGE_ID) {
-      return pnotes.filter((n) => n.isAiGenerated)
-    }
     if (selection.folderId != null) {
-      return pnotes.filter((n) => n.folderId === selection.folderId && !n.isAiGenerated)
+      return pnotes.filter((n) => n.folderId === selection.folderId)
     }
-    return pnotes.filter((n) => n.folderId == null && !n.isAiGenerated)
+    return pnotes.filter((n) => n.folderId == null)
   }, [selection, projectTree])
 
   const [initialBlocks, setInitialBlocks] = useState<any[] | undefined>(undefined)
@@ -236,7 +233,6 @@ export function ProjectKnowledgeBrowser({ onExported = () => {}, onDeleted = () 
         pinned: false,
         folderId: selection.folderId && selection.folderId > 0 ? selection.folderId : null,
         sourceType: 'USER',
-        isAiGenerated: false,
       })
       await reload()
       openNote(created)
@@ -355,11 +351,7 @@ export function ProjectKnowledgeBrowser({ onExported = () => {}, onDeleted = () 
                             }}
                             onClick={() => setSelection({ projectId: proj.projectId, folderId: node.id })}
                           >
-                            {node.id === SYSTEM_AI_KNOWLEDGE_ID ? (
-                              <Sparkles size={11} color="#9333ea" />
-                            ) : (
-                              <Folder size={11} color="var(--color-text-tertiary)" />
-                            )}
+                            <Folder size={11} color="var(--color-text-tertiary)" />
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                               {node.name}
                             </span>
@@ -386,9 +378,7 @@ export function ProjectKnowledgeBrowser({ onExported = () => {}, onDeleted = () 
           <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)', flex: 1, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {selection.folderId == null
               ? '全部笔记'
-              : selection.folderId === SYSTEM_AI_KNOWLEDGE_ID
-                ? 'AI 生成'
-                : folders.find((f) => f.id === selection.folderId)?.name ?? '目录'}
+              : folders.find((f) => f.id === selection.folderId)?.name ?? '目录'}
           </h3>
           <button
             type="button"

@@ -33,12 +33,6 @@ import {
   exportProjectPlanToExcel,
   parseProjectPlanExcel,
 } from '@/services/excel'
-import {
-  generateProjectSummary,
-  analyzeProjectRisk,
-  generateProjectReport,
-  defaultProjectAIProvider,
-} from '@/services/projectAI'
 import type { ProjectTask } from '@/services/project'
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -50,7 +44,7 @@ const SAMPLE_PROJECT: Project = {
   project_code: 'PM-2026-001',
   project_name: '测试科技智能合同项目',
   customer_name: '测试科技',
-  status: 'IN_PROGRESS',
+  status: 'EXECUTING',
   priority: 'HIGH',
   owner: '刘海东',
   start_date: '2026-07-13',
@@ -101,8 +95,8 @@ describe('验收 T4.1 · 项目 CRUD', () => {
 
   it('listProjects 传 status 过滤 → 生效', async () => {
     vi.mocked(invoke).mockResolvedValueOnce([SAMPLE_PROJECT])
-    await listProjects({ status: 'IN_PROGRESS' })
-    expect(invoke).toHaveBeenCalledWith('list_projects', { status: 'IN_PROGRESS' })
+    await listProjects({ status: 'EXECUTING' })
+    expect(invoke).toHaveBeenCalledWith('list_projects', { status: 'EXECUTING' })
   })
 
   it('getProject(id) → null 当项目不存在', async () => {
@@ -173,7 +167,7 @@ describe('验收 T4.1 · computeProjectProgress', () => {
   it('IN_PROGRESS 项目：进度 = 50（合同金额占位）', () => {
     const progress = computeProjectProgress(SAMPLE_PROJECT, '2026-08-22')
     expect(progress.overallProgress).toBe(50)
-    expect(progress.status).toBe('IN_PROGRESS')
+    expect(progress.status).toBe('EXECUTING')
     expect(progress.isOverdue).toBe(false)
   })
 
@@ -184,7 +178,7 @@ describe('验收 T4.1 · computeProjectProgress', () => {
   })
 
   it('COMPLETED 项目：即使 end_date 已过，isOverdue=false', () => {
-    const completed = { ...SAMPLE_PROJECT, status: 'COMPLETED' as const }
+    const completed = { ...SAMPLE_PROJECT, status: 'CLOSING' as const }
     const progress = computeProjectProgress(completed, '2026-10-15')
     expect(progress.isOverdue).toBe(false)
   })
@@ -295,41 +289,6 @@ describe('验收 T4.5 · parseProjectPlanExcel / exportProjectPlanToExcel', () =
 })
 
 // ============================================================
-// 验收 T4.6：ProjectAIProvider 接口
-// ============================================================
-
-describe('验收 T4.6 · ProjectAIProvider 接口', () => {
-  it('Mock generate(SUMMARY) 返回草稿（isDraft=true）', async () => {
-    const result = await generateProjectSummary(1)
-    expect(result.isDraft).toBe(true)
-    expect(result.type).toBe('SUMMARY')
-    expect(result.projectId).toBe(1)
-    expect(result.content).toContain('Mock SUMMARY')
-  })
-
-  it('Mock generate(RISK_ANALYSIS) 返回草稿', async () => {
-    const result = await analyzeProjectRisk(1)
-    expect(result.type).toBe('RISK_ANALYSIS')
-    expect(result.isDraft).toBe(true)
-  })
-
-  it('Mock generate(REPORT_GENERATION) 返回草稿', async () => {
-    const result = await generateProjectReport(1, '周报')
-    expect(result.type).toBe('REPORT_GENERATION')
-    expect(result.isDraft).toBe(true)
-  })
-
-  it('默认 Provider 是 MockProjectAIProvider', () => {
-    expect(defaultProjectAIProvider.constructor.name).toBe('MockProjectAIProvider')
-  })
-
-  it('⚠️ 输出永远是草稿（RFC-03 §4 AI 不能直接写库）', async () => {
-    const result = await generateProjectSummary(1)
-    expect(result.isDraft).toBe(true)
-  })
-})
-
-// ============================================================
 // 验收 T4.2：项目详情页 4 指标
 // ============================================================
 
@@ -346,7 +305,7 @@ describe('验收 T4.2 · 详情页 4 指标（间接通过 computeProjectProgres
 
   it('状态指标 = progress.status', () => {
     const progress = computeProjectProgress(SAMPLE_PROJECT, '2026-08-22')
-    expect(progress.status).toBe('IN_PROGRESS')
+    expect(progress.status).toBe('EXECUTING')
   })
 
   it('优先指标 = project.priority', () => {

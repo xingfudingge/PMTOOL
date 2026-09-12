@@ -21,20 +21,28 @@ export const SETTING_KEYS = {
   backupDir: 'backupDir',
   autoPostpone: 'autoPostpone',
   postponeTime: 'postponeTime',
-  aiModel: 'aiModel',
-  aiApiKey: 'aiApiKey',
-  aiBaseUrl: 'aiBaseUrl',
-  aiTemperature: 'aiTemperature',
+  autoCompensationReminder: 'autoCompensationReminder',
   holidaySources: 'holidaySources',
   holidayActive: 'holidayActive',
   holidaySyncPeriod: 'holidaySyncPeriod',
   holidayLastSync: 'holidayLastSync',
   autoDailyReport: 'autoDailyReport',
   autoDailyReportTime: 'autoDailyReportTime',
+  autoDailyReportCarryover: 'autoDailyReportCarryover',
+  autoDailyReportPersonal: 'autoDailyReportPersonal',
+  autoDailyReportProject: 'autoDailyReportProject',
   autoWeeklyReport: 'autoWeeklyReport',
   autoWeeklyReportTime: 'autoWeeklyReportTime',
+  autoWeeklyReportDay: 'autoWeeklyReportDay',
+  autoWeeklyReportCarryover: 'autoWeeklyReportCarryover',
+  autoWeeklyReportPersonal: 'autoWeeklyReportPersonal',
+  autoWeeklyReportProject: 'autoWeeklyReportProject',
   autoMonthlyReport: 'autoMonthlyReport',
   autoMonthlyReportTime: 'autoMonthlyReportTime',
+  autoMonthlyReportDay: 'autoMonthlyReportDay',
+  autoMonthlyReportCarryover: 'autoMonthlyReportCarryover',
+  autoMonthlyReportPersonal: 'autoMonthlyReportPersonal',
+  autoMonthlyReportProject: 'autoMonthlyReportProject',
 } as const
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
@@ -89,12 +97,13 @@ function applyColor(hex: string) {
   style.setProperty('--primary', hex)
 }
 
-/** 字号缩放：写根字号 + --font-scale 供 rem/em 文案跟随 */
+/** 字号缩放 · App 全量用 px 布局（index.css 14px + 各页 px 内联），
+ *  改根字号/--font-scale 对 px 无效（无任何元素消费 --font-scale）。
+ *  改用 documentElement 的 css zoom 做整体缩放，匹配设置区「主题、字体、间距」统一缩放意图。 */
 function applyFontScale(mode: string) {
-  const scale = mode === 'compact' ? '0.9' : mode === 'large' ? '1.12' : '1'
-  document.documentElement.style.setProperty('--font-scale', scale)
-  const base = parseFloat(getComputedStyle(document.documentElement).fontSize) || 161
-  document.documentElement.style.fontSize = `${(base * parseFloat(scale)).toFixed(2)}px`
+  const scale = mode === 'compact' ? 0.88 : mode === 'large' ? 1.12 : 1
+  document.documentElement.style.setProperty('--font-scale', String(scale))
+  document.documentElement.style.zoom = String(scale)
 }
 
 function applyAppearance(settings: Record<string, string>) {

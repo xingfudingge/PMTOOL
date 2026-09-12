@@ -19,7 +19,6 @@ import {
   BarChart3,
   BookOpen,
   LayoutTemplate,
-  Sparkles,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -49,7 +48,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'reports', label: '报告中心', Icon: BarChart3 },
   { id: 'knowledge', label: '知识中心', Icon: BookOpen },
   { id: 'templates', label: '模板中心', Icon: LayoutTemplate },
-  { id: 'ai', label: 'AI助手', Icon: Sparkles },
   { id: 'settings', label: '设置中心', Icon: SettingsIcon },
 ]
 
@@ -109,7 +107,7 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }
         display: 'flex',
         flexDirection: 'column',
         flex: 1,
-        minHeight: 0,
+        minHeight: 225,
         transition: 'width 0.25s, min-width 0.25s, max-width 0.25s',
         flexShrink: 0,
       }}
@@ -163,8 +161,7 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }
         style={{
           padding: collapsed ? '8px 6px' : '14px 30px',
           overflowY: 'auto',
-          flex: 1,
-          minHeight: 0,
+          minHeight: 225,
           display: 'flex',
           flexDirection: 'column',
           gap: '4px',
