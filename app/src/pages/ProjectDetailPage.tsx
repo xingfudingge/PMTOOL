@@ -86,6 +86,7 @@ import { parseWeeklyExcel, exportWeeklyToExcel } from '@/services/excelWeekly'
 import { parseMembersExcel, exportMembersToExcel } from '@/services/excelMembers'
 import { parseProjectsExcel, exportProjectsToExcel } from '@/services/excelProjects'
 import { exportWholeProjectExcel } from '@/services/excelProjectTemplate'
+import { exportProjectToFile } from '@/services/projectTemplateExport'
 import { listProjectRequirements } from '@/services/projectRequirements'
 import { listProjectIssueLog } from '@/services/projectIssueLog'
 import { listProjectTodoItems } from '@/services/projectTodoItems'
@@ -210,6 +211,21 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
     refresh()
   }, [projectId])
 
+  /** 头部「导出项目」· 一键导出整个项目到模板 */
+  const handleExportProject = async () => {
+    if (!data) return
+    setError(null)
+    try {
+      const ok = await exportProjectToFile(projectId, data.project.project_name)
+      if (ok) toast.success('已导出整个项目模板', data.project.project_name)
+      else toast.error('导出失败', '导出已取消或写入失败')
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      toast.error('导出失败', m)
+      setError(m)
+    }
+  }
+
   // 进入项目详情前刷新法定节假日缓存（读数据库同步数据 · 与设置中心一致）
   useEffect(() => {
     void defaultHolidayProvider.load()
@@ -276,6 +292,7 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
         data={data}
         onBack={onBack}
         onEditOverview={() => setEditOpen(true)}
+        onExportWholeProject={() => void handleExportProject()}
       />
 
       {/* 关键指标卡区（4 张横排 · 始终可见） */}
@@ -424,10 +441,12 @@ function Header({
   data,
   onBack,
   onEditOverview,
+  onExportWholeProject,
 }: {
   data: ProjectDetailData
   onBack: () => void
   onEditOverview?: () => void
+  onExportWholeProject?: () => void
 }) {
   return (
     <div
@@ -485,6 +504,18 @@ function Header({
           {data.project.project_name}
         </h1>
 
+        {/* 右：导出项目 */}
+        {onExportWholeProject && (
+          <button
+            onClick={onExportWholeProject}
+            data-testid="export-project-btn"
+            style={primaryBtnStyle}
+            title="导出整个项目到模板"
+          >
+            <Download size={12} strokeWidth={1.75} />
+            导出项目
+          </button>
+        )}
         {/* 右：编辑 */}
           <button
             onClick={onEditOverview}

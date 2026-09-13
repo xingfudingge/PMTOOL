@@ -9,6 +9,7 @@
 
 import * as XLSX from 'xlsx'
 import { formatLocalDate } from './datetime'
+import { loadTemplate, getSheet, findHeaderRow, colOf, clearRows, writeRow, singleSheetBlob } from './templateWriter'
 import type { ProjectRequirement } from './projectRequirements'
 import type { ProjectIssueLog } from './projectIssueLog'
 import type { ProjectTodoItem } from './projectTodoItems'
@@ -80,10 +81,10 @@ function cellAt(sheet: XLSX.WorkSheet, r: number, c: number | null): unknown {
   return sheet[XLSX.utils.encode_cell({ r, c })]?.v ?? ''
 }
 
-async function fileToSheet(file: File, sheetName: string): Promise<XLSX.WorkSheet> {
+async function fileToSheet(file: File, sheetName: string, keyword?: string): Promise<XLSX.WorkSheet> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array', cellDates: true })
-  const sheet = wb.Sheets[sheetName]
+  const sheet = keyword ? wb.Sheets[wb.SheetNames.find((n) => n.includes(keyword)) ?? ''] : wb.Sheets[sheetName]
   if (!sheet) throw new Error(`Sheet "${sheetName}" 不存在`)
   return sheet
 }
@@ -164,17 +165,31 @@ export async function parseRequirementsExcel(file: File, projectId: number): Pro
 }
 
 export async function exportRequirementsToExcel(reqs: ProjectRequirement[]): Promise<Blob> {
-  const rows = reqs.map((x) => ({
-    序号: x.id ? x.id : '',
-    需求类型: x.type || 'NEW',
-    归属系统: x.system ?? '',
-    需求简述: x.summary,
-    需求详述: x.detail ?? '',
-    提出时间: x.proposed_at ?? '',
-    提出人: x.proposer ?? '',
-    需求响应状态: reqStatusToCN(x.status),
-  }))
-  return toBook(rows, REQ_SHEET)
+  const wb = await loadTemplate()
+  const ws = getSheet(wb, '需求登记册')
+  const hr = findHeaderRow(ws, ['序号']) ?? 0
+  const cSeq = colOf(ws, hr, '序号')
+  const cType = colOf(ws, hr, '需求类型')
+  const cSystem = colOf(ws, hr, '归属系统')
+  const cSummary = colOf(ws, hr, '需求简述')
+  const cDetail = colOf(ws, hr, '需求详述')
+  const cProposed = colOf(ws, hr, '提出时间')
+  const cProposer = colOf(ws, hr, '提出人')
+  const cStatus = colOf(ws, hr, '需求响应状态')
+  clearRows(ws, hr + 1)
+  reqs.forEach((x, i) => {
+    writeRow(ws, hr + 1 + i, [
+      [cSeq, String(i + 1)],
+      [cType, x.type || 'NEW'],
+      [cSystem, x.system ?? ''],
+      [cSummary, x.summary],
+      [cDetail, x.detail ?? ''],
+      [cProposed, x.proposed_at ?? '', true],
+      [cProposer, x.proposer ?? ''],
+      [cStatus, reqStatusToCN(x.status)],
+    ])
+  })
+  return singleSheetBlob(ws, REQ_SHEET, hr + reqs.length)
 }
 
 // ============================================================
@@ -249,27 +264,45 @@ export async function parseIssueLogExcel(file: File, projectId: number): Promise
 }
 
 export async function exportIssueLogToExcel(items: ProjectIssueLog[]): Promise<Blob> {
-  const rows = items.map((x) => ({
-    序号: x.id ? x.id : '',
-    问题描述: x.title,
-    提出人: x.proposer ?? '',
-    '涉及系统及模块(参考需规)': x.module ?? '',
-    发现时间: x.discovered_at ?? '',
-    计划解决时间: x.plan_date ?? '',
-    计划解决方案: x.plan_solution ?? '',
-    问题处理人: x.handler ?? '',
-    当前处理进度说明: x.progress_note ?? '',
-    实际处理时间: x.actual_date ?? '',
-    是否已处理: x.status === 'RESOLVED' || x.status === 'CLOSED' ? '是' : '否',
-  }))
-  return toBook(rows, ISSUE_SHEET)
+  const wb = await loadTemplate()
+  const ws = getSheet(wb, '问题登记册')
+  const hr = findHeaderRow(ws, ['序号']) ?? 0
+  const cSeq = colOf(ws, hr, '序号')
+  const cTitle = colOf(ws, hr, '问题描述')
+  const cProposer = colOf(ws, hr, '提出人')
+  const cModule = colOf(ws, hr, '涉及系统及模块')
+  const cFound = colOf(ws, hr, '发现时间')
+  const cPlan = colOf(ws, hr, '计划解决时间')
+  const cPlanSol = colOf(ws, hr, '计划解决方案')
+  const cHandler = colOf(ws, hr, '问题处理人')
+  const cProgress = colOf(ws, hr, '当前处理进度')
+  const cActual = colOf(ws, hr, '实际处理时间')
+  const cStatus = colOf(ws, hr, '问题状态')
+  const statusCol = cStatus >= 0 ? cStatus : colOf(ws, hr, '是否已处理')
+  clearRows(ws, hr + 1)
+  items.forEach((x, i) => {
+    writeRow(ws, hr + 1 + i, [
+      [cSeq, String(i + 1)],
+      [cTitle, x.title],
+      [cProposer, x.proposer ?? ''],
+      [cModule, x.module ?? ''],
+      [cFound, x.discovered_at ?? '', true],
+      [cPlan, x.plan_date ?? '', true],
+      [cPlanSol, x.plan_solution ?? ''],
+      [cHandler, x.handler ?? ''],
+      [cProgress, x.progress_note ?? ''],
+      [cActual, x.actual_date ?? '', true],
+      [statusCol, issStatusToCN(x.status)],
+    ])
+  })
+  return singleSheetBlob(ws, ISSUE_SHEET, hr + items.length)
 }
 
 // ============================================================
 // 其他待办事项
 // ============================================================
 
-const TODO_SHEET = '其他代办事项'
+const TODO_SHEET = '其他待办事项'
 
 function todoStatusFromCN(v: unknown): string {
   const t = toStr(v)
@@ -293,7 +326,7 @@ function todoStatusToCN(s: string): string {
 }
 
 export async function parseTodoItemsExcel(file: File, projectId: number): Promise<ProjectTodoItem[]> {
-  const sheet = await fileToSheet(file, TODO_SHEET)
+  const sheet = await fileToSheet(file, TODO_SHEET, '办')
   const { row: hr, headerMap } = locateHeader(sheet)
   const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1')
   const cContent = findCol(headerMap, ['代办事项说明', '事项说明', '说明'])
@@ -328,14 +361,29 @@ export async function parseTodoItemsExcel(file: File, projectId: number): Promis
 }
 
 export async function exportTodoItemsToExcel(items: ProjectTodoItem[]): Promise<Blob> {
-  const rows = items.map((x) => ({
-    编号: x.id ? x.id : '',
-    代办事项说明: x.content,
-    '涉及人员（厂商）': x.related_people ?? '',
-    计划完成时间: x.plan_date ?? '',
-    当前完成情况说明: x.completion_note ?? '',
-    实际完成时间: x.actual_date ?? '',
-    备注: x.remark ?? '',
-  }))
-  return toBook(rows, TODO_SHEET)
+  const wb = await loadTemplate()
+  const ws = getSheet(wb, '待办')
+  const hr = findHeaderRow(ws, ['编号', '序号']) ?? 0
+  const cSeq = colOf(ws, hr, '编号')
+  const cContent = colOf(ws, hr, '代办事项说明')
+  const cPeople = colOf(ws, hr, '涉及人员')
+  const cPlan = colOf(ws, hr, '计划完成时间')
+  const cNote = colOf(ws, hr, '当前完成情况')
+  const cActual = colOf(ws, hr, '实际完成时间')
+  const cStatus = colOf(ws, hr, '任务状态')
+  const cRemark = colOf(ws, hr, '备注')
+  clearRows(ws, hr + 1)
+  items.forEach((x, i) => {
+    writeRow(ws, hr + 1 + i, [
+      [cSeq, String(i + 1)],
+      [cContent, x.content],
+      [cPeople, x.related_people ?? ''],
+      [cPlan, x.plan_date ?? '', true],
+      [cNote, x.completion_note ?? ''],
+      [cActual, x.actual_date ?? '', true],
+      [cStatus, todoStatusToCN(x.status)],
+      [cRemark, x.remark ?? ''],
+    ])
+  })
+  return singleSheetBlob(ws, TODO_SHEET, hr + items.length)
 }

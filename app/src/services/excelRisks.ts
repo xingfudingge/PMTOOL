@@ -10,6 +10,7 @@
 
 import * as XLSX from 'xlsx'
 import { formatLocalDate } from './datetime'
+import { loadTemplate, getSheet, findHeaderRow, colOf, clearRows, writeRow, singleSheetBlob } from './templateWriter'
 
 export interface ProjectIssue {
   id: number
@@ -202,12 +203,33 @@ function issueToExcelRow(issue: ProjectIssue): Record<string, unknown> {
 export async function exportRisksToExcel(
   issues: ProjectIssue[],
 ): Promise<Blob> {
-  const rows = issues.map(issueToExcelRow)
-  const ws = XLSX.utils.json_to_sheet(rows)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, SHEET_NAME)
-  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
-  return new Blob([buf], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  // 就地写入内置模板「项目风险登记册」sheet · 保留表头/样式，仅替换示例数据行
+  const wb = await loadTemplate()
+  const ws = getSheet(wb, '风险')
+  const hr = findHeaderRow(ws, ['序号']) ?? 0
+  const cSeq = colOf(ws, hr, '序号')
+  const cTitle = colOf(ws, hr, '风险描述')
+  const cLevel = colOf(ws, hr, '等级')
+  const cFound = colOf(ws, hr, '发现时间')
+  const cImpact = colOf(ws, hr, '影响')
+  const cPlan = colOf(ws, hr, '应对方案')
+  const cOwner = colOf(ws, hr, '相关人员')
+  const cResolution = colOf(ws, hr, '风险应对情况')
+  const cStatus = colOf(ws, hr, '风险状态')
+  const statusCol = cStatus >= 0 ? cStatus : colOf(ws, hr, '当前状态') || -1
+  clearRows(ws, hr + 1)
+  issues.forEach((it, i) => {
+    writeRow(ws, hr + 1 + i, [
+      [cSeq, String(i + 1)],
+      [cTitle, it.title],
+      [cLevel, levelToCN(it.level)],
+      [cFound, it.discovered_at ?? it.created_at, true],
+      [cImpact, it.description ?? ''],
+      [cPlan, it.solution ?? ''],
+      [cOwner, it.owner ?? ''],
+      [cResolution, it.resolution ?? ''],
+      [statusCol, statusToCN(it.status)],
+    ])
   })
+  return singleSheetBlob(ws, SHEET_NAME, hr + issues.length)
 }

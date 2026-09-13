@@ -19,6 +19,7 @@
 
 import * as XLSX from 'xlsx'
 import { formatLocalDate } from './datetime'
+import { singleSheetBlob } from './templateWriter'
 import templateUrl from '@/assets/templates/pmtool_project_template.xlsx?url'
 
 // 内置模板 ArrayBuffer 缓存（避免每次导出都重新 fetch）
@@ -404,9 +405,6 @@ export async function exportProjectsToExcel(
     }
   }
 
-  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true })
-  return new Blob([buf], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  })
+  return singleSheetBlob(ws, '项目管理', START_ROW + tasks.length - 1)
 }
 
