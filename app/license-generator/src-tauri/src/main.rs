@@ -3,6 +3,7 @@ use ed25519_dalek::{Signature, Signer, SECRET_KEY_LENGTH, PUBLIC_KEY_LENGTH};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use uuid::Uuid;
 
 // ============== Key Management ==============
@@ -198,16 +199,89 @@ fn generate_license_command(
         expire_time,
     );
 
-    build_license_string(&payload, &signing_key)
+    let license = build_license_string(&payload, &signing_key)?;
+
+    // 落盘一条授权记录：机器码 / 授权码 / 期限 / 起止 / 生成时间
+    let mut records = load_history();
+    records.push(LicenseHistoryRecord {
+        id: payload.license_id.clone(),
+        device_id: payload.device_id.clone(),
+        license: license.clone(),
+        license_type: payload.license_type.clone(),
+        start_time: payload.start_time.clone(),
+        expire_time: payload.expire_time.clone(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    });
+    save_history(&records)?;
+
+    Ok(license)
+}
+
+// ============== License Issue History ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LicenseHistoryRecord {
+    pub id: String,
+    pub device_id: String,
+    pub license: String,
+    pub license_type: String,
+    pub start_time: String,
+    pub expire_time: String,
+    pub created_at: String,
+}
+
+fn get_history_path() -> PathBuf {
+    get_pmtool_dir().join("issue_history.json")
+}
+
+fn load_history() -> Vec<LicenseHistoryRecord> {
+    let path = get_history_path();
+    if !path.exists() {
+        return Vec::new();
+    }
+    match fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn save_history(records: &[LicenseHistoryRecord]) -> std::result::Result<(), String> {
+    create_pmtool_dir()?;
+    let json = serde_json::to_string_pretty(records).map_err(|e| e.to_string())?;
+    fs::write(get_history_path(), json).map_err(|e| format!("写入授权历史失败: {}", e))
+}
+
+/// 列出全部授权记录（新生成的在前）。
+#[tauri::command]
+fn list_license_history() -> Vec<LicenseHistoryRecord> {
+    let mut records = load_history();
+    records.reverse();
+    records
+}
+
+/// 按 id 删除一条授权记录。
+#[tauri::command]
+fn delete_license_history(id: String, state: tauri::State<Mutex<()>>) -> std::result::Result<(), String> {
+    let _guard = state.lock().map_err(|e| e.to_string())?;
+    let mut records = load_history();
+    let before = records.len();
+    records.retain(|r| r.id != id);
+    if records.len() == before {
+        return Err("未找到该记录".to_string());
+    }
+    save_history(&records)
 }
 
 // ============== Main Entry ==============
 
 fn main() {
     tauri::Builder::default()
+        .manage(Mutex::new(()))
         .invoke_handler(tauri::generate_handler![
             check_key_status,
-            generate_license_command
+            generate_license_command,
+            list_license_history,
+            delete_license_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

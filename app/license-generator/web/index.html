@@ -231,6 +231,125 @@
         .hidden {
             display: none;
         }
+
+        .history-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .history-refresh {
+            padding: 3px 10px;
+            font-size: 10px;
+            font-weight: 600;
+            background: var(--bg-hover);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .history-refresh:hover {
+            background: var(--border);
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .history-empty {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-align: center;
+            padding: 14px 0;
+        }
+
+        .history-item {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            background: var(--bg-input);
+        }
+
+        .history-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .history-meta {
+            font-size: 11px;
+            color: var(--text);
+            line-height: 1.6;
+            word-break: break-all;
+        }
+
+        .history-meta b {
+            color: var(--primary);
+        }
+
+        .history-type {
+            display: inline-block;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 4px;
+            background: #eef2ff;
+            color: var(--primary);
+            white-space: nowrap;
+        }
+
+        .history-type.perm {
+            background: #ecfdf5;
+            color: #059669;
+        }
+
+        .history-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .history-toggle, .history-del {
+            padding: 3px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            background: var(--bg-card);
+            color: var(--text);
+        }
+
+        .history-toggle:hover {
+            background: var(--bg-hover);
+        }
+
+        .history-del:hover {
+            background: #fee2e2;
+            color: #dc2626;
+            border-color: #fecaca;
+        }
+
+        .history-code {
+            margin: 6px 0 0;
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 10px;
+            line-height: 1.5;
+            color: var(--primary);
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 6px 8px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 120px;
+            overflow: auto;
+        }
     </style>
 </head>
 <body>
@@ -284,6 +403,14 @@
                     <button class="copy-btn" id="copyBtn" onclick="copyLicense()">复制</button>
                 </div>
             </div>
+        </div>
+
+        <div class="card">
+            <div class="history-head">
+                <div class="label" style="margin-bottom:0;">授权记录历史</div>
+                <button class="history-refresh" onclick="refreshHistory()">刷新</button>
+            </div>
+            <div id="historyList" class="history-list"><div class="history-empty">暂无记录</div></div>
         </div>
     </div>
 
@@ -354,6 +481,7 @@
                 document.getElementById('licenseOutput').value = license;
                 document.getElementById('outputSection').classList.remove('hidden');
                 document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth' });
+                refreshHistory();
             } catch (error) {
                 alert('生成失败：' + error);
                 console.error(error);
@@ -383,6 +511,83 @@
                 btn.classList.add('copied');
             }
         }
+
+        // ================== 授权记录历史 ==================
+
+        // 期限显示：DAYS_30 → 30 天 / DAYS_365 → 1 年 / PERPETUAL → 永久
+        function typeLabel(t) {
+            if (t === 'PERPETUAL') return '永久';
+            const m = /^DAYS_(\d+)$/.exec(t);
+            if (m) {
+                const d = parseInt(m[1], 10);
+                return d >= 365 ? '1 年' : d + ' 天';
+            }
+            return t || '—';
+        }
+
+        // rfc3339 → YYYY-MM-DD（空 → 永久）
+        function fmtDate(rfc) {
+            if (!rfc) return '永久';
+            const d = new Date(rfc);
+            if (isNaN(d.getTime())) return rfc;
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        }
+
+        function renderHistory(records) {
+            const list = document.getElementById('historyList');
+            if (!records || records.length === 0) {
+                list.innerHTML = '<div class="history-empty">暂无记录</div>';
+                return;
+            }
+            list.innerHTML = records.map(r => `
+                <div class="history-item">
+                    <div class="history-top">
+                        <div class="history-meta">
+                            设备：<b>${r.device_id}</b><br>
+                            <span class="history-type ${r.license_type === 'PERPETUAL' ? 'perm' : ''}">${typeLabel(r.license_type)}</span>
+                            &nbsp;${fmtDate(r.start_time)} ~ ${fmtDate(r.expire_time)}
+                        </div>
+                        <div class="history-actions">
+                            <button class="history-toggle" onclick="toggleCode(this)">查看授权码</button>
+                            <button class="history-del" onclick="deleteRecord('${r.id.trim()}')">删除</button>
+                        </div>
+                    </div>
+                    <pre class="history-code hidden">${r.license}</pre>
+                </div>`).join('');
+        }
+
+        // 拉取历史（新生成的在前）
+        async function refreshHistory() {
+            try {
+                const records = await window.__TAURI__.core.invoke('list_license_history');
+                renderHistory(records);
+            } catch (e) {
+                console.error('加载授权历史失败:', e);
+                document.getElementById('historyList').innerHTML = '<div class="history-empty">加载失败，点击「刷新」重试</div>';
+            }
+        }
+
+        // 展开 / 收起授权码
+        function toggleCode(btn) {
+            const code = btn.closest('.history-item').querySelector('.history-code');
+            const isHidden = code.classList.toggle('hidden');
+            btn.textContent = isHidden ? '查看授权码' : '收起';
+        }
+
+        // 删除一条记录
+        async function deleteRecord(id) {
+            if (!confirm('确定删除这条授权记录？删除后不可恢复。')) return;
+            try {
+                await window.__TAURI__.core.invoke('delete_license_history', { id });
+                refreshHistory();
+            } catch (e) {
+                alert('删除失败：' + e);
+            }
+        }
+
+        // 首次加载 + 生成成功后刷新
+        refreshHistory();
     </script>
 </body>
 </html>
