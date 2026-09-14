@@ -161,6 +161,9 @@ pub fn delete(conn: &rusqlite::Connection, id: i64) -> rusqlite::Result<bool> {
     // 知识笔记已从 project_id 迁移为 space_id（经 knowledge_spaces 绑定），故通过 project_knowledge_bindings 解绑，而非直接改 notes.project_id。
     tx.execute("DELETE FROM project_knowledge_bindings WHERE project_id = ?1", [id])?;
     tx.execute("UPDATE knowledge_folders SET project_id = NULL WHERE project_id = ?1", [id])?;
+    // 先删除该项目的报告。否则删项目时 reports.project_id 的 ON DELETE SET NULL 会把同(type,period)的多条报告同时置 NULL，
+    // 撞上 0003 迁移加的 部分唯一索引 uq_reports_type_null_project_period(type, period)，报 UNIQUE constraint failed。
+    tx.execute("DELETE FROM reports WHERE project_id = ?1", [id])?;
     let n = tx.execute("DELETE FROM projects WHERE id = ?1", [id])?;
     tx.commit()?;
     Ok(n > 0)
