@@ -1376,12 +1376,13 @@ function GanttTab({
     setBusy(true)
     setError(null)
     try {
-      const [reqs, issLog, todos, risks, week] = await Promise.all([
+      const [reqs, issLog, todos, risks, week, members] = await Promise.all([
         listProjectRequirements(projectId),
         listProjectIssueLog(projectId),
         listProjectTodoItems(projectId),
         listProjectIssues(projectId),
         listWeeklyEntries(projectId),
+        listProjectMembers(projectId),
       ])
       await defaultHolidayProvider.load()
       const blob = await exportWholeProjectExcel({
@@ -1391,6 +1392,7 @@ function GanttTab({
         issues: issLog,
         todos,
         weeklyEntries: week,
+        members,
         holidays: defaultHolidayProvider.list(),
       })
       const ts = formatLocalDate(new Date())
@@ -5979,7 +5981,7 @@ const confirmOverlayStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
   zIndex: 300,
-  background: 'rgba(0,0,0,0.4)',
+  background: 'var(--glass-overlay)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -5987,10 +5989,13 @@ const confirmOverlayStyle: React.CSSProperties = {
 
 const confirmBoxStyle: React.CSSProperties = {
   width: '420px',
-  background: 'var(--color-surface)',
-  borderRadius: 'var(--radius-md)',
+  background: 'var(--glass-bg-strong)',
+  backdropFilter: 'var(--glass-blur)',
+  WebkitBackdropFilter: 'var(--glass-blur)',
+  border: '1px solid var(--glass-border)',
+  borderRadius: 'var(--radius-xl)',
   padding: '20px',
-  border: '1px solid var(--color-border-thin)',
+
 }
 
 const confirmTitleStyle: React.CSSProperties = {
@@ -7575,7 +7580,7 @@ function FilesTab({
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.35)',
+  background: 'var(--glass-overlay)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -7587,13 +7592,16 @@ function FilesTab({
         >
           <div
             style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
+              background: 'var(--glass-bg-strong)',
+              backdropFilter: 'var(--glass-blur)',
+              WebkitBackdropFilter: 'var(--glass-blur)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: 'var(--radius-xl)',
+
               padding: 20,
               minWidth: 380,
               maxWidth: 520,
-              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+              boxShadow: 'var(--glass-shadow)',
             }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') cancelCreate()

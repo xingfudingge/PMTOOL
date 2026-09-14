@@ -377,7 +377,7 @@ export function TemplatesPage() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.35)',
+            background: 'var(--glass-overlay)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -389,13 +389,15 @@ export function TemplatesPage() {
         >
           <div
             style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
+              background: 'var(--glass-bg-strong)',
+              backdropFilter: 'var(--glass-blur)',
+              WebkitBackdropFilter: 'var(--glass-blur)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: 'var(--radius-xl)',
               padding: 20,
               minWidth: 380,
               maxWidth: 520,
-              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+              boxShadow: 'var(--glass-shadow)',
             }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') cancelCreate()
@@ -604,12 +606,15 @@ export function TemplatesPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'var(--color-surface, #fff)',
+              background: 'var(--glass-bg-strong)',
+              backdropFilter: 'var(--glass-blur)',
+              WebkitBackdropFilter: 'var(--glass-blur)',
+              border: '1px solid var(--glass-border)',
               borderRadius: 8,
               padding: '20px 24px',
               minWidth: 360,
               maxWidth: 480,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+              boxShadow: 'var(--glass-shadow)',
             }}
           >
             <h3

@@ -3311,7 +3311,7 @@ function TaskExcelRow({
             style={{
               fontSize: '10px',
               padding: '1px 6px',
-              borderRadius: 999,
+              borderRadius: 'var(--radius-xl)',
               background: 'rgba(255, 77, 79, 0.12)',
               color: COLOR_DELAYED,
               fontWeight: 500,
@@ -3382,7 +3382,7 @@ function TaskExcelRow({
             display: 'inline-block',
             padding: '2px 8px',
             fontSize: '11px',
-            borderRadius: 999,
+            borderRadius: 'var(--radius-xl)',
             background: statusBg(task.status),
             color: statusFg(task.status),
             textAlign: 'center',
