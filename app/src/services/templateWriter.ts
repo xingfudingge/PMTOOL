@@ -159,7 +159,13 @@ function buildCellXml(addr: string, s: string, v: string | number): string {
 }
 
 /** 对单个地址做替换：命中已存在格（含公式格一律保留）则改值；否则插入 */
+<<<<<<< Updated upstream
 function replaceCell(xml: string, addr: string, v: string | number): string {
+=======
+function replaceCell(xml: string, addr: string, v: string | number, isDate = false, dateResolver?: (r: number, c: number, sourceS: string) => string): string {
+  const rowNum = Number(/\d+$/.exec(addr)?.[1] ?? '0')
+  const colNum = colIndexFromAddr(addr)
+>>>>>>> Stashed changes
   const open = `<c r="${addr}"`
   const openIdx = xml.indexOf(open)
   if (openIdx >= 0) {
@@ -171,7 +177,12 @@ function replaceCell(xml: string, addr: string, v: string | number): string {
     // 公式格：绝不覆盖，保留模板公式
     if (/<f>/.test(block)) return xml
     const sM = /s="(\d+)"/.exec(block)
+<<<<<<< Updated upstream
     const s = sM ? sM[1] : '0'
+=======
+    let s = sM ? sM[1] : '0'
+    if (isDate && dateResolver) s = dateResolver(rowNum, colNum, s)
+>>>>>>> Stashed changes
     return xml.slice(0, openIdx) + buildCellXml(addr, s, v) + xml.slice(cellEnd)
   }
   // 未命中 → 读到行内，按列序插入
@@ -182,7 +193,12 @@ function replaceCell(xml: string, addr: string, v: string | number): string {
   if (rowOpen >= 0 && rowClose >= 0) {
     const rowBlock = xml.slice(rowOpen, rowClose)
     const sM = /<c[^>]*s="(\d+)"/.exec(rowBlock)
+<<<<<<< Updated upstream
     const s = sM ? sM[1] : '0'
+=======
+    let s = sM ? sM[1] : '0'
+    if (isDate && dateResolver) s = dateResolver(rowNum, colNum, s)
+>>>>>>> Stashed changes
     const newCell = buildCellXml(addr, s, v)
     let insertAt = rowClose
     for (const m of rowBlock.matchAll(/<c r="([A-Z]+\d+)"/g)) {
@@ -211,7 +227,61 @@ function expandDimension(xml: string, maxRow: number, maxCol0: number): string {
   return xml.slice(0, match.index) + `${match[1]}A1:${newEnd}${match[3]}` + xml.slice(match.index + match[0].length)
 }
 
+<<<<<<< Updated upstream
 function applyCellPatchesToXml(xml: string, patches: CellPatch[]): string {
+=======
+function isDateFormat(code: string): boolean {
+  const c = code.replace(/\\/g, '')
+  return c.includes('yyy') || c.includes('m/d') || c.includes('dddd') || c.includes('aaa')
+}
+
+/** 扫描某 sheet XML：找该模板“已有日期数字格式”的单元格，按“列”记录其样式索引。
+ * 这样同一列的日期格能用模板自己设的那个日期样式，整列格式才统一（不会一正一错）。 */
+function collectColumnDateStyles(xml: string, dateStyles: Set<number>): Map<number, string> {
+  const map = new Map<number, string>()
+  for (const m of xml.matchAll(/<c[^>]*r="([A-Z]+)\d+"[^>]*s="(\d+)"[^>]*\/?>/g)) {
+    const s = Number(m[2])
+    if (dateStyles.has(s)) {
+      const col = colIndexFromAddr(m[1])
+      if (!map.has(col)) map.set(col, m[2])
+    }
+  }
+  return map
+}
+
+// 解析 styles.xml：找出所有“日期数字格式”的 cellXf 索引，以及各填充/边框/字体下优先的日期样式，供日期单元格复用。
+function parseDateStyles(sx: string): {
+  dateStyles: Set<number>
+  dateStyleByFill: Map<number, number>
+  defaultDate: number
+  fillByXf: number[]
+} {
+  const fm = new Map<string, string>()
+  for (const m of sx.matchAll(/<numFmt numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) fm.set(m[1], m[2])
+  const xfsMatch = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(sx)
+  const xfAttrs = xfsMatch ? [...xfsMatch[1].matchAll(/<xf([^>]*?)\/?>/g)].map((m) => m[1]) : []
+  const dateStyles = new Set<number>()
+  const dateStyleByFill = new Map<number, number>()
+  const fillByXf: number[] = []
+  let defaultDate = 0
+  xfAttrs.forEach((attrs, i) => {
+    const nf = Number(/numFmtId="(\d+)"/.exec(attrs)?.[1] ?? 0)
+    const fill = Number(/fillId="(\d+)"/.exec(attrs)?.[1] ?? 0)
+    fillByXf[i] = fill
+    const code = fm.get(String(nf)) ?? ''
+    if (isDateFormat(code)) {
+      dateStyles.add(i)
+      if (!dateStyleByFill.has(fill)) dateStyleByFill.set(fill, i)
+      // 默认日期样式优先模板常用的 yyyy/m/d（177/178），否则取首个日期样式
+      if (nf === 178 || nf === 177) defaultDate = i
+      if (!defaultDate) defaultDate = i
+    }
+  })
+  return { dateStyles, dateStyleByFill, defaultDate, fillByXf }
+}
+
+function applyCellPatchesToXml(xml: string, patches: CellPatch[], dateResolver?: (r: number, c: number, sourceS: string) => string): string {
+>>>>>>> Stashed changes
   let out = xml
   let maxRow = 0
   let maxCol0 = 0

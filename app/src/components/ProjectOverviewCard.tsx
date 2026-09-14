@@ -18,7 +18,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Download,
   FileQuestion,
   FileText,
   ListTodo,
@@ -30,7 +29,6 @@ interface Props {
   overview: ProjectOverview
   expanded: boolean
   onToggleExpand: () => void
-  onExport?: () => void
   onDelete?: () => void
 }
 
@@ -38,7 +36,6 @@ export function ProjectOverviewCard({
   overview,
   expanded,
   onToggleExpand,
-  onExport,
   onDelete,
 }: Props) {
   const {
@@ -203,28 +200,6 @@ export function ProjectOverviewCard({
           {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           {expanded ? '收起详情' : '展开详情'}
         </button>
-        {onExport && (
-          <button
-            data-testid={`project-export-${project.id}`}
-            onClick={onExport}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 8px',
-              background: 'transparent',
-              border: '1px solid var(--color-border-thin)',
-              borderRadius: 'var(--radius)',
-              color: 'var(--color-text-secondary)',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-            title="导出整个项目到模板"
-          >
-            <Download size={12} />
-            导出项目
-          </button>
-        )}
         {onDelete && (
           <button
             onClick={onDelete}
