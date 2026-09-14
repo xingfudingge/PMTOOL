@@ -35,7 +35,7 @@ const dialogStyle: React.CSSProperties = {
   left: 0,
   right: 0,
   bottom: 0,
-  background: 'rgba(0, 0, 0, 0.5)',
+  background: 'var(--glass-overlay)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -43,12 +43,15 @@ const dialogStyle: React.CSSProperties = {
 }
 
 const contentStyle: React.CSSProperties = {
-  background: 'var(--color-bg)',
-  borderRadius: 'var(--radius-md)',
+  background: 'var(--glass-bg-strong)',
+  backdropFilter: 'var(--glass-blur)',
+  WebkitBackdropFilter: 'var(--glass-blur)',
+  border: '1px solid var(--glass-border)',
+  borderRadius: 'var(--glass-radius)',
   padding: 24,
   maxWidth: 400,
   width: '90%',
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+  boxShadow: 'var(--glass-shadow)',
 }
 
 const headerStyle: React.CSSProperties = {

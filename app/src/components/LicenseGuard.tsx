@@ -242,7 +242,7 @@ function StartChoiceModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.15)',
+        background: 'var(--glass-overlay)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -254,10 +254,12 @@ function StartChoiceModal({
         style={{
           width: '480px',
           maxWidth: '90%',
-          background: '#ffffff',
-          border: '1px solid var(--color-border-thin)',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'var(--glass-blur)',
+          WebkitBackdropFilter: 'var(--glass-blur)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: 'var(--glass-radius)',
+          boxShadow: 'var(--glass-shadow)',
         }}
       >
         <div style={{ padding: '28px 28px 24px' }}>
