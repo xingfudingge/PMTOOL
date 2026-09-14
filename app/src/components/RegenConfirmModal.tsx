@@ -50,8 +50,8 @@ export function RegenConfirmModal() {
         style={{
           margin: 0,
           padding: '6px 14px',
-          background: 'var(--glass-bg-strong)',
-          border: '1px solid var(--glass-border)',
+          background: 'var(--glass-bg)',
+          border: 'none',
           borderRadius: 'var(--radius)',
           listStyle: 'none',
           maxHeight: 180,
