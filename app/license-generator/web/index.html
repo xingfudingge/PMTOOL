@@ -9,13 +9,16 @@
 
         :root {
             --primary: #5b5ce2;
-            --bg-dark: #f5f5f7;
+            --primary-hover: #4d4ed4;
+            --primary-active: #4242c6;
+            --primary-subtle: #eeeefb;
+            --bg-dark: #fafaf8;
             --bg-card: #ffffff;
-            --bg-input: #f9fafb;
-            --bg-hover: #e5e7eb;
-            --text: #1a1a1a;
-            --text-muted: #6b7280;
-            --border: #e5e7eb;
+            --bg-input: #fafaf8;
+            --bg-hover: rgba(0, 0, 0, 0.04);
+            --text: #37352f;
+            --text-muted: #787774;
+            --border: #e5e5e2;
         }
 
         body {
@@ -27,10 +30,11 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        /* 参考 PMTool 主应用：内容铺满窗口，仅留统一外边距 */
         .container {
-            max-width: 620px;
+            width: 100%;
             margin: 0 auto;
-            padding: 20px 20px;
+            padding: 20px 24px 32px;
         }
 
         .header {
@@ -79,17 +83,16 @@
         .card {
             background: var(--bg-card);
             border-radius: 8px;
-            padding: 12px;
+            padding: 14px;
             border: 1px solid var(--border);
-            margin-bottom: 8px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+            margin-bottom: 10px;
         }
 
         .label {
             font-weight: 600;
             margin-bottom: 6px;
             color: var(--text);
-            font-size: 0.75rem;
+            font-size: 0.78rem;
         }
 
         .input-field {
