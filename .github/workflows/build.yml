@@ -1,0 +1,86 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # PMTool 主应用
+          - project: pmtool
+            path: app
+            pkgmgr: pnpm
+            os: macos-latest
+          - project: pmtool
+            path: app
+            pkgmgr: pnpm
+            os: windows-latest
+          # 授权服务（License Generator）
+          - project: license
+            path: app/license-generator
+            pkgmgr: npm
+            os: macos-latest
+          - project: license
+            path: app/license-generator
+            pkgmgr: npm
+            os: windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.path }}/src-tauri
+
+      - name: Install pnpm
+        if: matrix.pkgmgr == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ${{ matrix.path }}/pnpm-lock.yaml
+
+      - name: Install frontend deps (pnpm)
+        if: matrix.pkgmgr == 'pnpm'
+        working-directory: ${{ matrix.path }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install frontend deps (npm)
+        if: matrix.pkgmgr == 'npm'
+        working-directory: ${{ matrix.path }}
+        run: npm ci
+
+      - name: Build bundle
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: ${{ matrix.path }}
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.project }}-${{ matrix.os }}
+          path: |
+            ${{ matrix.path }}/src-tauri/target/release/bundle/dmg/*.dmg
+            ${{ matrix.path }}/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
