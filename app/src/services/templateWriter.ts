@@ -14,7 +14,7 @@ import JSZip from 'jszip'
 import templateUrl from '@/assets/templates/pmtool_project_template.xlsx?url'
 
 /** 一个待写入的单元格（r/c 为 0 基行列；v 已序列化：日期为序列数(number)、其余 string|number） */
-export type CellPatch = { r: number; c: number; v: string | number }
+export type CellPatch = { r: number; c: number; v: string | number; isDate?: boolean }
 /** 一个 sheet 的全部补丁 */
 export interface SheetPatch { sheetName: string; patches: CellPatch[] }
 
@@ -133,6 +133,7 @@ export function patch(patches: CellPatch[], r: number, c: number, v: unknown, is
     r,
     c,
     v: isDate && typeof v === 'string' ? (dateSerial(v) ?? v) : typeof v === 'number' ? v : String(v),
+    isDate,
   })
 }
 
@@ -159,7 +160,7 @@ function buildCellXml(addr: string, s: string, v: string | number): string {
 }
 
 /** 对单个地址做替换：命中已存在格（含公式格一律保留）则改值；否则插入 */
-function replaceCell(xml: string, addr: string, v: string | number): string {
+function replaceCell(xml: string, addr: string, v: string | number, isDate = false, dateResolver?: (sourceS: string) => string): string {
   const open = `<c r="${addr}"`
   const openIdx = xml.indexOf(open)
   if (openIdx >= 0) {
@@ -171,7 +172,8 @@ function replaceCell(xml: string, addr: string, v: string | number): string {
     // 公式格：绝不覆盖，保留模板公式
     if (/<f>/.test(block)) return xml
     const sM = /s="(\d+)"/.exec(block)
-    const s = sM ? sM[1] : '0'
+    let s = sM ? sM[1] : '0'
+    if (isDate && dateResolver) s = dateResolver(s)
     return xml.slice(0, openIdx) + buildCellXml(addr, s, v) + xml.slice(cellEnd)
   }
   // 未命中 → 读到行内，按列序插入
@@ -182,7 +184,8 @@ function replaceCell(xml: string, addr: string, v: string | number): string {
   if (rowOpen >= 0 && rowClose >= 0) {
     const rowBlock = xml.slice(rowOpen, rowClose)
     const sM = /<c[^>]*s="(\d+)"/.exec(rowBlock)
-    const s = sM ? sM[1] : '0'
+    let s = sM ? sM[1] : '0'
+    if (isDate && dateResolver) s = dateResolver(s)
     const newCell = buildCellXml(addr, s, v)
     let insertAt = rowClose
     for (const m of rowBlock.matchAll(/<c r="([A-Z]+\d+)"/g)) {
@@ -211,13 +214,49 @@ function expandDimension(xml: string, maxRow: number, maxCol0: number): string {
   return xml.slice(0, match.index) + `${match[1]}A1:${newEnd}${match[3]}` + xml.slice(match.index + match[0].length)
 }
 
-function applyCellPatchesToXml(xml: string, patches: CellPatch[]): string {
+function isDateFormat(code: string): boolean {
+  const c = code.replace(/\\/g, '')
+  return c.includes('yyy') || c.includes('m/d') || c.includes('dddd') || c.includes('aaa')
+}
+
+// 解析 styles.xml：找出所有“日期数字格式”的 cellXf 索引，以及各填充/边框/字体下优先的日期样式，供日期单元格复用。
+function parseDateStyles(sx: string): {
+  dateStyles: Set<number>
+  dateStyleByFill: Map<number, number>
+  defaultDate: number
+  fillByXf: number[]
+} {
+  const fm = new Map<string, string>()
+  for (const m of sx.matchAll(/<numFmt numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) fm.set(m[1], m[2])
+  const xfsMatch = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(sx)
+  const xfAttrs = xfsMatch ? [...xfsMatch[1].matchAll(/<xf([^>]*?)\/>/g)].map((m) => m[1]) : []
+  const dateStyles = new Set<number>()
+  const dateStyleByFill = new Map<number, number>()
+  const fillByXf: number[] = []
+  let defaultDate = 0
+  xfAttrs.forEach((attrs, i) => {
+    const nf = Number(/numFmtId="(\d+)"/.exec(attrs)?.[1] ?? 0)
+    const fill = Number(/fillId="(\d+)"/.exec(attrs)?.[1] ?? 0)
+    fillByXf[i] = fill
+    const code = fm.get(String(nf)) ?? ''
+    if (isDateFormat(code)) {
+      dateStyles.add(i)
+      if (!dateStyleByFill.has(fill)) dateStyleByFill.set(fill, i)
+      // 默认日期样式优先模板常用的 yyyy/m/d（177/178），否则取首个日期样式
+      if (nf === 178 || nf === 177) defaultDate = i
+      if (!defaultDate) defaultDate = i
+    }
+  })
+  return { dateStyles, dateStyleByFill, defaultDate, fillByXf }
+}
+
+function applyCellPatchesToXml(xml: string, patches: CellPatch[], dateResolver?: (sourceS: string) => string): string {
   let out = xml
   let maxRow = 0
   let maxCol0 = 0
   for (const p of patches) {
     const addr = XLSX.utils.encode_cell({ r: p.r, c: p.c })
-    out = replaceCell(out, addr, p.v)
+    out = replaceCell(out, addr, p.v, p.isDate === true, dateResolver)
     if (p.r + 1 > maxRow) maxRow = p.r + 1
     if (p.c + 1 > maxCol0) maxCol0 = p.c + 1
   }
@@ -251,6 +290,22 @@ export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Prom
   const buf = await loadTemplateBytes()
   const zip = await JSZip.loadAsync(new Uint8Array(buf))
   const nameToPart = await loadSheetNameMap(zip)
+  // 解析 styles.xml，为“日期值”的单元格补齐日期数字格式（目标格若无日期样式则复用模板已有日期样式）
+  let dateResolver: ((sourceS: string) => string) | undefined
+  const stylesFile = zip.file('xl/styles.xml')
+  if (stylesFile) {
+    const sx = await stylesFile.async('string')
+    const { dateStyles, dateStyleByFill, defaultDate, fillByXf } = parseDateStyles(sx)
+    if (dateStyles.size > 0) {
+      dateResolver = (sourceS: string) => {
+        const s = Number(sourceS)
+        if (dateStyles.has(s)) return sourceS // 目标格已是日期格式，保留
+        const byFill = dateStyleByFill.get(fillByXf[s] ?? 0)
+        if (byFill !== undefined) return String(byFill)
+        return String(defaultDate)
+      }
+    }
+  }
   for (const { sheetName, patches } of patchesBySheet) {
     if (!patches || patches.length === 0) continue
     const part = nameToPart.get(sheetName)
@@ -259,7 +314,7 @@ export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Prom
     const file = zip.file(path)
     if (!file) continue
     let xml = await file.async('string')
-    xml = applyCellPatchesToXml(xml, patches)
+    xml = applyCellPatchesToXml(xml, patches, dateResolver)
     zip.file(path, xml)
   }
   const wbFile = zip.file('xl/workbook.xml')
