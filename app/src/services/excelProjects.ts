@@ -314,7 +314,7 @@ export async function exportProjectsToExcel(
 ): Promise<Blob> {
   const wb = await loadTemplate()
   const ws = getSheet(wb, '项目管理')
-  const patches = fillProject(ws, tasks)
-  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, '项目管理'), patches }])
+  const grid = fillProject(ws, tasks)
+  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, '项目管理'), projectGrid: grid }])
 }
 

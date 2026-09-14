@@ -12,11 +12,34 @@
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
 import templateUrl from '@/assets/templates/pmtool_project_template.xlsx?url'
+import { rebuildProjectRows } from './projectGridWriter'
 
 /** 一个待写入的单元格（r/c 为 0 基行列；v 已序列化：日期为序列数(number)、其余 string|number） */
 export type CellPatch = { r: number; c: number; v: string | number; isDate?: boolean }
 /** 一个 sheet 的全部补丁 */
-export interface SheetPatch { sheetName: string; patches: CellPatch[] }
+export interface SheetPatch { sheetName: string; patches?: CellPatch[]; projectGrid?: ProjectGridLayout }
+
+/** 「项目管理」数据区重排（保真：按模板自身 阶段行/任务行·蓝图 逐格生成，表头 rows 1..startRow-1 逐字节保留）。
+ * 上一版 fillProject 是“就近跳模板既有格位”，模板固定网格(5阶段+~30任务)塞不下任意深任务树→越界直接 break 丢弃。
+ * 本次改为：把任务树按 DFS 全量展开，阶段→阶段行、其余→任务行，阶段行公式(子行 MIN/MAX/加权)按真实子行区间重写，
+ * 并延展条件格式区间(甘特)与 dimension。 */
+export type ProjectGridRowKind = 'phase' | 'task'
+export interface ProjectGridRow {
+  row: number // 绝对 XML 行号（从 dataStartRow 起）
+  kind: ProjectGridRowKind
+  serial: string // A
+  name: string   // B
+  owner: string  // C
+  startSerial: number | null // D 仅 task 行（日期序列数）
+  natural: number | null     // F 仅 task 行
+  progress: number | null    // G 仅 task 行（0-1）
+  remark: string             // I
+  childRows: number[]        // 仅 phase 行：其下所有后代 task 行号（算 D/E/G 子行区间）
+}
+export interface ProjectGridLayout {
+  dataStartRow: number // 数据区首行（本项目 = 表头行 + 2，即 6）
+  rows: ProjectGridRow[]
+}
 
 let _templateBuf: ArrayBuffer | null = null
 
@@ -307,8 +330,42 @@ async function loadSheetNameMap(zip: JSZip): Promise<Map<string, string>> {
   return map
 }
 
+// ==================== 「项目管理」数据区重排（保真生成）====================
+
+function escF(s: string): string {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** 读取模板里某数据行（阶段行/任务行）的“蓝图”：列→样式索引 + 行开标签 + 最大列号。
+ * 供重排时逐格克隆样式（含甘特 J..FU 的空样式格，条件格式靠 $D/$E/$G 上色）。 */
+interface RowBlueprint {
+  s: Map<number, string>
+  maxCol: number
+}
+function parseRowBlueprint(xml: string, sampleRow: number): RowBlueprint {
+  const s = new Map<number, string>()
+  let maxCol = 0
+  const re = new RegExp(`<c([^>]*?)r=\"([A-Z]+)\\d+\"((?:[^>]*?)\\?(?:>|/>)|[^>]*?/?>)`, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) && m) {
+    const addr = /r=\"(\d+)\"/.exec(xml.slice(m.index, m.index + 60))
+    if (addr && Number(addr[1]) !== sampleRow) continue
+    const colStr = m[2]
+    let n = 0
+    for (const ch of colStr) n = n * 26 + (ch.charCodeAt(0) - 64)
+    if (n > maxCol) maxCol = n
+    const sm = / s=\"(\d+)\"/.exec(m[0])
+    if (sm) s.set(n, sm[1])
+  }
+  return { s, maxCol }
+}
+
+function /** 把一个数据行生成为 OOXML 格串（阶段行/任务行共用：…) */
+_placeholder() {
+  return ''
+}
+
 /**
- * 保真导出入口：把各 sheet 的补丁以 XML 原位注入模板字节副本，返回新 Excel Blob。
  * 不覆盖任何公式格；保留全部样式/条件格式/数据验证/图形/冻结/命名区域；打开即重算。
  */
 export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Promise<Blob> {
@@ -327,14 +384,20 @@ export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Prom
     dateStyles = parsed.dateStyles
     if (parsed.defaultDate !== 0) defaultDate = String(parsed.defaultDate)
   }
-  for (const { sheetName, patches } of patchesBySheet) {
-    if (!patches || patches.length === 0) continue
+  for (const { sheetName, patches, projectGrid } of patchesBySheet) {
     const part = nameToPart.get(sheetName)
     if (!part) continue
     const path = 'xl/' + part
     const file = zip.file(path)
     if (!file) continue
     let xml = await file.async('string')
+    // 「项目管理」数据区重排（保真生成阶段/任务行）：优先走重排，不经格补丁
+    if (projectGrid && projectGrid.rows && projectGrid.rows.length) {
+      xml = rebuildProjectRows(xml, projectGrid)
+      zip.file(path, xml)
+      continue
+    }
+    if (!patches || patches.length === 0) continue
     // 按列收集该 sheet 模板已用的日期样式（仅作补充；主要依据 defaultDate=星期格式，保证整列一致带星期）
     const colDateStyle = collectColumnDateStyles(xml, dateStyles)
     const resolver =

@@ -10,7 +10,7 @@
  */
 
 import * as XLSX from 'xlsx'
-import { findHeaderRow, findHeaderRows, colOf, colOfAfter, patch, ONE, TWO, HUNDRED, type CellPatch, type SheetPatch } from './templateWriter'
+import { findHeaderRow, findHeaderRows, colOf, colOfAfter, patch, dateSerial, ONE, TWO, HUNDRED, type CellPatch, type SheetPatch, type ProjectGridLayout, type ProjectGridRow } from './templateWriter'
 import type { ProjectTask } from './excelProjects'
 import type { ProjectIssue } from './excelRisks'
 import type { WeeklyReportEntry } from './excelWeekly'
@@ -36,21 +36,20 @@ function todoStatusToCN(s: string): string {
   return s === 'PENDING' ? '待办' : s === 'IN_PROGRESS' ? '进行中' : s === 'COMPLETED' ? '已完成' : '已逾期'
 }
 function weeklyStatusToCN(s: WeeklyReportEntry['is_completed']): string {
-  return s === 'COMPLETED' ? '是' : s === 'IN_PROGRESS' ? '进行中' : '否'
+  return s === 'COMPLETED' ? '已完成' : s === 'IN_PROGRESS' ? '进行中' : '未完成'
 }
 
 // ---------- 项目管理（父子分层 · DFS 映射）----------
-export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch[] {
-  const patches: CellPatch[] = []
+export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): ProjectGridLayout {
   const hr = findHeaderRow(ws, ['序号']) ?? 0
   const cSeq = colOf(ws, hr, '序号')
+  if (cSeq < 0) return { dataStartRow: (hr + ONE) + TWO, rows: [] }
   const cTask = colOf(ws, hr, '任务')
   const cOwner = colOf(ws, hr, '跟进人')
   const cStart = colOf(ws, hr, '计划启动日期')
   const cNat = colOf(ws, hr, '自然日工时')
   const cProg = colOf(ws, hr, '当前完成度')
   const cNote = colOf(ws, hr, '任务完成情况说明')
-  if (cSeq < 0) return patches
 
   // 建树（parent_id）：父子 DFS 先序，并生成真正的层级序号（根=1，子=1.1，孙=1.1.1…）
   const childrenOf = new Map<number | null, ProjectTask[]>()
@@ -87,36 +86,29 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
     }
   }
 
-  const lastRow = XLSX.utils.decode_range(ws['!ref'] || 'A1').e.r
-  const isParentRow = (rr: number): boolean => {
-    if (cStart < 0) return false
-    const cell = ws[XLSX.utils.encode_cell({ r: rr, c: cStart })]
-    return !!(cell && (cell as { f?: string }).f)
+  // 旧版：isParentRow 就近跳模板既有格位，固定网格塞不下 0 深任务树 → 越界 break 丢弃。
+  // 新版：全量展开为行，交给 projectGridWriter.rebuildProjectRows 按模板蓝图重排(阶段行公式按真实子行区间)。
+  const dataStartRow = (hr + ONE) + TWO
+  const rows: ProjectGridRow[] = nodeList.map((node, i) => ({
+    row: dataStartRow + i,
+    kind: node.parent_id === null ? 'phase' : 'task',
+    serial: serialOf.get(node.id) ?? String(i + ONE),
+    name: node.task_name,
+    owner: node.owner ?? '',
+    startSerial: node.parent_id === null ? null : dateSerial(node.start_date),
+    natural: node.parent_id === null ? null : (node.natural_days || node.work_days || 0),
+    progress: node.parent_id === null ? null : (node.progress || 0) / HUNDRED,
+    remark: node.remark ?? '',
+    childRows: [],
+  }))
+  // 阶段行的子行区间：其紧随其后的连续任务行(即阶段下所有后代行)
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].kind !== 'phase') continue
+    const kids: number[] = []
+    for (let j = i + 1; j < rows.length && rows[j].kind !== 'phase'; j++) kids.push(rows[j].row)
+    rows[i].childRows = kids
   }
-
-  let rowCursor = hr + ONE
-  let idx = 1
-  for (const node of nodeList) {
-    // 阶段 = 顶层(序号无点，parent_id==null) → 蓝底白字汇总行；具体任务 = 序号带点 → 白底黑字数据行
-    const nodeStage = node.parent_id === null
-    while (rowCursor <= lastRow && isParentRow(rowCursor) !== nodeStage) rowCursor++
-    if (rowCursor > lastRow) break
-    const rr = rowCursor
-    patch(patches, rr, cSeq, serialOf.get(node.id) ?? String(idx))
-    if (cTask >= 0) patch(patches, rr, cTask, node.task_name)
-    if (cOwner >= 0) patch(patches, rr, cOwner, node.owner ?? '')
-    if (!nodeStage) {
-      // 叶子/子行输入格（无公式）：D计划启动(日期序列数)、F自然日工时(整数)、G当前完成度(0-1小数带百分比格式)
-      // E计划完成日期 = D+F-1、H工作日工时 = NETWORKDAYS(D,E) 都是模板公式，自动算，绝不覆盖。
-      if (cStart >= 0) patch(patches, rr, cStart, node.start_date, true)
-      if (cNat >= 0) patch(patches, rr, cNat, node.natural_days || node.work_days || 0)
-      if (cProg >= 0) patch(patches, rr, cProg, (node.progress || 0) / HUNDRED)
-    }
-    if (cNote >= 0) patch(patches, rr, cNote, node.remark ?? '')
-    rowCursor++
-    idx++
-  }
-  return patches
+  return { dataStartRow, rows }
 }
 
 // ---------- 每周工作情况（本周/下周双表头）----------
@@ -348,7 +340,10 @@ export function fillAll(wb: XLSX.WorkBook, data: TemplateData): SheetPatch[] {
     const patches = fn(found.ws)
     if (patches.length) out.push({ sheetName: found.name, patches })
   }
-  push('项目管理', (ws) => fillProject(ws, data.tasks))
+  {
+    const proj = find('项目管理')
+    if (proj) out.push({ sheetName: proj.name, projectGrid: fillProject(proj.ws, data.tasks) })
+  }
   push('每周工作情况', (ws) => fillWeekly(ws, data.weekly))
   push('待办', (ws) => fillTodo(ws, data.todos))
   push('风险', (ws) => fillRisk(ws, data.risks))

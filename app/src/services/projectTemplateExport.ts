@@ -15,6 +15,7 @@ import { listProjectRequirements } from './projectRequirements'
 import { listProjectIssueLog } from './projectIssueLog'
 import { listProjectTodoItems } from './projectTodoItems'
 import { listWeeklyEntries } from './weeklyEntries'
+import { listProjectMembers } from './projectMembers'
 import { defaultHolidayProvider } from './holidayProvider'
 
 /** 导出某项目全部信息到模板文件。@returns true 成功 / false 取消或失败 */
@@ -22,13 +23,14 @@ export async function exportProjectToFile(
   projectId: number,
   projectName: string,
 ): Promise<boolean> {
-  const [tasks, risks, requirements, issues, todos, weekly] = await Promise.all([
+  const [tasks, risks, requirements, issues, todos, weekly, members] = await Promise.all([
     listProjectTasks(projectId),
     listProjectIssues(projectId),
     listProjectRequirements(projectId),
     listProjectIssueLog(projectId),
     listProjectTodoItems(projectId),
     listWeeklyEntries(projectId),
+    listProjectMembers(projectId),
   ])
   await defaultHolidayProvider.load()
   const blob = await exportWholeProjectExcel({
@@ -38,6 +40,7 @@ export async function exportProjectToFile(
     issues,
     todos,
     weeklyEntries: weekly,
+    members,
     holidays: defaultHolidayProvider.list(),
   })
   const name = `${projectName || projectId}-整项目模板-${formatLocalDate(new Date())}.xlsx`
