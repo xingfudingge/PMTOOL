@@ -486,10 +486,11 @@ export function KnowledgeTreeView({
   // ───────── 创建目录 ─────────
   const createFolder = useCallback(
     async (parentId: number | null) => {
-      const spaceId = await folderSpaceId(parentId)
       const name = await askName('新建目录', '')
       if (!name || !name.trim()) return null
       try {
+        // 无可用知识库时 folderSpaceId 会抛错，须在 try 内捕获，避免未处理 rejection
+        const spaceId = await folderSpaceId(parentId)
         const created = await upsertKnowledgeFolder({
           spaceId,
           parentId,
@@ -589,7 +590,8 @@ export function KnowledgeTreeView({
           <h3 style={titleStyle}>
             {mode === 'personal' ? '目录' : (projectName ?? '项目知识')}
           </h3>
-          {mode === 'project' && (
+          {/* 项目模式：新建目录/知识需要目标知识库。聚合模式且无库时隐藏（引导去建库） */}
+          {mode === 'project' && (!aggregate || aggSpaces.length > 0) && (
             <button
               type="button"
               style={iconBtnStyle}
@@ -602,7 +604,7 @@ export function KnowledgeTreeView({
               <FolderPlus size={14} strokeWidth={2} />
             </button>
           )}
-          {mode === 'project' && (
+          {mode === 'project' && (!aggregate || aggSpaces.length > 0) && (
             <button
               type="button"
               style={iconBtnStyle}
@@ -700,9 +702,11 @@ export function KnowledgeTreeView({
           <div style={emptyEditorStyle}>
             <BookOpen size={32} color="var(--color-text-tertiary)" />
             <div style={{ fontSize: 13 }}>
-              {emptyHint ?? (mode === 'personal'
-                ? '选中知识节点开始编辑，或点 ⋯ 新建'
-                : '选中项目目录中的知识开始编辑')}
+              {aggregate && aggSpaces.length === 0
+                ? '尚未新建知识库，请点击右上「管理知识库绑定」新建'
+                : emptyHint ?? (mode === 'personal'
+                  ? '选中知识节点开始编辑，或点 ⋯ 新建'
+                  : '选中项目目录中的知识开始编辑')}
             </div>
           </div>
         )}
