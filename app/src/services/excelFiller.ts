@@ -52,7 +52,7 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
   const cNote = colOf(ws, hr, '任务完成情况说明')
   if (cSeq < 0) return patches
 
-  // 建树（parent_id）：父子 DFS 先序
+  // 建树（parent_id）：父子 DFS 先序，并生成真正的层级序号（根=1，子=1.1，孙=1.1.1…）
   const childrenOf = new Map<number | null, ProjectTask[]>()
   for (const t of tasks) {
     const k = t.parent_id ?? null
@@ -60,17 +60,32 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
     if (arr) arr.push(t)
     else childrenOf.set(k, [t])
   }
+  const serialOf = new Map<number, string>()
   const nodeList: ProjectTask[] = []
-  const traverse = (nodes: ProjectTask[]) => {
-    for (const n of nodes) {
+  const traverse = (nodes: ProjectTask[], parentSerial: string) => {
+    nodes.forEach((n, i) => {
+      const s = parentSerial ? `${parentSerial}.${i + ONE}` : String(i + ONE)
+      serialOf.set(n.id, s)
       nodeList.push(n)
       const ch = childrenOf.get(n.id)
-      if (ch && ch.length) traverse(ch)
+      if (ch && ch.length) traverse(ch, s)
+    })
+  }
+  const roots = [...(childrenOf.get(null) || [])]
+  traverse(roots, '')
+  const seen = new Set(nodeList.map((n) => n.id))
+  const orphans = tasks.filter((t) => !seen.has(t.id))
+  if (orphans.length) {
+    let k = roots.length
+    for (const o of orphans) {
+      k += 1
+      const s = String(k)
+      serialOf.set(o.id, s)
+      nodeList.push(o)
+      const ch = childrenOf.get(o.id)
+      if (ch && ch.length) traverse(ch, s)
     }
   }
-  traverse(childrenOf.get(null) || [])
-  const seen = new Set(nodeList.map((n) => n.id))
-  traverse(tasks.filter((t) => !seen.has(t.id)))
 
   const lastRow = XLSX.utils.decode_range(ws['!ref'] || 'A1').e.r
   const isParentRow = (rr: number): boolean => {
@@ -87,7 +102,7 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
     while (rowCursor <= lastRow && isParentRow(rowCursor) !== nodeStage) rowCursor++
     if (rowCursor > lastRow) break
     const rr = rowCursor
-    patch(patches, rr, cSeq, String(idx))
+    patch(patches, rr, cSeq, serialOf.get(node.id) ?? String(idx))
     if (cTask >= 0) patch(patches, rr, cTask, node.task_name)
     if (cOwner >= 0) patch(patches, rr, cOwner, node.owner ?? '')
     if (!nodeStage) {
