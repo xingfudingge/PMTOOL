@@ -18,6 +18,8 @@
  */
 
 import * as XLSX from 'xlsx'
+import { loadTemplate, getSheet, sheetNameOf, applyPatchesToTemplate } from './templateWriter'
+import { fillMembers } from './excelFiller'
 
 // ============================================================
 // 类型（设计 schema · 表 project_members 尚未建立）
@@ -201,44 +203,12 @@ function buildLegendBlock(): unknown[][] {
   ]
 }
 
-/** 导出 ProjectMember[] → Excel Blob */
+/** 导出 ProjectMember[] → Excel Blob（就地写入内置模板「项目成员」sheet，A-F/H-M 双块）*/
 export async function exportMembersToExcel(
   members: ProjectMember[],
 ): Promise<Blob> {
-  // 用 aoa_to_sheet 构建并排结构
-  const aoa: unknown[][] = []
-
-  // 第 1 行：section 标题
-  aoa.push(['甲方相关方', '', '', '', '', '', '', '启明相关方', '', '', '', '', '', ''])
-
-  // 第 2 行：列头
-  aoa.push([
-    '', '角色', '姓名', '联系方式', '项目参与程度', '对项目影响度',
-    '', '', '角色', '姓名', '联系方式', '项目参与程度', '对项目影响度',
-  ])
-
-  // 数据行（8 行甲方 + 8 行乙方）
-  const { left, right } = buildMemberRowsForExport(members)
-  for (let i = 0; i < ROWS_PER_BLOCK; i++) {
-    const l = left[i] ?? [`甲方联系人${i + 1}`, '', '', '', '', '']
-    const r = right[i] ?? [`乙方联系人${i + 1}`, '', '', '', '', '']
-    aoa.push([...l, '', '', ...r])
-  }
-
-  // 空行分隔
-  aoa.push([])
-
-  // 相关度说明块
-  for (const row of buildLegendBlock()) {
-    aoa.push(row)
-  }
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, SHEET_NAME)
-
-  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
-  return new Blob([buf], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  })
+  const wb = await loadTemplate()
+  const ws = getSheet(wb, '项目成员')
+  const patches = fillMembers(ws, members)
+  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, SHEET_NAME), patches }])
 }

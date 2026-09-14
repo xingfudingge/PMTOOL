@@ -21,6 +21,7 @@
     "docx-preview": "^0.3.0",
     "drizzle-orm": "^0.36.0",
     "highlight.js": "^11.10.0",
+    "jszip": "3.10.1",
     "lucide-react": "^1.33.0",
     "pdfjs-dist": "^4.7.76",
     "pptxjs": "npm:pptx-preview@^1.0.7",

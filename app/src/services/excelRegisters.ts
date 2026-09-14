@@ -9,7 +9,8 @@
 
 import * as XLSX from 'xlsx'
 import { formatLocalDate } from './datetime'
-import { loadTemplate, getSheet, findHeaderRow, colOf, clearRows, writeRow, singleSheetBlob } from './templateWriter'
+import { loadTemplate, getSheet, sheetNameOf, applyPatchesToTemplate } from './templateWriter'
+import { fillReq, fillIssueLog, fillTodo } from './excelFiller'
 import type { ProjectRequirement } from './projectRequirements'
 import type { ProjectIssueLog } from './projectIssueLog'
 import type { ProjectTodoItem } from './projectTodoItems'
@@ -167,29 +168,8 @@ export async function parseRequirementsExcel(file: File, projectId: number): Pro
 export async function exportRequirementsToExcel(reqs: ProjectRequirement[]): Promise<Blob> {
   const wb = await loadTemplate()
   const ws = getSheet(wb, '需求登记册')
-  const hr = findHeaderRow(ws, ['序号']) ?? 0
-  const cSeq = colOf(ws, hr, '序号')
-  const cType = colOf(ws, hr, '需求类型')
-  const cSystem = colOf(ws, hr, '归属系统')
-  const cSummary = colOf(ws, hr, '需求简述')
-  const cDetail = colOf(ws, hr, '需求详述')
-  const cProposed = colOf(ws, hr, '提出时间')
-  const cProposer = colOf(ws, hr, '提出人')
-  const cStatus = colOf(ws, hr, '需求响应状态')
-  clearRows(ws, hr + 1)
-  reqs.forEach((x, i) => {
-    writeRow(ws, hr + 1 + i, [
-      [cSeq, String(i + 1)],
-      [cType, x.type || 'NEW'],
-      [cSystem, x.system ?? ''],
-      [cSummary, x.summary],
-      [cDetail, x.detail ?? ''],
-      [cProposed, x.proposed_at ?? '', true],
-      [cProposer, x.proposer ?? ''],
-      [cStatus, reqStatusToCN(x.status)],
-    ])
-  })
-  return singleSheetBlob(ws, REQ_SHEET, hr + reqs.length)
+  const patches = fillReq(ws, reqs)
+  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, '需求登记册'), patches }])
 }
 
 // ============================================================
@@ -266,36 +246,8 @@ export async function parseIssueLogExcel(file: File, projectId: number): Promise
 export async function exportIssueLogToExcel(items: ProjectIssueLog[]): Promise<Blob> {
   const wb = await loadTemplate()
   const ws = getSheet(wb, '问题登记册')
-  const hr = findHeaderRow(ws, ['序号']) ?? 0
-  const cSeq = colOf(ws, hr, '序号')
-  const cTitle = colOf(ws, hr, '问题描述')
-  const cProposer = colOf(ws, hr, '提出人')
-  const cModule = colOf(ws, hr, '涉及系统及模块')
-  const cFound = colOf(ws, hr, '发现时间')
-  const cPlan = colOf(ws, hr, '计划解决时间')
-  const cPlanSol = colOf(ws, hr, '计划解决方案')
-  const cHandler = colOf(ws, hr, '问题处理人')
-  const cProgress = colOf(ws, hr, '当前处理进度')
-  const cActual = colOf(ws, hr, '实际处理时间')
-  const cStatus = colOf(ws, hr, '问题状态')
-  const statusCol = cStatus >= 0 ? cStatus : colOf(ws, hr, '是否已处理')
-  clearRows(ws, hr + 1)
-  items.forEach((x, i) => {
-    writeRow(ws, hr + 1 + i, [
-      [cSeq, String(i + 1)],
-      [cTitle, x.title],
-      [cProposer, x.proposer ?? ''],
-      [cModule, x.module ?? ''],
-      [cFound, x.discovered_at ?? '', true],
-      [cPlan, x.plan_date ?? '', true],
-      [cPlanSol, x.plan_solution ?? ''],
-      [cHandler, x.handler ?? ''],
-      [cProgress, x.progress_note ?? ''],
-      [cActual, x.actual_date ?? '', true],
-      [statusCol, issStatusToCN(x.status)],
-    ])
-  })
-  return singleSheetBlob(ws, ISSUE_SHEET, hr + items.length)
+  const patches = fillIssueLog(ws, items)
+  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, '问题登记册'), patches }])
 }
 
 // ============================================================
@@ -363,27 +315,6 @@ export async function parseTodoItemsExcel(file: File, projectId: number): Promis
 export async function exportTodoItemsToExcel(items: ProjectTodoItem[]): Promise<Blob> {
   const wb = await loadTemplate()
   const ws = getSheet(wb, '待办')
-  const hr = findHeaderRow(ws, ['编号', '序号']) ?? 0
-  const cSeq = colOf(ws, hr, '编号')
-  const cContent = colOf(ws, hr, '代办事项说明')
-  const cPeople = colOf(ws, hr, '涉及人员')
-  const cPlan = colOf(ws, hr, '计划完成时间')
-  const cNote = colOf(ws, hr, '当前完成情况')
-  const cActual = colOf(ws, hr, '实际完成时间')
-  const cStatus = colOf(ws, hr, '任务状态')
-  const cRemark = colOf(ws, hr, '备注')
-  clearRows(ws, hr + 1)
-  items.forEach((x, i) => {
-    writeRow(ws, hr + 1 + i, [
-      [cSeq, String(i + 1)],
-      [cContent, x.content],
-      [cPeople, x.related_people ?? ''],
-      [cPlan, x.plan_date ?? '', true],
-      [cNote, x.completion_note ?? ''],
-      [cActual, x.actual_date ?? '', true],
-      [cStatus, todoStatusToCN(x.status)],
-      [cRemark, x.remark ?? ''],
-    ])
-  })
-  return singleSheetBlob(ws, TODO_SHEET, hr + items.length)
+  const patches = fillTodo(ws, items)
+  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, '待办'), patches }])
 }

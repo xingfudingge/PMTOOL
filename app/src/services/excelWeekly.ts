@@ -20,6 +20,8 @@
 
 import * as XLSX from 'xlsx'
 import { formatLocalDate } from './datetime'
+import { loadTemplate, getSheet, sheetNameOf, applyPatchesToTemplate } from './templateWriter'
+import { fillWeekly } from './excelFiller'
 
 // ============================================================
 // 类型（设计 schema · 表 weekly_report_entries 尚未建立）
@@ -426,60 +428,12 @@ export async function parseWeeklyExcel(
   return assignWeekNumbers(collected)
 }
 
-/** 导出 WeeklyReportEntry[] → Excel Blob（按 section 分段写出）*/
+/** 导出 WeeklyReportEntry[] → Excel Blob（就地写入内置模板「每周工作情况」sheet，保留表头/样式）*/
 export async function exportWeeklyToExcel(
   entries: WeeklyReportEntry[],
 ): Promise<Blob> {
-  const wb = XLSX.utils.book_new()
-
-  // 拆分 CURRENT / NEXT
-  const current = entries.filter((e) => e.section === 'CURRENT')
-  const next = entries.filter((e) => e.section === 'NEXT')
-
-  // 用二维数组构建 sheet（保留 section title + 表头 + sub-header 结构）
-  const aoa: unknown[][] = []
-
-  aoa.push([SECTION_CURRENT_TITLE])
-  aoa.push(['序号', '任务', '计划开始时间', '计划完成时间', '实际开始时间', '实际完成时间', '主要负责人', '', '完成情况', '是否完成'])
-  aoa.push(['', '', '', '', '', '', '甲方', '乙方', '', ''])
-  current.forEach((e, idx) => {
-    aoa.push([
-      idx + 1,
-      e.task_name,
-      e.plan_start_date ?? '',
-      e.plan_end_date ?? '',
-      e.actual_start_date ?? '',
-      e.actual_end_date ?? '',
-      e.owner_party_a ?? '',
-      e.owner_party_b ?? '',
-      e.completion_note ?? '',
-      e.is_completed === 'COMPLETED' ? '是' : e.is_completed === 'IN_PROGRESS' ? '进行中' : '否',
-    ])
-  })
-
-  aoa.push([SECTION_NEXT_TITLE])
-  aoa.push(['序号', '任务', '计划开始时间', '计划完成时间', '实际开始时间', '实际完成时间', '主要负责人', '', '完成情况', '是否完成'])
-  aoa.push(['', '', '', '', '', '', '甲方', '乙方', '', ''])
-  next.forEach((e, idx) => {
-    aoa.push([
-      idx + 1,
-      e.task_name,
-      e.plan_start_date ?? '',
-      e.plan_end_date ?? '',
-      e.actual_start_date ?? '',
-      e.actual_end_date ?? '',
-      e.owner_party_a ?? '',
-      e.owner_party_b ?? '',
-      e.completion_note ?? '',
-      e.is_completed === 'COMPLETED' ? '是' : e.is_completed === 'IN_PROGRESS' ? '进行中' : '否',
-    ])
-  })
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  XLSX.utils.book_append_sheet(wb, ws, '每周工作情况以及和下周计划')
-
-  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
-  return new Blob([buf], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  })
+  const wb = await loadTemplate()
+  const ws = getSheet(wb, '每周工作情况')
+  const patches = fillWeekly(ws, entries)
+  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, '每周工作情况以及下周计划'), patches }])
 }

@@ -19,18 +19,8 @@
 
 import * as XLSX from 'xlsx'
 import { formatLocalDate } from './datetime'
-import { singleSheetBlob } from './templateWriter'
-import templateUrl from '@/assets/templates/pmtool_project_template.xlsx?url'
-
-// 内置模板 ArrayBuffer 缓存（避免每次导出都重新 fetch）
-let _templateBuf: ArrayBuffer | null = null
-async function templateArrayBuffer(): Promise<ArrayBuffer> {
-  if (_templateBuf) return _templateBuf
-  const res = await fetch(templateUrl)
-  if (!res.ok) throw new Error(`加载模板失败 HTTP ${res.status}`)
-  _templateBuf = await res.arrayBuffer()
-  return _templateBuf
-}
+import { loadTemplate, getSheet, sheetNameOf, applyPatchesToTemplate } from './templateWriter'
+import { fillProject } from './excelFiller'
 
 // ============================================================
 // 类型（与 services/projectTasks.ts 的 ProjectTask 对齐）
@@ -318,93 +308,13 @@ function projectTaskToExcelRow(task: ProjectTask): (string | number | null)[] {
   ]
 }
 
-/** 导出 ProjectTask[] → Excel Blob（按模板结构：加载模板 xlsx → 往「项目管理」sheet 填数据） */
+/** 导出 ProjectTask[] → Excel Blob（就地写入内置模板「项目管理」sheet，保留表头/样式/公式） */
 export async function exportProjectsToExcel(
   tasks: ProjectTask[],
 ): Promise<Blob> {
-  const wb = XLSX.read(await templateArrayBuffer(), { type: 'array' })
-  const key = wb.SheetNames.find((n) => n.includes('项目管理'))
-  if (!key) throw new Error('模板中未找到「项目管理」sheet')
-  const ws = wb.Sheets[key]
-  // 模板「项目管理」第 4 行（index=3）是表头 · 数据从第 7 行（index=6）开始写
-  // 关键：只写数据列（A/B/C/D/E/G/I）· F/H 是公式列不写· 让 Excel 自动算
-  const dataRows = tasks.map((t) => projectTaskToExcelRow(t))
-  // 按列写入（避免覆盖模板公式列 F/H）
-  const colMap: Array<{ col: number; extract: (row: typeof dataRows[number]) => string | number }> = [
-    { col: 0, extract: (r) => r[0] as string }, // A 序号
-    { col: 1, extract: (r) => r[1] as string }, // B 任务
-    { col: 2, extract: (r) => r[2] as string }, // C 跟进人
-    { col: 3, extract: (r) => r[3] as string | number }, // D 计划启动日期（序列数）
-    { col: 4, extract: (r) => r[4] as string | number }, // E 计划完成日期（序列数）
-    // F (5) = 公式列 · 跳过
-    { col: 6, extract: (r) => r[5] as number }, // G 当前完成度%
-    // H (7) = 公式列 · 跳过
-    { col: 8, extract: (r) => r[6] as string }, // I 任务完成情况说明（覆盖公式）
-  ]
-  const START_ROW = 6 // 0-indexed row 6 = 第 7 行 = 任务区第一行
-  dataRows.forEach((row, i) => {
-    const r = START_ROW + i
-    colMap.forEach(({ col, extract }) => {
-      const val = extract(row)
-      if (val === '' || val == null) return
-      const addr = XLSX.utils.encode_cell({ r, c: col })
-      ws[addr] = { v: val, t: typeof val === 'number' ? 'n' : 's' }
-    })
-  })
-
-  // 甘特条形填充：任务行 (START_ROW + i) 对应 tasks[i] · 模板日列从 col 9 起（row3 为逐日日期）
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
-  const GANTT_COL_BASE = 9
-  // 模板启动日期 = row1 单元格 B2 的序列值（日列锚点）
-  const anchorCell = ws[XLSX.utils.encode_cell({ r: 1, c: 1 })]
-  const anchorSerial = typeof anchorCell?.v === 'number' ? anchorCell.v : null
-  const anchorDate = anchorSerial ? new Date(Math.round((anchorSerial - 25569) * 86400 * 1000)) : null
-  const dayColFor = (dateStr: string | null): number | null => {
-    if (!anchorDate || !dateStr) return null
-    const d = new Date(dateStr)
-    if (isNaN(d.getTime())) return null
-    const diff = Math.round((d.getTime() - anchorDate.getTime()) / 86400000)
-    return GANTT_COL_BASE + diff
-  }
-  const inferStatus = (t: ProjectTask): ProjectTask['status'] => {
-    if (t.progress >= 100) return 'COMPLETED'
-    if (t.status === 'DELAYED') return 'DELAYED'
-    if (t.progress > 0) return 'IN_PROGRESS'
-    return 'PENDING'
-  }
-  const STATUS_HEX: Record<ProjectTask['status'], string> = {
-    PENDING: 'BFBFBF', IN_PROGRESS: '1677FF', DELAYED: 'FF4D4F', COMPLETED: '52C41A',
-  }
-  const STATUSH_HEX: Record<ProjectTask['status'], string> = {
-    PENDING: 'E6E6E6', IN_PROGRESS: 'D6EBFF', DELAYED: 'FFD6D6', COMPLETED: 'D5F2D5',
-  }
-  tasks.forEach((t, i) => {
-    const r = START_ROW + i
-    const s = dayColFor(t.start_date)
-    const e = dayColFor(t.end_date)
-    if (s === null || e === null || s > e) return
-    if (s > range.e.c) return
-    const status = inferStatus(t)
-    const span = e - s + 1
-    const progCells = Math.max(1, Math.round(span * Math.min(100, Math.max(0, t.progress)) / 100))
-    const fullCol = Math.min(s + progCells, e + 1)
-    for (let c = s; c <= e && c <= range.e.c; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c })
-      const style = c < fullCol
-        ? { patternType: 'solid', fgColor: { rgb: STATUS_HEX[status] } }
-        : { patternType: 'solid', fgColor: { rgb: STATUSH_HEX[status] } }
-      ws[addr] = { v: '', t: 's', s: { fill: style } }
-    }
-  })
-
-  // 清除数据区以下模板遗留的默认行（空行/示例数据/残留条形）· 只删数据行，保留 0-4 表头
-  const LAST_TEMPLATE_ROW = 45 // 0-indexed 最后一行（即第 46 行）· 数据区写到 45 为止
-  for (let r = START_ROW + tasks.length; r < LAST_TEMPLATE_ROW; r++) {
-    for (let c = 0; c <= range.e.c; c++) {
-      delete ws[XLSX.utils.encode_cell({ r, c })]
-    }
-  }
-
-  return singleSheetBlob(ws, '项目管理', START_ROW + tasks.length - 1)
+  const wb = await loadTemplate()
+  const ws = getSheet(wb, '项目管理')
+  const patches = fillProject(ws, tasks)
+  return applyPatchesToTemplate([{ sheetName: sheetNameOf(wb, '项目管理'), patches }])
 }
 
