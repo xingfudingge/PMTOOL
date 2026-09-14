@@ -33,6 +33,7 @@ import {
   Pencil,
   Trash2,
   FolderPlus,
+  Library,
   BookOpen,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -68,6 +69,7 @@ import {
   listAllProjectSpaces,
   listSpaceBindings,
   deleteKnowledgeSpace,
+  createKnowledgeSpace,
 } from '@/services/knowledgeSpaces'
 import { listProjects } from '@/services/project'
 
@@ -534,6 +536,19 @@ export function KnowledgeTreeView({
     [mode, refresh, resolveSpaceId, folderSpaceId, openNote],
   )
 
+  // ───────── 新建知识库（聚合视图顶层是一级「知识库」，新建≠在建目录内加一层） ─────────
+  const createLibrary = useCallback(async () => {
+    const name = await askName('新建知识库', '')
+    if (!name || !name.trim()) return
+    try {
+      await createKnowledgeSpace({ spaceType: 'project', projectId: null, name: name.trim() })
+      toast.success(`已新建知识库「${name.trim()}」`)
+      await refresh()
+    } catch (e) {
+      toast.error(`新建知识库失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }, [askName, refresh])
+
   // ───────── 重命名 ─────────
   const renameFolder = useCallback(
     async (folder: DbFolder, newName: string) => {
@@ -591,31 +606,45 @@ export function KnowledgeTreeView({
             {mode === 'personal' ? '目录' : (projectName ?? '项目知识')}
           </h3>
           {/* 项目模式：新建目录/知识需要目标知识库。聚合模式且无库时隐藏（引导去建库） */}
-          {mode === 'project' && (!aggregate || aggSpaces.length > 0) && (
+          {/* 聚合视图：顶层=知识库，新增一级项即新建一个知识库 */}
+          {aggregate ? (
             <button
               type="button"
               style={iconBtnStyle}
-              onClick={async () => {
-                // 项目知识库（一库多项目）：新建顶级目录
-                await createFolder(null)
-              }}
-              title="新建目录"
+              onClick={() => void createLibrary()}
+              title="新建知识库（顶层一级目录）"
             >
-              <FolderPlus size={14} strokeWidth={2} />
+              <Library size={14} strokeWidth={2} />
             </button>
-          )}
-          {mode === 'project' && (!aggregate || aggSpaces.length > 0) && (
-            <button
-              type="button"
-              style={iconBtnStyle}
-              onClick={async () => {
-                // 项目知识库：新建顶级知识
-                await createNote(null)
-              }}
-              title="新建知识"
-            >
-              <Plus size={14} strokeWidth={2} />
-            </button>
+          ) : (
+            <>
+              {mode === 'project' && (
+                <button
+                  type="button"
+                  style={iconBtnStyle}
+                  onClick={async () => {
+                    // 项目知识库（单库）：新建该库顶层目录
+                    await createFolder(null)
+                  }}
+                  title="新建目录"
+                >
+                  <FolderPlus size={14} strokeWidth={2} />
+                </button>
+              )}
+              {mode === 'project' && (
+                <button
+                  type="button"
+                  style={iconBtnStyle}
+                  onClick={async () => {
+                    // 项目知识库：新建顶层知识
+                    await createNote(null)
+                  }}
+                  title="新建知识"
+                >
+                  <Plus size={14} strokeWidth={2} />
+                </button>
+              )}
+            </>
           )}
           {mode === 'personal' && (
             <button
@@ -703,7 +732,7 @@ export function KnowledgeTreeView({
             <BookOpen size={32} color="var(--color-text-tertiary)" />
             <div style={{ fontSize: 13 }}>
               {aggregate && aggSpaces.length === 0
-                ? '尚未新建知识库，请点击右上「管理知识库绑定」新建'
+                ? '尚未新建知识库，请点击右上「新建知识库」'
                 : emptyHint ?? (mode === 'personal'
                   ? '选中知识节点开始编辑，或点 ⋯ 新建'
                   : '选中项目目录中的知识开始编辑')}
