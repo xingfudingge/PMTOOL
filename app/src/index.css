@@ -250,3 +250,49 @@ body {
 .pms-msg{padding:8px 12px;margin:10px 0;font-size:13px;color:var(--color-text-secondary);background:var(--color-bg-subtle);border-radius:6px;border:1px solid var(--color-border-thin);}
 .pms-msg-warn{padding:12px 14px;margin:10px 0;font-size:13px;font-weight:600;color:#7a5200;background:#fff7e0;border-radius:8px;border:1px solid #f0c36a;display:flex;align-items:center;gap:8px;}
 .pms-row{display:flex;align-items:center;gap:10px;}
+
+/* ============================================================
+ * Liquid Glass 弹窗（macOS 液态玻璃 · 维护者 2026-09-14）
+ * 半透明玻璃 + 背景模糊 + 饱和 + 柔和高光 + 边缘高光 + 大圆角 + 柔和阴影
+ * Tauri WebKit/WKWebView 支持 backdrop-filter；浅色/深色分开定义
+ * 2026-09-14 调色：玻璃色从冷蓝改暖中性，与 App 主题 (#ffffff/#fafaf8/#37352f) 对齐
+ * ============================================================ */
+:root {
+  --glass-overlay: rgba(55, 52, 46, 0.25);
+  --glass-bg: rgba(250, 250, 248, 0.60);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(95, 91, 84, 0.15);
+  --glass-highlight: rgba(255, 255, 255, 0.45);
+  --glass-shadow: 0 16px 44px rgba(55, 50, 42, 0.14);
+  --glass-blur: blur(28px) saturate(170%);
+  --glass-text: var(--color-text);
+}
+
+[data-theme='dark'] {
+  --glass-overlay: rgba(0, 0, 0, 0.45);
+  --glass-bg: rgba(44, 44, 44, 0.56);
+  --glass-bg-strong: rgba(47, 47, 47, 0.74);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-highlight: rgba(255, 255, 255, 0.10);
+  --glass-shadow: 0 16px 44px rgba(0, 0, 0, 0.50);
+  --glass-blur: blur(28px) saturate(160%);
+  --glass-text: var(--color-text);
+}
+
+/* Liquid Glass 弹窗动画（开/关淡入 + 缩放） */
+@keyframes pmGlassOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pmGlassPanelIn {
+  from { transform: scale(0.94) translateY(14px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes pmGlassOverlayOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes pmGlassPanelOut {
+  from { transform: scale(1) translateY(0); opacity: 1; }
+  to { transform: scale(0.94) translateY(10px); opacity: 0; }
+}
