@@ -22,9 +22,12 @@ import {
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import type { PageId } from '../App'
 import { PMToolLogo } from './PMToolLogo'
+import { useSettings } from '@/state/SettingsProvider'
 
 interface SidebarProps {
   currentPage: PageId
@@ -52,7 +55,7 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 interface NavButtonProps {
-  item: NavItem
+  item: { id: string; label: string; Icon: NavItem['Icon'] }
   active: boolean
   collapsed: boolean
   onClick: () => void
@@ -95,6 +98,7 @@ function NavButton({ item, active, collapsed, onClick }: NavButtonProps) {
 }
 
 export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }: SidebarProps) {
+  const { resolvedTheme, save } = useSettings()
   const width = collapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)'
   return (
     <aside
@@ -210,7 +214,25 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }
         )}
       </nav>
 
-      {/* 2026-09-07：移除版本号区域（无用信息） */}
+      {/* 2026-09-14：主题切换从原顶栏移入侧栏底部（顶栏已精简掉） */}
+      <div
+        style={{
+          marginTop: 'auto',
+          padding: collapsed ? '8px 6px' : '10px 30px',
+          borderTop: '1px solid var(--color-border-thin)',
+        }}
+      >
+        <NavButton
+          item={{
+            id: 'theme',
+            label: resolvedTheme === 'dark' ? '浅色模式' : '深色模式',
+            Icon: resolvedTheme === 'dark' ? Sun : Moon,
+          }}
+          active={false}
+          collapsed={collapsed}
+          onClick={() => save('theme', resolvedTheme === 'dark' ? 'light' : 'dark')}
+        />
+      </div>
     </aside>
   )
 }
