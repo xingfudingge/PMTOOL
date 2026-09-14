@@ -179,17 +179,37 @@ fn generate_license_command(
     device_id: String,
     duration_days: i32,
     startDate: String,
+    expireDate: Option<String>,
+    state: tauri::State<Mutex<()>>,
 ) -> std::result::Result<String, String> {
+    let _guard = state.lock().map_err(|e| e.to_string())?;
+
     let (signing_key, _verifying_key) = load_key_pair()?;
 
     let start_time = chrono::DateTime::parse_from_rfc3339(&startDate)
         .map_err(|e| format!("Invalid start date: {}", e))?;
 
     let (license_type, expire_time) = if duration_days == 0 {
+        // 永久授权
         ("PERPETUAL".to_string(), "".to_string())
     } else {
-        let expire = start_time + chrono::Duration::days(duration_days as i64);
-        (format!("DAYS_{}", duration_days), expire.to_rfc3339())
+        match &expireDate {
+            Some(e) => {
+                // 使用前端真实填写的到期时间（预设自动联动 / 自定义均可）
+                let expire = chrono::DateTime::parse_from_rfc3339(e)
+                    .map_err(|er| format!("Invalid expire date: {}", er))?;
+                let days = (expire - start_time).num_days();
+                if days <= 0 {
+                    return Err("到期日期需晚于开始日期".to_string());
+                }
+                (format!("DAYS_{}", days), expire.to_rfc3339())
+            }
+            None => {
+                // 旧调用兜底：按开始 + 天数推算
+                let expire = start_time + chrono::Duration::days(duration_days as i64);
+                (format!("DAYS_{}", duration_days), expire.to_rfc3339())
+            }
+        }
     };
 
     let payload = create_license_payload(

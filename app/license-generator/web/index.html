@@ -51,6 +51,31 @@
             font-size: 0.75rem;
         }
 
+        .tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 9px 8px;
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #ffffff;
+        }
+
         .card {
             background: var(--bg-card);
             border-radius: 8px;
@@ -89,8 +114,14 @@
             color: var(--text-muted);
         }
 
+        .input-field:disabled {
+            background: var(--bg-hover);
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+
         .input-hint {
-            font-size: 0.65rem;
+            font-size: 0.62rem;
             color: var(--text-muted);
             margin-top: 3px;
             line-height: 1.3;
@@ -162,7 +193,7 @@
         }
 
         .output-area {
-            margin-top: 8px;
+            margin-top: 0;
         }
 
         .output-label {
@@ -186,14 +217,8 @@
             background: var(--bg-input);
             color: var(--primary);
             line-height: 1.4;
-            min-height: 100px;
+            min-height: 96px;
             word-break: break-all;
-        }
-
-        .output-text:focus {
-            outline: none;
-            border-color: var(--primary);
-            background: #ffffff;
         }
 
         .copy-btn {
@@ -232,6 +257,29 @@
             display: none;
         }
 
+        /* 内联提示条（WKWebView 不支持 window.alert/confirm） */
+        .msg {
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            margin-bottom: 8px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .msg.error {
+            background: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+
+        .msg.success {
+            background: #d1fae5;
+            color: #047857;
+            border: 1px solid #a7f3d0;
+        }
+
+        /* 授权记录历史 */
         .history-head {
             display: flex;
             align-items: center;
@@ -240,7 +288,7 @@
         }
 
         .history-refresh {
-            padding: 3px 10px;
+            padding: 4px 12px;
             font-size: 10px;
             font-weight: 600;
             background: var(--bg-hover);
@@ -264,7 +312,7 @@
             color: var(--text-muted);
             font-size: 12px;
             text-align: center;
-            padding: 14px 0;
+            padding: 16px 0;
         }
 
         .history-item {
@@ -308,13 +356,18 @@
             color: #059669;
         }
 
+        .history-type.custom {
+            background: #fff7ed;
+            color: #c2410c;
+        }
+
         .history-actions {
             display: flex;
             gap: 6px;
             flex-shrink: 0;
         }
 
-        .history-toggle, .history-del {
+        .history-action {
             padding: 3px 8px;
             font-size: 10px;
             font-weight: 600;
@@ -325,7 +378,7 @@
             color: var(--text);
         }
 
-        .history-toggle:hover {
+        .history-action:hover {
             background: var(--bg-hover);
         }
 
@@ -333,6 +386,12 @@
             background: #fee2e2;
             color: #dc2626;
             border-color: #fecaca;
+        }
+
+        .history-del-armed {
+            background: #dc2626 !important;
+            border-color: #dc2626 !important;
+            color: #ffffff !important;
         }
 
         .history-code {
@@ -359,111 +418,186 @@
             <p>授权码生成器</p>
         </div>
 
-        <div class="card">
-            <div class="label">设备唯一值</div>
-            <input type="text" id="deviceId" class="input-field" placeholder="从 PMTool「设置」→「授权管理」复制" />
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="generate" onclick="switchTab('generate')">生成授权</button>
+            <button class="tab-btn" data-tab="history" onclick="switchTab('history')">授权记录</button>
         </div>
 
-        <div class="card">
-            <div class="label">授权期限</div>
-            <div class="radio-group">
-                <label class="radio-option" onclick="selectDuration(30)">
-                    <input type="radio" name="duration" value="30" checked onchange="updateExpireDate()">
-                    <span>30 天</span>
-                </label>
-                <label class="radio-option" onclick="selectDuration(365)">
-                    <input type="radio" name="duration" value="365" onchange="updateExpireDate()">
-                    <span>1 年</span>
-                </label>
-                <label class="radio-option" onclick="selectDuration(0)">
-                    <input type="radio" name="duration" value="0" onchange="updateExpireDate()">
-                    <span>永久</span>
-                </label>
+        <div id="msg"></div>
+
+        <!-- ============ 生成授权 ============ -->
+        <div id="viewGenerate">
+            <div class="card">
+                <div class="label">设备唯一值</div>
+                <input type="text" id="deviceId" class="input-field" placeholder="从 PMTool「设置」→「授权管理」复制" />
             </div>
-        </div>
 
-        <div class="card">
-            <div class="label">开始日期</div>
-            <input type="date" id="startDate" class="input-field" />
-        </div>
+            <div class="card">
+                <div class="label">授权期限</div>
+                <div class="radio-group">
+                    <label class="radio-option" onclick="selectDuration(30)">
+                        <input type="radio" name="duration" value="30" checked onchange="updateExpireDate()">
+                        <span>30 天</span>
+                    </label>
+                    <label class="radio-option" onclick="selectDuration(365)">
+                        <input type="radio" name="duration" value="365" onchange="updateExpireDate()">
+                        <span>1 年</span>
+                    </label>
+                    <label class="radio-option" onclick="selectDuration(0)">
+                        <input type="radio" name="duration" value="0" onchange="updateExpireDate()">
+                        <span>永久</span>
+                    </label>
+                    <label class="radio-option" onclick="selectDuration(-1)">
+                        <input type="radio" name="duration" value="-1" onchange="updateExpireDate()">
+                        <span>自定义</span>
+                    </label>
+                </div>
+            </div>
 
-        <div id="expireDateContainer" class="card">
-            <div class="label">到期日期</div>
-            <input type="date" id="expireDate" class="input-field" />
-        </div>
+            <div class="card">
+                <div class="label">开始日期</div>
+                <input type="date" id="startDate" class="input-field" onchange="onStartDateChange()" />
+            </div>
 
-        <button class="btn" id="generateBtn" onclick="generateLicense()">生成授权码</button>
+            <div id="expireDateContainer" class="card">
+                <div class="label">到期日期</div>
+                <input type="date" id="expireDate" class="input-field" />
+                <div id="expireHint" class="input-hint"></div>
+            </div>
 
-        <div id="outputSection" class="hidden">
-            <div class="divider"></div>
-            <div class="output-area">
-                <div class="output-label">授权码</div>
-                <div class="output-box">
-                    <textarea id="licenseOutput" class="output-text" readonly></textarea>
-                    <button class="copy-btn" id="copyBtn" onclick="copyLicense()">复制</button>
+            <button class="btn" id="generateBtn" onclick="generateLicense()">生成授权码</button>
+
+            <div id="outputSection" class="hidden">
+                <div class="divider"></div>
+                <div class="output-area">
+                    <div class="output-label">授权码</div>
+                    <div class="output-box">
+                        <textarea id="licenseOutput" class="output-text" readonly></textarea>
+                        <button class="copy-btn" id="copyBtn" onclick="copyLicense()">复制</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="card">
-            <div class="history-head">
-                <div class="label" style="margin-bottom:0;">授权记录历史</div>
-                <button class="history-refresh" onclick="refreshHistory()">刷新</button>
+        <!-- ============ 授权记录 ============ -->
+        <div id="viewHistory" class="hidden">
+            <div class="card">
+                <div class="history-head">
+                    <div class="label" style="margin-bottom:0;">授权记录</div>
+                    <button class="history-refresh" onclick="refreshHistory()">刷新</button>
+                </div>
+                <div id="historyList" class="history-list"><div class="history-empty">暂无记录</div></div>
             </div>
-            <div id="historyList" class="history-list"><div class="history-empty">暂无记录</div></div>
         </div>
     </div>
 
     <script>
-        // 设置默认日期
         const today = new Date();
-        const nextMonth = new Date();
-        nextMonth.setDate(today.getDate() + 30);
-        const nextYear = new Date();
-        nextYear.setFullYear(today.getFullYear() + 1);
-
         document.getElementById('startDate').valueAsDate = today;
 
-        // 选择期限
+        let statusTimer = null;
+
+        // 内联提示（WKWebView 不支持 alert/confirm）
+        function showMsg(text, type) {
+            const el = document.getElementById('msg');
+            el.className = 'msg ' + (type || 'error');
+            el.textContent = text;
+            clearTimeout(statusTimer);
+            if (type !== 'error') {
+                statusTimer = setTimeout(() => { el.className = 'msg'; el.textContent = ''; }, 4000);
+            }
+        }
+
+        // ============ 页签切换 ============
+        function switchTab(name) {
+            document.getElementById('viewGenerate').classList.toggle('hidden', name !== 'generate');
+            document.getElementById('viewHistory').classList.toggle('hidden', name !== 'history');
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.tab === name);
+            });
+            if (name === 'history') refreshHistory();
+        }
+
+        // ============ 期限 / 日期联动 ============
+        // 30天/1年：到期日期只读自动算；永久：隐藏到期；自定义：开始/到期都可手填、互不联动
         function selectDuration(days) {
             const radios = document.querySelectorAll('input[name="duration"]');
-            radios.forEach(radio => {
-                if (radio.value === String(days)) {
-                    radio.checked = true;
-                }
-            });
+            radios.forEach(r => { r.checked = (String(r.value) === String(days)); });
             updateExpireDate();
         }
 
-        // 更新到期日期
-        function updateExpireDate() {
-            const duration = parseInt(document.querySelector('input[name="duration"]:checked').value);
-            const startDate = new Date(document.getElementById('startDate').value);
-            const expireDate = new Date(startDate);
+        function isPreset() {
+            const v = parseInt(document.querySelector('input[name="duration"]:checked').value, 10);
+            return v > 0; // 30 / 365
+        }
 
-            if (isNaN(startDate.getTime())) {
-                document.getElementById('expireDate').value = '';
+        function isPerpetual() {
+            return parseInt(document.querySelector('input[name="duration"]:checked').value, 10) === 0;
+        }
+
+        function onStartDateChange() {
+            // 预设：改开始日期时自动重算到期；自定义 / 永久：不动
+            if (isPreset()) updateExpireDate();
+        }
+
+        function updateExpireDate() {
+            const duration = parseInt(document.querySelector('input[name="duration"]:checked').value, 10);
+            const startInput = document.getElementById('startDate');
+            const expireInput = document.getElementById('expireDate');
+            const container = document.getElementById('expireDateContainer');
+            const hint = document.getElementById('expireHint');
+
+            if (duration === 0) {
+                // 永久：隐藏到期
+                container.classList.add('hidden');
+                expireInput.value = '';
+                expireInput.disabled = true;
+                hint.textContent = '';
                 return;
             }
 
-            if (duration === 0) {
-                // 永久 - 隐藏到期日期
-                document.getElementById('expireDateContainer').classList.add('hidden');
-                document.getElementById('expireDate').value = '';
+            container.classList.remove('hidden');
+
+            if (duration > 0) {
+                // 预设：自动算到期，只读
+                const sd = new Date(startInput.value);
+                if (!isNaN(sd.getTime())) {
+                    const ed = new Date(sd);
+                    ed.setDate(sd.getDate() + duration);
+                    expireInput.valueAsDate = ed;
+                }
+                expireInput.disabled = true;
+                hint.textContent = '按「' + (duration >= 365 ? '1 年' : duration + ' 天') + '」自动计算，如需自定义请选「自定义」';
             } else {
-                // 显示到期日期
-                document.getElementById('expireDateContainer').classList.remove('hidden');
-                expireDate.setDate(startDate.getDate() + duration);
-                document.getElementById('expireDate').valueAsDate = expireDate;
+                // 自定义：可手填，不联动
+                expireInput.disabled = false;
+                hint.textContent = '开始 / 到期日期均可自由填写';
             }
         }
 
-        // 生成授权码
+        // ============ 生成授权码 ============
         async function generateLicense() {
             const deviceId = document.getElementById('deviceId').value.trim();
-            if (!deviceId) {
-                alert('请输入设备唯一值');
-                return;
+            if (!deviceId) { showMsg('请输入设备唯一值'); return; }
+
+            const duration = parseInt(document.querySelector('input[name="duration"]:checked').value, 10);
+            const startInput = document.getElementById('startDate');
+            const expireInput = document.getElementById('expireDate');
+            const start = startInput.value;
+
+            if (!start) { showMsg('请选择开始日期'); return; }
+            if (duration < 0) {
+                if (!expireInput.value) { showMsg('「自定义」请填写到期日期'); return; }
+                if (expireInput.value <= start) { showMsg('到期日期需晚于开始日期'); return; }
+            }
+
+            const args = {
+                deviceId: deviceId,
+                durationDays: duration,
+                startDate: start + 'T00:00:00+08:00'
+            };
+            if (duration !== 0) {
+                args.expireDate = expireInput.value + 'T00:00:00+08:00';
             }
 
             const btn = document.getElementById('generateBtn');
@@ -472,18 +606,12 @@
             btn.textContent = '生成中...';
 
             try {
-                const license = await window.__TAURI__.core.invoke('generate_license_command', {
-                    deviceId: deviceId,
-                    durationDays: parseInt(document.querySelector('input[name="duration"]:checked').value),
-                    startDate: document.getElementById('startDate').value + 'T00:00:00+08:00'
-                });
-
+                const license = await window.__TAURI__.core.invoke('generate_license_command', args);
                 document.getElementById('licenseOutput').value = license;
                 document.getElementById('outputSection').classList.remove('hidden');
-                document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth' });
-                refreshHistory();
+                showMsg('授权码已生成，可在「授权记录」中查看', 'success');
             } catch (error) {
-                alert('生成失败：' + error);
+                showMsg('生成失败：' + error);
                 console.error(error);
             } finally {
                 btn.disabled = false;
@@ -491,30 +619,44 @@
             }
         }
 
-        // 复制授权码
-        async function copyLicense() {
-            const license = document.getElementById('licenseOutput').value;
-            const btn = document.getElementById('copyBtn');
-
-            try {
-                await navigator.clipboard.writeText(license);
+        // ============ 复制授权码 ============
+        function copyText(text, btn, okLabel) {
+            const done = () => {
+                if (!btn) return;
+                const old = btn.textContent;
                 btn.textContent = '✓';
                 btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.textContent = '复制';
-                    btn.classList.remove('copied');
-                }, 2000);
-            } catch {
-                document.getElementById('licenseOutput').select();
-                document.execCommand('copy');
-                btn.textContent = '✓';
-                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = old; btn.classList.remove('copied'); }, 1600);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+            } else {
+                fallbackCopy(text, done);
             }
         }
 
-        // ================== 授权记录历史 ==================
+        function fallbackCopy(text, done) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) { }
+            document.body.removeChild(ta);
+            done && done();
+        }
 
-        // 期限显示：DAYS_30 → 30 天 / DAYS_365 → 1 年 / PERPETUAL → 永久
+        function copyLicense() {
+            copyText(document.getElementById('licenseOutput').value, document.getElementById('copyBtn'));
+        }
+
+        function copyFromItem(btn) {
+            const code = btn.closest('.history-item').querySelector('.history-code').textContent.trim();
+            copyText(code, btn);
+        }
+
+        // ============ 授权记录历史 ============
         function typeLabel(t) {
             if (t === 'PERPETUAL') return '永久';
             const m = /^DAYS_(\d+)$/.exec(t);
@@ -522,10 +664,14 @@
                 const d = parseInt(m[1], 10);
                 return d >= 365 ? '1 年' : d + ' 天';
             }
-            return t || '—';
+            return '自定义';
         }
 
-        // rfc3339 → YYYY-MM-DD（空 → 永久）
+        function typeClass(t) {
+            if (t === 'PERPETUAL') return 'perm';
+            return /^DAYS_\d+$/.test(t) ? '' : 'custom';
+        }
+
         function fmtDate(rfc) {
             if (!rfc) return '永久';
             const d = new Date(rfc);
@@ -537,7 +683,7 @@
         function renderHistory(records) {
             const list = document.getElementById('historyList');
             if (!records || records.length === 0) {
-                list.innerHTML = '<div class="history-empty">暂无记录</div>';
+                list.innerHTML = '<div class="history-empty">暂无授权记录</div>';
                 return;
             }
             list.innerHTML = records.map(r => `
@@ -545,19 +691,19 @@
                     <div class="history-top">
                         <div class="history-meta">
                             设备：<b>${r.device_id}</b><br>
-                            <span class="history-type ${r.license_type === 'PERPETUAL' ? 'perm' : ''}">${typeLabel(r.license_type)}</span>
+                            <span class="history-type ${typeClass(r.license_type)}">${typeLabel(r.license_type)}</span>
                             &nbsp;${fmtDate(r.start_time)} ~ ${fmtDate(r.expire_time)}
                         </div>
                         <div class="history-actions">
-                            <button class="history-toggle" onclick="toggleCode(this)">查看授权码</button>
-                            <button class="history-del" onclick="deleteRecord('${r.id.trim()}')">删除</button>
+                            <button class="history-action" onclick="toggleCode(this)">查看</button>
+                            <button class="history-action" onclick="copyFromItem(this)">复制</button>
+                            <button class="history-action history-del" onclick="deleteRecord(event, '${r.id.trim()}', this)">删除</button>
                         </div>
                     </div>
                     <pre class="history-code hidden">${r.license}</pre>
                 </div>`).join('');
         }
 
-        // 拉取历史（新生成的在前）
         async function refreshHistory() {
             try {
                 const records = await window.__TAURI__.core.invoke('list_license_history');
@@ -568,26 +714,46 @@
             }
         }
 
-        // 展开 / 收起授权码
         function toggleCode(btn) {
             const code = btn.closest('.history-item').querySelector('.history-code');
             const isHidden = code.classList.toggle('hidden');
-            btn.textContent = isHidden ? '查看授权码' : '收起';
+            btn.textContent = isHidden ? '查看' : '收起';
         }
 
-        // 删除一条记录
-        async function deleteRecord(id) {
-            if (!confirm('确定删除这条授权记录？删除后不可恢复。')) return;
-            try {
-                await window.__TAURI__.core.invoke('delete_license_history', { id });
-                refreshHistory();
-            } catch (e) {
-                alert('删除失败：' + e);
+        // 内联二次确认删除，不依赖 window.confirm
+        function deleteRecord(ev, id, btn) {
+            if (btn.dataset.confirm === '1') {
+                btn.dataset.confirm = '';
+                btn.textContent = '删除';
+                btn.classList.remove('history-del-armed');
+                doDelete(id);
+            } else {
+                btn.dataset.confirm = '1';
+                btn.textContent = '确认删除?';
+                btn.classList.add('history-del-armed');
+                setTimeout(() => {
+                    if (btn.dataset.confirm === '1') {
+                        btn.dataset.confirm = '';
+                        btn.textContent = '删除';
+                        btn.classList.remove('history-del-armed');
+                    }
+                }, 3000);
             }
         }
 
-        // 首次加载 + 生成成功后刷新
+        async function doDelete(id) {
+            try {
+                await window.__TAURI__.core.invoke('delete_license_history', { id });
+                showMsg('已删除该授权记录', 'success');
+                refreshHistory();
+            } catch (e) {
+                showMsg('删除失败：' + e);
+            }
+        }
+
+        // 首次加载
         refreshHistory();
+        updateExpireDate();
     </script>
 </body>
 </html>
