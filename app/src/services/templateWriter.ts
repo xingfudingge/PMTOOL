@@ -198,7 +198,7 @@ function replaceCell(xml: string, addr: string, v: string | number, isDate = fal
   // 行也不存在 → 在 </sheetData> 前新建一行（极少触发）
   const sdClose = xml.lastIndexOf('</sheetData>')
   if (sdClose >= 0) {
-    const newRow = `<row r="${row}" spans="1:${Math.max(col + 1, 1)}">${buildCellXml(addr, '0', v)}</row>`
+    const newRow = `<row r="${row}" spans="1:${Math.max(col + 1, 1)}"${isDate && dateResolver ? ` s="${dateResolver(rowNum, colNum, '0')}"` : ''}>${buildCellXml(addr, isDate && dateResolver ? dateResolver(rowNum, colNum, '0') : '0', v)}</row>`
     return xml.slice(0, sdClose) + newRow + xml.slice(sdClose)
   }
   return xml
@@ -236,34 +236,43 @@ function collectColumnDateStyles(xml: string, dateStyles: Set<number>): Map<numb
 }
 
 // 解析 styles.xml：找出所有“日期数字格式”的 cellXf 索引，以及各填充/边框/字体下优先的日期样式，供日期单元格复用。
+// 数字格式码（去转义后的原始码）是否带“星期”（中文 aaaa 或英文 dddd）
+function isWeekdayCode(code: string): boolean {
+  const c = String(code).replace(/\\/g, '')
+  return c.includes('aaa') || c.includes('dddd')
+}
+
+// 解析 styles.xml：找出所有“日期数字格式”的 cellXf 索引。
+// 维护者 2026-09-14：登记册/项目管理日期一律要“带星期”，故 defaultDate 优先取星期格式（yyyy/m/d aaaa），
+// 而不是随便取首个带日期样式的格（那个常是纯日期或非数据格，导致同一列一正一错）。
 function parseDateStyles(sx: string): {
   dateStyles: Set<number>
-  dateStyleByFill: Map<number, number>
   defaultDate: number
-  fillByXf: number[]
+  styleCode: string[]
 } {
   const fm = new Map<string, string>()
   for (const m of sx.matchAll(/<numFmt numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) fm.set(m[1], m[2])
   const xfsMatch = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(sx)
   const xfAttrs = xfsMatch ? [...xfsMatch[1].matchAll(/<xf([^>]*?)\/?>/g)].map((m) => m[1]) : []
   const dateStyles = new Set<number>()
-  const dateStyleByFill = new Map<number, number>()
-  const fillByXf: number[] = []
+  const styleCode: string[] = []
   let defaultDate = 0
+  let firstWeekday = 0
   xfAttrs.forEach((attrs, i) => {
     const nf = Number(/numFmtId="(\d+)"/.exec(attrs)?.[1] ?? 0)
-    const fill = Number(/fillId="(\d+)"/.exec(attrs)?.[1] ?? 0)
-    fillByXf[i] = fill
     const code = fm.get(String(nf)) ?? ''
+    styleCode[i] = code
     if (isDateFormat(code)) {
       dateStyles.add(i)
-      if (!dateStyleByFill.has(fill)) dateStyleByFill.set(fill, i)
-      // 默认日期样式优先模板常用的 yyyy/m/d（177/178），否则取首个日期样式
-      if (nf === 178 || nf === 177) defaultDate = i
-      if (!defaultDate) defaultDate = i
+      if (isWeekdayCode(code)) {
+        if (!firstWeekday) firstWeekday = i
+      } else if (!defaultDate) {
+        defaultDate = i // 保底：若模板无星期格式日期，退回首个普通日期样式
+      }
     }
   })
-  return { dateStyles, dateStyleByFill, defaultDate, fillByXf }
+  if (firstWeekday) defaultDate = firstWeekday // 优先带星期的日期样式
+  return { dateStyles, defaultDate, styleCode }
 }
 
 function applyCellPatchesToXml(xml: string, patches: CellPatch[], dateResolver?: (r: number, c: number, sourceS: string) => string): string {
@@ -306,21 +315,17 @@ export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Prom
   const buf = await loadTemplateBytes()
   const zip = await JSZip.loadAsync(new Uint8Array(buf))
   const nameToPart = await loadSheetNameMap(zip)
-  // 解析 styles.xml，为“日期值”的单元格补齐日期数字格式（目标格若无日期样式则复用模板已有日期样式）
-  let dateResolver: ((sourceS: string) => string) | undefined
+  // 数字格式码 per cellXf 索引（用于判断是否“带星期”)
+  let styleCode: string[] = []
+  let dateStyles = new Set<number>()
+  let defaultDate = ''
   const stylesFile = zip.file('xl/styles.xml')
   if (stylesFile) {
     const sx = await stylesFile.async('string')
-    const { dateStyles, dateStyleByFill, defaultDate, fillByXf } = parseDateStyles(sx)
-    if (dateStyles.size > 0) {
-      dateResolver = (sourceS: string) => {
-        const s = Number(sourceS)
-        if (dateStyles.has(s)) return sourceS // 目标格已是日期格式，保留
-        const byFill = dateStyleByFill.get(fillByXf[s] ?? 0)
-        if (byFill !== undefined) return String(byFill)
-        return String(defaultDate)
-      }
-    }
+    const parsed = parseDateStyles(sx)
+    styleCode = parsed.styleCode
+    dateStyles = parsed.dateStyles
+    if (parsed.defaultDate !== 0) defaultDate = String(parsed.defaultDate)
   }
   for (const { sheetName, patches } of patchesBySheet) {
     if (!patches || patches.length === 0) continue
@@ -330,7 +335,22 @@ export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Prom
     const file = zip.file(path)
     if (!file) continue
     let xml = await file.async('string')
-    xml = applyCellPatchesToXml(xml, patches, dateResolver)
+    // 按列收集该 sheet 模板已用的日期样式（仅作补充；主要依据 defaultDate=星期格式，保证整列一致带星期）
+    const colDateStyle = collectColumnDateStyles(xml, dateStyles)
+    const resolver =
+      dateStyles.size > 0
+        ? (r: number, c: number, sourceS: string): string => {
+            const src = Number(sourceS)
+            // 目标格已是“星期”日期格式 → 保留；否则（纯日期/普通样式/新插入格）一律升级为模板的星期日期样式
+            if (defaultDate && !isWeekdayCode(styleCode[src] ?? '')) return defaultDate
+            if (dateStyles.has(src)) return sourceS
+            const col = colDateStyle.get(c)
+            if (col !== undefined)
+              return isWeekdayCode(styleCode[Number(col)] ?? '') ? col : defaultDate || col
+            return defaultDate || sourceS
+          }
+        : undefined
+    xml = applyCellPatchesToXml(xml, patches, resolver)
     zip.file(path, xml)
   }
   const wbFile = zip.file('xl/workbook.xml')
