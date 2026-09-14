@@ -692,13 +692,20 @@ export function ParentTaskDetailModal({
     setBusy(true)
     setError(null)
     try {
+      // 递归按深度插入：任何层级（父/子/孙……）都能正确挂到真实父 id，避免 4.1.1 这类孙任务丢失父级
       const idMap = new Map<number, number>()
-      const parents = importConfirm.filter((t) => t.parent_id === null)
-      const children = importConfirm.filter((t) => t.parent_id !== null)
-
-      for (const t of parents) {
+      type TaskRow = (typeof importConfirm)[number]
+      const childrenOf = new Map<number | null, TaskRow[]>()
+      for (const t of importConfirm) {
+        const k = t.parent_id ?? null
+        const arr = childrenOf.get(k)
+        if (arr) arr.push(t)
+        else childrenOf.set(k, [t])
+      }
+      const insert = async (t: TaskRow, parentReal: number | null) => {
         const newTask: NewTask = {
           project_id: data.project.id,
+          parent_id: parentReal,
           task_name: t.task_name,
           owner: t.owner,
           start_date: t.start_date,
@@ -712,32 +719,15 @@ export function ParentTaskDetailModal({
         }
         const realId = await createProjectTask(newTask)
         idMap.set(t.id, realId)
+        for (const c of childrenOf.get(t.id) ?? []) await insert(c, realId)
       }
-
-      for (const t of children) {
-        const mappedParent =
-          t.parent_id !== null ? idMap.get(t.parent_id) ?? null : null
-        const newTask: NewTask = {
-          project_id: data.project.id,
-          parent_id: mappedParent,
-          task_name: t.task_name,
-          owner: t.owner,
-          start_date: t.start_date,
-          end_date: t.end_date,
-          natural_days: t.natural_days,
-          work_days: t.work_days,
-          progress: t.progress,
-          status: t.status,
-          remark: t.remark,
-          sort_order: t.sort_order,
-        }
-        await createProjectTask(newTask)
-      }
+      for (const root of childrenOf.get(null) ?? []) await insert(root, null)
+      const total = importConfirm.length
 
       setImportConfirm(null)
       setImportFile(null)
       if (onRefresh) await onRefresh()
-      toast.success(`成功导入 ${parents.length + children.length} 条任务`)
+      toast.success(`成功导入 ${total} 条任务`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       toast.error('导入失败', msg)

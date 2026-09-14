@@ -47,7 +47,7 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
   const cTask = colOf(ws, hr, '任务')
   const cOwner = colOf(ws, hr, '跟进人')
   const cStart = colOf(ws, hr, '计划启动日期')
-  const cEnd = colOf(ws, hr, '计划完成日期')
+  const cNat = colOf(ws, hr, '自然日工时')
   const cProg = colOf(ws, hr, '当前完成度')
   const cNote = colOf(ws, hr, '任务完成情况说明')
   if (cSeq < 0) return patches
@@ -90,9 +90,10 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
     if (cTask >= 0) patch(patches, rr, cTask, node.task_name)
     if (cOwner >= 0) patch(patches, rr, cOwner, node.owner ?? '')
     if (!nodeParent) {
-      // 叶子/子行：开始/结束/完成度 均为模板输入格（无公式），可写
+      // 叶子/子行输入格（无公式）：D计划启动(日期序列数)、F自然日工时(整数)、G当前完成度(0-1小数带百分比格式)
+      // E计划完成日期 = D+F-1、H工作日工时 = NETWORKDAYS(D,E) 都是模板公式，自动算，绝不覆盖。
       if (cStart >= 0) patch(patches, rr, cStart, node.start_date, true)
-      if (cEnd >= 0) patch(patches, rr, cEnd, node.end_date, true)
+      if (cNat >= 0) patch(patches, rr, cNat, node.natural_days || node.work_days || 0)
       if (cProg >= 0) patch(patches, rr, cProg, (node.progress || 0) / HUNDRED)
     }
     if (cNote >= 0) patch(patches, rr, cNote, node.remark ?? '')
@@ -105,8 +106,10 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
 // ---------- 每周工作情况（本周/下周双表头）----------
 export function fillWeekly(ws: XLSX.WorkSheet, entries: WeeklyReportEntry[]): CellPatch[] {
   const patches: CellPatch[] = []
-  const cur = entries.filter((e) => e.section === 'CURRENT')
-  const next = entries.filter((e) => e.section === 'NEXT')
+  // 只导出最新一期（最大 week_number），不导出历期
+  const latestWeek = entries.reduce((m, e) => Math.max(m, e.week_number || 0), 0)
+  const cur = entries.filter((e) => e.section === 'CURRENT' && (e.week_number || 0) === latestWeek)
+  const next = entries.filter((e) => e.section === 'NEXT' && (e.week_number || 0) === latestWeek)
   const headers = findHeaderRows(ws, ['序号'])
   const h1 = headers.length > 0 ? headers[0] : 0
   const d1 = h1 + TWO
@@ -125,10 +128,10 @@ export function fillWeekly(ws: XLSX.WorkSheet, entries: WeeklyReportEntry[]): Ce
   const w = (row: number, e: WeeklyReportEntry, idx: number) => {
     if (cs >= 0) patch(patches, row, cs, String(idx))
     if (ct >= 0) patch(patches, row, ct, e.task_name)
-    if (cps >= 0) patch(patches, row, cps, e.plan_start_date, true)
-    if (cpe >= 0) patch(patches, row, cpe, e.plan_end_date, true)
-    if (cas >= 0) patch(patches, row, cas, e.actual_start_date, true)
-    if (cae >= 0) patch(patches, row, cae, e.actual_end_date, true)
+    if (cps >= 0) patch(patches, row, cps, e.plan_start_date) // 文本日期，避免无日期样式时显示序列号
+    if (cpe >= 0) patch(patches, row, cpe, e.plan_end_date)
+    if (cas >= 0) patch(patches, row, cas, e.actual_start_date)
+    if (cae >= 0) patch(patches, row, cae, e.actual_end_date)
     if (cA >= 0) patch(patches, row, cA, e.owner_party_a ?? '')
     if (cB >= 0) patch(patches, row, cB, e.owner_party_b ?? '')
     if (cn >= 0) patch(patches, row, cn, e.completion_note ?? '')
@@ -157,9 +160,9 @@ export function fillTodo(ws: XLSX.WorkSheet, items: ProjectTodoItem[]): CellPatc
     if (cSeq >= 0) patch(patches, rr, cSeq, String(i + ONE))
     if (cContent >= 0) patch(patches, rr, cContent, x.content)
     if (cPeople >= 0) patch(patches, rr, cPeople, x.related_people ?? '')
-    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date, true)
+    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date)
     if (cNote >= 0) patch(patches, rr, cNote, x.completion_note ?? '')
-    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date, true)
+    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date)
     if (cStatus >= 0) patch(patches, rr, cStatus, todoStatusToCN(x.status))
     if (cRemark >= 0) patch(patches, rr, cRemark, x.remark ?? '')
   })
@@ -186,7 +189,7 @@ export function fillRisk(ws: XLSX.WorkSheet, items: ProjectIssue[]): CellPatch[]
     if (cSeq >= 0) patch(patches, rr, cSeq, String(i + ONE))
     if (cTitle >= 0) patch(patches, rr, cTitle, x.title)
     if (cLevel >= 0) patch(patches, rr, cLevel, levelToCN(x.level))
-    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? x.created_at ?? '', true)
+    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? x.created_at ?? '')
     if (cImpact >= 0) patch(patches, rr, cImpact, x.description ?? '')
     if (cPlan >= 0) patch(patches, rr, cPlan, x.solution ?? '')
     if (cOwner >= 0) patch(patches, rr, cOwner, x.owner ?? '')
@@ -216,7 +219,7 @@ export function fillReq(ws: XLSX.WorkSheet, items: ProjectRequirement[]): CellPa
     if (cSystem >= 0) patch(patches, rr, cSystem, x.system ?? '')
     if (cSummary >= 0) patch(patches, rr, cSummary, x.summary)
     if (cDetail >= 0) patch(patches, rr, cDetail, x.detail ?? '')
-    if (cProposed >= 0) patch(patches, rr, cProposed, x.proposed_at ?? '', true)
+    if (cProposed >= 0) patch(patches, rr, cProposed, x.proposed_at ?? '')
     if (cProposer >= 0) patch(patches, rr, cProposer, x.proposer ?? '')
     if (cStatus >= 0) patch(patches, rr, cStatus, reqStatusToCN(x.status))
   })
@@ -246,12 +249,12 @@ export function fillIssueLog(ws: XLSX.WorkSheet, items: ProjectIssueLog[]): Cell
     if (cTitle >= 0) patch(patches, rr, cTitle, x.title)
     if (cProposer >= 0) patch(patches, rr, cProposer, x.proposer ?? '')
     if (cModule >= 0) patch(patches, rr, cModule, x.module ?? '')
-    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? '', true)
-    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date, true)
+    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? '')
+    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date)
     if (cPlanSol >= 0) patch(patches, rr, cPlanSol, x.plan_solution ?? '')
     if (cHandler >= 0) patch(patches, rr, cHandler, x.handler ?? '')
     if (cProgress >= 0) patch(patches, rr, cProgress, x.progress_note ?? '')
-    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date, true)
+    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date)
     if (sc >= 0) patch(patches, rr, sc, issStatusToCN(x.status))
   })
   return patches
@@ -298,8 +301,8 @@ function fillHolidays(ws: XLSX.WorkSheet, holidays: HolidayEntry[]): CellPatch[]
   holidays.forEach((h, i) => {
     const rr = ds + i
     if (cn >= 0) patch(patches, rr, cn, h.name)
-    if (h.type === 'HOLIDAY') { if (co >= 0) patch(patches, rr, co, h.date, true) }
-    else if (cw >= 0) patch(patches, rr, cw, h.date, true)
+    if (h.type === 'HOLIDAY') { if (co >= 0) patch(patches, rr, co, h.date) }
+    else if (cw >= 0) patch(patches, rr, cw, h.date)
   })
   return patches
 }
