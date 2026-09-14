@@ -178,6 +178,13 @@ pub fn cascade_delete_space(
     }
 
     // 4. 删除该空间全部目录（2026-09-07 改按 space_id，不再按 project_id / 空间字符串）
+    //    前置：把「父目录在本空间、子目录在他空间」的跨空间引用先解开（parent_id 置 NULL），
+    //    —— 否则删除本空间某父目录时，其异空间子目录仍引用它，触发 parent_id RESTRICT。
+    tx.execute(
+        "UPDATE knowledge_folders SET parent_id = NULL \
+         WHERE parent_id IN (SELECT id FROM knowledge_folders WHERE space_id = ?1)",
+        params![space_id],
+    )?;
     //    注意：knowledge_folders.parent_id 是 ON DELETE RESTRICT（自引用树）。
     //    必须逐层删叶子（子先于父），否则一条 DELETE 删全部目录时 SQLite 按行序删父先于子，
     //    会触发 FOREIGN KEY constraint failed（含嵌套目录的库会删失败）。
@@ -186,8 +193,8 @@ pub fn cascade_delete_space(
             "DELETE FROM knowledge_folders \
              WHERE space_id = ?1 \
                AND id NOT IN (SELECT parent_id FROM knowledge_folders \
-                              WHERE space_id = ?2 AND parent_id IS NOT NULL)",
-            params![space_id, space_id],
+                              WHERE space_id = ?1 AND parent_id IS NOT NULL)",
+            params![space_id],
         )?;
         if n == 0 {
             break;
