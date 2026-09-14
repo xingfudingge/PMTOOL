@@ -265,10 +265,47 @@ pub fn cascade_delete(conn: &mut Connection, id: i64) -> rusqlite::Result<Vec<St
     }
 
     // 4. 从叶子向上删除所有目录（子先于父，规避 RESTRICT）
-    {
-        let placeholders = folder_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("DELETE FROM knowledge_folders WHERE id IN ({})", placeholders);
-        tx.execute(&sql, rusqlite::params_from_iter(folder_ids.iter()))?;
+    //    不能一条 DELETE WHERE id IN (子目录全集)：SQLite 按行序可能先删父、子仍在，
+    //    parent_id（ON DELETE RESTRICT）逐行校验即 FOREIGN KEY constraint failed。
+    //    需按层逐批删叶子（当前非任何存活目录之 parent_id 者），直至删完。
+    let mut remaining: Vec<i64> = folder_ids.clone();
+    let mut leaf_pass = 0;
+    while !remaining.is_empty() {
+        leaf_pass += 1;
+        if leaf_pass > 512 {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        let n = remaining.len();
+        // 外层 id IN 用 ?1..?n，内层子查询用 ?n+1..?2n（同一集合 bind 两次）。
+        // 不能复用同一个占位串：否则 SQL 里有 2n 个 ? 但只 bind n 个，报
+        // "Wrong number of parameters"。
+        let outer = (1..=n).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
+        let inner = (n + 1..=2 * n).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
+        let leaf_ids: Vec<i64> = {
+            let sql = format!(
+                "SELECT id FROM knowledge_folders \
+                 WHERE id IN ({}) \
+                   AND id NOT IN (SELECT parent_id FROM knowledge_folders \
+                                  WHERE id IN ({}) AND parent_id IS NOT NULL)",
+                outer, inner
+            );
+            let params = remaining.iter().chain(remaining.iter());
+            let mut stmt = tx.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(params), |r| {
+                r.get::<_, i64>(0)
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        if leaf_ids.is_empty() {
+            // 防御：不应发生，避免死循环
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        let lp = leaf_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        tx.execute(
+            &format!("DELETE FROM knowledge_folders WHERE id IN ({})", lp),
+            rusqlite::params_from_iter(leaf_ids.iter()),
+        )?;
+        remaining.retain(|id| !leaf_ids.contains(id));
     }
 
     tx.commit()?;

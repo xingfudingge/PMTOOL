@@ -67,6 +67,7 @@ import {
   listProjectKnowledgeSpaces,
   listAllProjectSpaces,
   listSpaceBindings,
+  deleteKnowledgeSpace,
 } from '@/services/knowledgeSpaces'
 import { listProjects } from '@/services/project'
 
@@ -205,7 +206,7 @@ export function KnowledgeTreeView({
   // 二次确认弹窗
   const [confirm, setConfirm] = useState<{
     open: boolean
-    type: 'note' | 'folder'
+    type: 'note' | 'folder' | 'library'
     id: number
     name: string
   }>({ open: false, type: 'note', id: 0, name: '' })
@@ -557,7 +558,10 @@ export function KnowledgeTreeView({
   // ───────── 删除（确认后真删） ─────────
   const doDelete = useCallback(async () => {
     try {
-      if (confirm.type === 'folder') {
+      if (confirm.type === 'library') {
+        await deleteKnowledgeSpace(confirm.id)
+        toast.success('知识库已删除')
+      } else if (confirm.type === 'folder') {
         await deleteKnowledgeFolder(confirm.id)
         toast.success('目录已删除')
       } else {
@@ -655,6 +659,17 @@ export function KnowledgeTreeView({
                 onAddProjectFolder={addProjectFolder}
                 onAddProjectNote={addProjectNote}
                 onAskDelete={(type, id, name) => setConfirm({ open: true, type, id, name })}
+                onDeleteLibrary={
+                  mode === 'project' && aggregate
+                    ? (spaceId, name) =>
+                        setConfirm({
+                          open: true,
+                          type: 'library',
+                          id: spaceId,
+                          name: name.replace(/（绑定：.*）$/, ''),
+                        })
+                    : undefined
+                }
               />
             ))
           )}
@@ -695,11 +710,13 @@ export function KnowledgeTreeView({
 
       <DeleteConfirmDialog
         open={confirm.open}
-        title={confirm.type === 'folder' ? '确认删除目录' : '确认删除知识'}
+        title={confirm.type === 'library' ? `删除知识库「${confirm.name || '未知'}」？` : confirm.type === 'folder' ? '确认删除目录' : '确认删除知识'}
         description={
-          confirm.type === 'folder'
-            ? '删除后目录、所有子目录、其中全部知识与附件将被永久删除，无法恢复。'
-            : '删除后知识内容（BlockNote 正文）与附件将被永久删除，无法恢复。'
+          confirm.type === 'library'
+            ? '将真删整个知识库及其中的所有目录、知识、附件与项目绑定关系，不可恢复。'
+            : confirm.type === 'folder'
+              ? '删除后目录、所有子目录、其中全部知识与附件将被永久删除，无法恢复。'
+              : '删除后知识内容（BlockNote 正文）与附件将被永久删除，无法恢复。'
         }
         onConfirm={doDelete}
         onCancel={() => setConfirm({ open: false, type: 'note', id: 0, name: '' })}
@@ -850,6 +867,8 @@ interface TreeNodeRowProps {
   /** 项目根节点：在该项目绑定知识库顶层新建目录/知识（聚合模式） */
   onAddProjectFolder?: (projectId: number) => void
   onAddProjectNote?: (projectId: number) => void
+  /** 聚合模式下的顶层知识库节点：删除整个知识库（spaceId 为该库 id，name 已去绑定标注） */
+  onDeleteLibrary?: (spaceId: number, name: string) => void
 }
 
 function TreeNodeRow({
@@ -865,6 +884,7 @@ function TreeNodeRow({
   onAskDelete,
   onAddProjectFolder,
   onAddProjectNote,
+  onDeleteLibrary,
 }: TreeNodeRowProps) {
   const [expanded, setExpanded] = useState(true)
   const [renaming, setRenaming] = useState(false)
@@ -1013,6 +1033,18 @@ function TreeNodeRow({
                 onClick={async () => {
                   setMenuOpen(false)
                   await onAddProjectNote?.(node.spaceId!)
+                }}
+              />
+            )}
+            {/* 聚合模式：顶层知识库（space）可删除整个库（目录+知识+附件+绑定） */}
+            {isProjectRoot && onDeleteLibrary && (
+              <MenuItem
+                icon={<Trash2 size={11} />}
+                label="删除知识库"
+                danger
+                onClick={() => {
+                  setMenuOpen(false)
+                  onDeleteLibrary(node.spaceId!, node.name)
                 }}
               />
             )}
