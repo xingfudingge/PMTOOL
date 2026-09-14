@@ -1780,6 +1780,7 @@ function NoteCard({
           textareaStyle={{
             flex: 1,
             minHeight: 0,
+            resize: 'none',
           }}
         />
       </div>

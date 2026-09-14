@@ -308,8 +308,18 @@ export function MentionTextarea({
     }
   }
 
+  // 维护者 2026-09-14：area 是否要撑满外层容器（textareaStyle 带 flex 时）
+  //  · 让包裹层也参与 flex · 否则 textarea 的 flex:1 不生效 → 缩在上面
+  const stretch = textareaStyle && typeof textareaStyle.flex !== 'undefined'
   return (
-    <div style={{ position: 'relative' }}>
+    <div
+      style={{
+        position: 'relative',
+        ...(stretch
+          ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
+          : {}),
+      }}
+    >
       <textarea
         ref={ref}
         data-testid={testid}
