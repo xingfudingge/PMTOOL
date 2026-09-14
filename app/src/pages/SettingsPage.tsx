@@ -846,42 +846,42 @@ function AutomationSection() {
   return (
     <>
       <SectionHeader title="自动化" desc="自动顺延 · 自动生成日报/周报/月报" />
-      <Field label="任务自动顺延">
-        <span style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) max-content', alignItems: 'center', gap: '10px', width: '100%' }}>
-          {toggleField('autoPostpone')}
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{timeField('postponeTime')}<span style={{ flex: 1 }} /></span>
-          <span />
-        </span>
-      </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 60px 60px 132px 90px 76px', alignItems: 'center', gap: '8px 21px', rowGap: '15px', width: '100%', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>报告自动生成</span>
-          <span style={{ textAlign: 'center' }}>个人</span>
-          <span style={{ textAlign: 'center' }}>项目</span>
-          <span style={{ textAlign: 'center' }}>日期</span>
-          <span style={{ textAlign: 'center' }}>时间</span>
-          <span style={{ textAlign: 'center' }}>跳过工作日</span>
+<div style={{ display: 'grid', gridTemplateColumns: '120px 56px 56px 150px 110px 80px', alignItems: 'center', gap: '20px', rowGap: '13px', width: '100%', fontSize: '12px' }}>
+<span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>任务自动顺延</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoPostpone')}</span>
+<span />
+<span />
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('postponeTime')}</span>
+<span />
 
-          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>日报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportPersonal')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportProject')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoDailyReportTime')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportCarryover')}</span>
+<span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>报告自动生成</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>个人</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>项目</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>日期</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>时间</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>跳过工作日</span>
 
-          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>周报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportPersonal')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportProject')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{weekSelect}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoWeeklyReportTime')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
+<span style={{ fontWeight: 500, color: 'var(--color-text)' }}>日报</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportPersonal')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportProject')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoDailyReportTime')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportCarryover')}</span>
 
-          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>月报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportPersonal')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportProject')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{daySelect}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoMonthlyReportTime')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
-        </div>
+<span style={{ fontWeight: 500, color: 'var(--color-text)' }}>周报</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportPersonal')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportProject')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{weekSelect}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoWeeklyReportTime')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
+
+<span style={{ fontWeight: 500, color: 'var(--color-text)' }}>月报</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportPersonal')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportProject')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{daySelect}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoMonthlyReportTime')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
+</div>
       <Field label="启动补偿提醒">
         <span className="pms-row">
           {toggleField('autoCompensationReminder')}
