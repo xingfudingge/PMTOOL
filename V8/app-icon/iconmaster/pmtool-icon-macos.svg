@@ -1,0 +1,46 @@
+<!--
+  PMTool App Icon · macOS
+  Icon Master (唯一源) · macOS 版
+  1024×1024 viewBox
+
+  平台规范：
+    - 背景圆角矩形仅占画布约 86%（四周各留约 7% 透明安全区域），
+      与 Apple 系统图标（Finder 实测 85.9% 填充）视觉占比对齐，
+      使 Dock / Finder / Launchpad 中显示大小与系统原生 App 一致。
+    - 背景不是铺满画布，避免像铺满到边缘的方块那样显得偏大。
+    - 圆角半径约 200/880 ≈ 22.7%，接近 Apple Big Sur squircle 圆润度。
+    - 中央文档 + 帐篷图形主体位于安全区内（约画布中央 56% 区域）。
+
+  色系（保留 PMTool 品牌）：
+    - 背景：蓝色垂直渐变 #3b7ee5 → #4cb0fe
+    - 文档：浅蓝半透明 #dce9ff（85%）
+    - 折角：#b8d3f4（90%）
+    - 前景（帐篷 + 弧线）：纯白 #ffffff
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bgGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#3b7ee5"/>
+      <stop offset="1" stop-color="#4cb0fe"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景：圆角矩形（含安全区域 · 约 86% 填充 · rx≈200） -->
+  <rect x="72" y="72" width="880" height="880" rx="200" ry="200" fill="url(#bgGrad)"/>
+
+  <!-- 中央文档主体（圆角矩形 + 半透明浅蓝） -->
+  <rect x="312" y="282" width="400" height="460" rx="30" ry="30"
+        fill="#dce9ff" fill-opacity="0.85"/>
+
+  <!-- 右上折角（page fold） -->
+  <path d="M 712 282 L 712 366 L 628 282 Z" fill="#b8d3f4" fill-opacity="0.9"/>
+  <!-- 折痕白线 -->
+  <path d="M 628 366 L 712 282" stroke="#ffffff" stroke-width="3" fill="none" opacity="0.5"/>
+
+  <!-- 帐篷图标：外月牙弧（white stroke · 围绕帐篷底部） -->
+  <path d="M 350 626 A 205 215 0 0 1 674 626"
+        stroke="#ffffff" stroke-width="30" fill="none" stroke-linecap="round"/>
+
+  <!-- 帐篷主体（白色填充三角形 · 尖顶朝上） -->
+  <path d="M 512 416 L 608 630 L 416 630 Z" fill="#ffffff"/>
+</svg>
