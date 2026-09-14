@@ -52,8 +52,14 @@ pub fn insert(
     conn: &rusqlite::Connection,
     license: &License,
 ) -> rusqlite::Result<i64> {
+    // upsert：同 license_key 重复激活时更新现有行，而非触发 UNIQUE 冲突
     conn.execute(
-        "INSERT INTO license (license_key, customer_name, expire_date, status, signature) VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO license (license_key, customer_name, expire_date, status, signature) VALUES (?1, ?2, ?3, ?4, ?5) \
+         ON CONFLICT(license_key) DO UPDATE SET \
+           customer_name = excluded.customer_name, \
+           expire_date    = excluded.expire_date, \
+           status         = excluded.status, \
+           signature      = excluded.signature",
         params![
             license.license_key,
             license.customer_name,
