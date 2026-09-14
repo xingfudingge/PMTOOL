@@ -105,7 +105,7 @@ export function ProjectDeleteModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.4)',
+        background: 'var(--glass-overlay)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -117,10 +117,13 @@ export function ProjectDeleteModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '440px',
-          background: 'var(--color-surface)',
-          borderRadius: 'var(--radius-md)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'var(--glass-blur)',
+          WebkitBackdropFilter: 'var(--glass-blur)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: 14,
           padding: '24px',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+          boxShadow: 'var(--glass-shadow)',
         }}
       >
         <div
