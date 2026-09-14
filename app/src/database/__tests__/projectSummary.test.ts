@@ -67,14 +67,14 @@ function makeProject(overrides: Partial<{
 // ============================================================
 
 describe('STAGES 常量', () => {
-  it('5 个阶段：启动 / 需求确认 / 实施 / 试运行 / 验收', () => {
+  it('5 个阶段：启动 / 规划 / 执行 / 监控 / 收尾', () => {
     expect(STAGES).toHaveLength(5)
     expect(STAGES.map((s) => s.label)).toEqual([
       '启动',
-      '需求确认',
-      '实施',
-      '试运行',
-      '验收',
+      '规划',
+      '执行',
+      '监控',
+      '收尾',
     ])
   })
 
@@ -90,47 +90,41 @@ describe('STAGES 常量', () => {
 // ============================================================
 
 describe('inferStage', () => {
-  it('PLANNING → 启动（阶段 1）', () => {
-    const r = inferStage(makeProject({ status: 'PLANNING' }),0)
+  it('START → 启动（阶段 1）', () => {
+    const r = inferStage(makeProject({ status: 'START' }), 0)
     expect(r.stage).toBe('启动')
     expect(r.stageOrder).toBe(1)
   })
 
-  it('COMPLETED → 已验收（阶段 5）', () => {
-    const r = inferStage(makeProject({ status: 'CLOSING' }), 100)
-    expect(r.stage).toBe('已验收')
-    expect(r.stageOrder).toBe(5)
+  it('PLANNING → 规划（阶段 2）', () => {
+    const r = inferStage(makeProject({ status: 'PLANNING' }), 30)
+    expect(r.stage).toBe('规划')
+    expect(r.stageOrder).toBe(2)
   })
 
-  it('MONITORING + 中等进度 → 实施（按进度推断）', () => {
-    const r = inferStage(makeProject({ status: 'MONITORING' }), 50)
-    expect(r.stage).toBe('实施')
+  it('EXECUTING → 执行（阶段 3）', () => {
+    const r = inferStage(makeProject({ status: 'EXECUTING' }), 44)
+    expect(r.stage).toBe('执行')
     expect(r.stageOrder).toBe(3)
   })
 
-  it('IN_PROGRESS + 进度<20 → 启动', () => {
-    const r = inferStage(makeProject({ status: 'EXECUTING' }), 10)
-    expect(r.stage).toBe('启动')
+  it('MONITORING → 监控（阶段 4）', () => {
+    const r = inferStage(makeProject({ status: 'MONITORING' }), 90)
+    expect(r.stage).toBe('监控')
+    expect(r.stageOrder).toBe(4)
   })
 
-  it('IN_PROGRESS + 进度 20-40 → 需求确认', () => {
-    const r = inferStage(makeProject({ status: 'EXECUTING' }), 30)
-    expect(r.stage).toBe('需求确认')
+  it('CLOSING → 收尾（阶段 5）', () => {
+    const r = inferStage(makeProject({ status: 'CLOSING' }), 100)
+    expect(r.stage).toBe('收尾')
+    expect(r.stageOrder).toBe(5)
   })
 
-  it('IN_PROGRESS + 进度 40-80 → 实施', () => {
-    const r = inferStage(makeProject({ status: 'EXECUTING' }), 60)
-    expect(r.stage).toBe('实施')
-  })
-
-  it('IN_PROGRESS + 进度 80-100 → 试运行', () => {
-    const r = inferStage(makeProject({ status: 'EXECUTING' }), 90)
-    expect(r.stage).toBe('试运行')
-  })
-
-  it('SUSPENDED + 高进度 → 保持高阶段', () => {
-    const r = inferStage(makeProject({ status: 'MONITORING' }), 60)
-    expect(r.stage).toBe('实施')
+  it('阶段推断与进度值无关（只按 status）', () => {
+    const low = inferStage(makeProject({ status: 'EXECUTING' }), 0)
+    const high = inferStage(makeProject({ status: 'EXECUTING' }), 99)
+    expect(low.stage).toBe(high.stage)
+    expect(low.stageOrder).toBe(high.stageOrder)
   })
 
   it('stageTotal 始终为 5', () => {

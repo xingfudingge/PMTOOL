@@ -56,7 +56,7 @@ export interface Attachment {
 export interface ProjectSummary {
   project: Project
   overallProgress: number
-  /** 真实项目阶段（实施经理视角：启动/需求/实施/试运行/验收）*/
+  /** 真实项目阶段（五大过程组：启动/规划/执行/监控/收尾）*/
   stage: string
   /** 阶段序号（用于阶段进度条）*/
   stageOrder: number
@@ -109,41 +109,39 @@ export interface ProjectOverview {
 }
 
 // ============================================================
-// 项目阶段定义（实施经理视角 · 5 个阶段）
+// 项目阶段定义（五大过程组 · 5 个阶段）
 // ============================================================
 
 export const STAGES = [
   { key: 'kickoff', label: '启动', order: 1 },
-  { key: 'requirement', label: '需求确认', order: 2 },
-  { key: 'implementation', label: '实施', order: 3 },
-  { key: 'pilot', label: '试运行', order: 4 },
-  { key: 'acceptance', label: '验收', order: 5 },
+  { key: 'planning', label: '规划', order: 2 },
+  { key: 'executing', label: '执行', order: 3 },
+  { key: 'monitoring', label: '监控', order: 4 },
+  { key: 'closing', label: '收尾', order: 5 },
 ] as const
 
 /**
- * 根据项目状态 + 进度推断阶段
- * 优先级：status > 进度推断
+ * 根据项目状态推断阶段（与数据库 status 枚举一一对应）
+ *   - START → 启动（阶段 1）
+ *   - PLANNING → 规划（阶段 2）
+ *   - EXECUTING → 执行（阶段 3）
+ *   - MONITORING → 监控（阶段 4）
  *   - CLOSING → 收尾（阶段 5）
- *   - PLANNING / START → 启动（阶段 1）
- *   - EXECUTING / MONITORING → 按进度推断
  */
 export function inferStage(
   project: Project,
-  overallProgress: number,
+  _overallProgress: number,
 ): { stage: string; stageOrder: number; stageTotal: number } {
   const stageTotal = STAGES.length
-  if (project.status === 'CLOSING') {
-    return { stage: '已验收', stageOrder: STAGES.length, stageTotal }
+  const map: Record<Project['status'], { label: string; order: number }> = {
+    START: { label: '启动', order: 1 },
+    PLANNING: { label: '规划', order: 2 },
+    EXECUTING: { label: '执行', order: 3 },
+    MONITORING: { label: '监控', order: 4 },
+    CLOSING: { label: '收尾', order: 5 },
   }
-  if (project.status === 'PLANNING' || project.status === 'START') {
-    return { stage: '启动', stageOrder: 1, stageTotal }
-  }
-  // EXECUTING / MONITORING：按进度推断
-  if (overallProgress < 20) return { stage: '启动', stageOrder: 1, stageTotal }
-  if (overallProgress < 40) return { stage: '需求确认', stageOrder: 2, stageTotal }
-  if (overallProgress < 80) return { stage: '实施', stageOrder: 3, stageTotal }
-  if (overallProgress < 100) return { stage: '试运行', stageOrder: 4, stageTotal }
-  return { stage: '已验收', stageOrder: 5, stageTotal }
+  const s = map[project.status]
+  return { stage: s.label, stageOrder: s.order, stageTotal }
 }
 
 // ============================================================

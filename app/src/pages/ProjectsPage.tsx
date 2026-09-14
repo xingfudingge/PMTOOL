@@ -22,7 +22,6 @@ import {
   CircleDot,
 } from 'lucide-react'
 import { toast } from '@/components/Toast'
-import { exportProjectToFile } from '@/services/projectTemplateExport'
 import {
   listProjects,
   createProject,
@@ -135,17 +134,6 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
     }
   }
 
-  const handleExport = async (id: number, name: string) => {
-    try {
-      const ok = await exportProjectToFile(id, name)
-      if (ok) toast.success('已导出整个项目模板', name)
-      else toast.error('导出失败', '导出已取消或写入失败')
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      toast.error('导出失败', msg)
-      setError(msg)
-    }
-  }
 
   return (
     <div
@@ -291,7 +279,6 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
         <CardGrid
           overviews={filteredOverviews}
           onOpenProject={onOpenProject}
-          onExport={handleExport}
           onDelete={requestDelete}
         />
       ) : (
@@ -325,12 +312,10 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
 function CardGrid({
   overviews,
   onOpenProject,
-  onExport,
   onDelete,
 }: {
   overviews: import('@/services/projectSummary').ProjectOverview[]
   onOpenProject?: (id: number) => void
-  onExport?: (id: number, name: string) => void
   onDelete?: (id: number) => void
 }) {
   if (overviews.length === 0) {
@@ -363,7 +348,6 @@ function CardGrid({
           overview={o}
           expanded={false}
           onToggleExpand={() => onOpenProject?.(o.project.id)}
-          onExport={() => onExport?.(o.project.id, o.project.project_name)}
           onDelete={() => onDelete?.(o.project.id)}
         />
       ))}
@@ -472,10 +456,11 @@ function TableList({
 // ============================================================
 
 function inferStage(p: Project): string {
-  if (p.status === 'START' || p.status === 'PLANNING') return '启动'
-  if (p.status === 'EXECUTING') return '实施'
+  if (p.status === 'START') return '启动'
+  if (p.status === 'PLANNING') return '规划'
+  if (p.status === 'EXECUTING') return '执行'
   if (p.status === 'MONITORING') return '监控'
-  if (p.status === 'CLOSING') return '已验收'
+  if (p.status === 'CLOSING') return '收尾'
   return '—'
 }
 

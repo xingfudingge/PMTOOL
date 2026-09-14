@@ -239,10 +239,10 @@ function inferStageFromProgress(progress: number): {
 } {
   const total = 5
   if (progress < 20) return { label: '启动', order: 1, total }
-  if (progress < 40) return { label: '需求确认', order: 2, total }
-  if (progress < 80) return { label: '实施', order: 3, total }
-  if (progress < 100) return { label: '试运行', order: 4, total }
-  return { label: '已验收', order: 5, total }
+  if (progress < 40) return { label: '规划', order: 2, total }
+  if (progress < 60) return { label: '执行', order: 3, total }
+  if (progress < 80) return { label: '监控', order: 4, total }
+  return { label: '收尾', order: 5, total }
 }
 
 // ============================================================
