@@ -306,15 +306,21 @@ export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Prom
   const buf = await loadTemplateBytes()
   const zip = await JSZip.loadAsync(new Uint8Array(buf))
   const nameToPart = await loadSheetNameMap(zip)
-  // 解析 styles.xml：找出所有“日期数字格式”的 cellXf 索引，供日期单元格复用其列上模板已有的日期样式。
-  let dateStyles = new Set<number>()
-  let defaultDate = ''
+  // 解析 styles.xml，为“日期值”的单元格补齐日期数字格式（目标格若无日期样式则复用模板已有日期样式）
+  let dateResolver: ((sourceS: string) => string) | undefined
   const stylesFile = zip.file('xl/styles.xml')
   if (stylesFile) {
     const sx = await stylesFile.async('string')
-    const parsed = parseDateStyles(sx)
-    dateStyles = parsed.dateStyles
-    if (parsed.defaultDate !== 0) defaultDate = String(parsed.defaultDate)
+    const { dateStyles, dateStyleByFill, defaultDate, fillByXf } = parseDateStyles(sx)
+    if (dateStyles.size > 0) {
+      dateResolver = (sourceS: string) => {
+        const s = Number(sourceS)
+        if (dateStyles.has(s)) return sourceS // 目标格已是日期格式，保留
+        const byFill = dateStyleByFill.get(fillByXf[s] ?? 0)
+        if (byFill !== undefined) return String(byFill)
+        return String(defaultDate)
+      }
+    }
   }
   for (const { sheetName, patches } of patchesBySheet) {
     if (!patches || patches.length === 0) continue
@@ -324,19 +330,7 @@ export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Prom
     const file = zip.file(path)
     if (!file) continue
     let xml = await file.async('string')
-    // 按列收集该 sheet 模板已用的日期样式，让同一列日期格格式统一
-    const colDateStyle = collectColumnDateStyles(xml, dateStyles)
-    const resolver =
-      dateStyles.size > 0
-        ? (r: number, c: number, sourceS: string): string => {
-            const src = Number(sourceS)
-            if (dateStyles.has(src)) return sourceS // 模板已有日期格式，保留
-            const col = colDateStyle.get(c)
-            if (col !== undefined) return col // 同列模板日期样式，整列统一
-            return defaultDate || sourceS
-          }
-        : undefined
-    xml = applyCellPatchesToXml(xml, patches, resolver)
+    xml = applyCellPatchesToXml(xml, patches, dateResolver)
     zip.file(path, xml)
   }
   const wbFile = zip.file('xl/workbook.xml')
