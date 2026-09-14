@@ -210,10 +210,11 @@ async function markIgnored(s: Record<string, string>, t: TaskType, date: string)
   try { await apiSetSetting(ignoredKey(t), date) } catch { /* 忽略 */ }
 }
 
-/** 任务是否开启：主开关开启；报告类还需个人或项目任一开启（二者可同时 · 不互斥） */
+/** 任务是否开启：backup/postpone 看主开关；报告类只看个人或项目任一开启（二者可同时 · 不互斥，都关则停用） */
 function taskActive(t: TaskSpec, s: Record<string, string>): boolean {
-  if ((s[t.enabledKey] ?? '') !== '1') return false
-  if (t.type === 'backup' || t.type === 'postpone') return true
+  if (t.type === 'backup' || t.type === 'postpone') {
+    return (s[t.enabledKey] ?? '') === '1'
+  }
   const p = (s[t.personalKey ?? ''] ?? '') === '1'
   const pr = (s[t.projectKey ?? ''] ?? '') === '1'
   return p || pr

@@ -785,7 +785,7 @@ function AutomationSection() {
     <TimePicker value={get(key) ?? '09:00'} onChange={(v) => saveSchedule(key, v)} testid={`${key}-picker`} minuteStep={1} />
   )
   const toggleField = (key: string) => <Toggle checked={get(key) === '1'} onChange={(v) => save(key, v ? '1' : '0')} />
-  // 变更调度配置（周几/几号/时间/顺延）时，清掉该任务的 lastRun/ignored。
+  // 变更调度配置（周几/几号/时间/跳过工作日）时，清掉该任务的 lastRun/ignored。
   // 否则旧时间已触发并写入 lastRun=今天，改新时间后 shouldFire 判定「今天已执行」永不触发。
   const saveSchedule = (key: string, value: string) => {
     const task = key.startsWith('autoWeekly')
@@ -797,10 +797,10 @@ function AutomationSection() {
           : null
     save(key, value)
     if (!task) return
-    // 只有报告主开关开着，且改的是该任务的调度键，才需要重置执行记录
+    // 只对报告的调度键（时间/周几/几号/跳过工作日）重置执行记录
     const mainKey = 'auto' + (task === 'daily' ? 'Daily' : task === 'weekly' ? 'Weekly' : 'Monthly') + 'Report'
-    if (key !== mainKey && key !== mainKey + 'Time' && key !== mainKey + 'Day' && key !== mainKey + 'Carryover') return
-    if (get(mainKey) !== '1') return
+    const isScheduleKey = key === mainKey || key === mainKey + 'Time' || key === mainKey + 'Day' || key === mainKey + 'Carryover'
+    if (!isScheduleKey) return
     void save('autoTask_lastRun_' + task, '')
     void save('autoTask_ignored_' + task, '')
   }
@@ -853,9 +853,8 @@ function AutomationSection() {
           <span />
         </span>
       </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 60px 60px 60px 132px 90px 76px', alignItems: 'center', gap: '8px 12px', rowGap: '15px', width: '100%', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '120px 60px 60px 132px 90px 76px', alignItems: 'center', gap: '8px 21px', rowGap: '15px', width: '100%', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>报告自动生成</span>
-          <span style={{ textAlign: 'center' }}>开启</span>
           <span style={{ textAlign: 'center' }}>个人</span>
           <span style={{ textAlign: 'center' }}>项目</span>
           <span style={{ textAlign: 'center' }}>日期</span>
@@ -863,7 +862,6 @@ function AutomationSection() {
           <span style={{ textAlign: 'center' }}>跳过工作日</span>
 
           <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>日报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReport')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportPersonal')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportProject')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
@@ -871,7 +869,6 @@ function AutomationSection() {
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportCarryover')}</span>
 
           <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>周报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReport')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportPersonal')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportProject')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{weekSelect}</span>
@@ -879,7 +876,6 @@ function AutomationSection() {
           <span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
 
           <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>月报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReport')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportPersonal')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportProject')}</span>
           <span style={{ display: 'flex', justifyContent: 'center' }}>{daySelect}</span>
