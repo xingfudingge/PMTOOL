@@ -158,7 +158,8 @@ pub fn delete(conn: &rusqlite::Connection, id: i64) -> rusqlite::Result<bool> {
     // 项目删除不应删除知识沉淀：先解除知识记录与项目表的外键关联，再删除项目。
     // 已归档知识仍保留在“项目知识中心”，根目录继续使用原项目名称。
     let tx = conn.unchecked_transaction()?;
-    tx.execute("UPDATE knowledge_notes SET project_id = NULL WHERE project_id = ?1", [id])?;
+    // 知识笔记已从 project_id 迁移为 space_id（经 knowledge_spaces 绑定），故通过 project_knowledge_bindings 解绑，而非直接改 notes.project_id。
+    tx.execute("DELETE FROM project_knowledge_bindings WHERE project_id = ?1", [id])?;
     tx.execute("UPDATE knowledge_folders SET project_id = NULL WHERE project_id = ?1", [id])?;
     let n = tx.execute("DELETE FROM projects WHERE id = ?1", [id])?;
     tx.commit()?;
