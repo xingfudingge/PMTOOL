@@ -4,9 +4,9 @@
  * 统一任务模型（带工作日感知 + 顺延 + 持久化执行记录 + 启动补偿）：
  *   - 自动备份 backup     ：每天 backupTime
  *   - 任务自动顺延 postpone：每天 postponeTime
- *   - 日报 daily          ：每天 autoDailyReportTime（可开工作日顺延）
- *   - 周报 weekly         ：每周 autoWeeklyReportDay（默认周五）+ autoWeeklyReportTime（可开顺延）
- *   - 月报 monthly        ：每月 autoMonthlyReportDay（默认月末）+ autoMonthlyReportTime（可开顺延）
+ *   - 日报 daily          ：每天 autoDailyReportTime（可选是否跳过工作日）
+ *   - 周报 weekly         ：每周 autoWeeklyReportDay（默认周五，可选每周最后一个工作日）+ autoWeeklyReportTime
+ *   - 月报 monthly        ：每月 autoMonthlyReportDay（默认月末，可选每月最后一个工作日）+ autoMonthlyReportTime
  *
  * 关键修复（vs 旧版）：
  *   1. 报告生成统一走 reportGenerator.generateAutomationReport（真正调 createReport 落库），
@@ -25,7 +25,7 @@ import { Clock, X as XIcon } from 'lucide-react'
 import { useSettings } from './SettingsProvider'
 import { backupData, setSetting as apiSetSetting } from '@/services/settings'
 import { executeAutoPostpone } from '@/services/todo'
-import { formatLocalDate, computeNextWorkday } from '@/services/datetime'
+import { formatLocalDate, computeNextWorkday, endOfWeek, endOfMonth } from '@/services/datetime'
 import { defaultHolidayProvider } from '@/services/holidayProvider'
 
 const AutomationContext = createContext<unknown>(null)
@@ -41,11 +41,11 @@ interface TaskSpec {
   label: string
   enabledKey: string
   timeKey: string
-  /** 仅报告类：工作日顺延开关 key */
+  /** 仅日报：非工作日跳过开关 key（1=非工作日跳过不生成） */
   carryoverKey?: string
-  /** 仅周报：周几（1=周一..7=周日，默认5=周五） */
+  /** 仅周报：周几（1=周一..7=周日，默认5=周五）或 'lastworkday'=每周最后一个工作日 */
   dayKey?: string
-  /** 仅月报：几号（数字或 'last'=月末） */
+  /** 仅月报：几号（数字或 'last'=月末 或 'lastworkday'=每月最后一个工作日） */
   monthDayKey?: string
   /** 仅报告类：是否生成个人报告 */
   personalKey?: string
@@ -63,14 +63,12 @@ const TASKS: TaskSpec[] = [
   },
   {
     type: 'weekly', label: '周报自动生成', enabledKey: 'autoWeeklyReport',
-    timeKey: 'autoWeeklyReportTime', carryoverKey: 'autoWeeklyReportCarryover',
-    dayKey: 'autoWeeklyReportDay',
+    timeKey: 'autoWeeklyReportTime', dayKey: 'autoWeeklyReportDay',
     personalKey: 'autoWeeklyReportPersonal', projectKey: 'autoWeeklyReportProject',
   },
   {
     type: 'monthly', label: '月报自动生成', enabledKey: 'autoMonthlyReport',
-    timeKey: 'autoMonthlyReportTime', carryoverKey: 'autoMonthlyReportCarryover',
-    monthDayKey: 'autoMonthlyReportDay',
+    timeKey: 'autoMonthlyReportTime', monthDayKey: 'autoMonthlyReportDay',
     personalKey: 'autoMonthlyReportPersonal', projectKey: 'autoMonthlyReportProject',
   },
 ]
@@ -107,38 +105,62 @@ function thisMonthDate(dayNum: string, now: Date): string {
   return formatLocalDate(new Date(y, m, dd))
 }
 
+/** 本周最后一个工作日（参考法定节假日与调休上班日） */
+function thisWeekLastWorkday(now: Date): string {
+  let d = new Date(endOfWeek(now))
+  for (let i = 0; i < 7; i++) {
+    const dateStr = formatLocalDate(d)
+    if (defaultHolidayProvider.isWorkday(dateStr)) return dateStr
+    d.setDate(d.getDate() - 1)
+  }
+  // 理论上不会发生，兜底返回周日
+  return endOfWeek(now)
+}
+
+/** 本月最后一个工作日（参考法定节假日与调休上班日） */
+function thisMonthLastWorkday(now: Date): string {
+  let d = new Date(endOfMonth(now))
+  for (let i = 0; i < 31; i++) {
+    const dateStr = formatLocalDate(d)
+    if (defaultHolidayProvider.isWorkday(dateStr)) return dateStr
+    d.setDate(d.getDate() - 1)
+  }
+  // 理论上不会发生，兜底返回月末
+  return endOfMonth(now)
+}
+
 /**
- * 计算任务“本周期应触发日期”（含顺延）。
- * 返回 YYYY-MM-DD。
+ * 计算任务“本周期应触发日期”。
+ * 返回 YYYY-MM-DD；若本周期决定跳过则返回 null。
  */
-function computeTargetDate(t: TaskSpec, s: Record<string, string>, now: Date): string {
+function computeTargetDate(t: TaskSpec, s: Record<string, string>, now: Date): string | null {
   const today = formatLocalDate(now)
   if (t.type === 'backup' || t.type === 'postpone') return today
 
   if (t.type === 'daily') {
-    const carry = (s[t.carryoverKey ?? ''] ?? '') === '1'
-    if (carry && !defaultHolidayProvider.isWorkday(today)) {
-      // 非工作日 → 顺延到下一工作日
-      return computeNextWorkday(now, (d: string) => defaultHolidayProvider.isHoliday(d))
+    const skip = (s[t.carryoverKey ?? ''] ?? '') === '1'
+    if (skip && !defaultHolidayProvider.isWorkday(today)) {
+      // 非工作日直接跳过，不生成日报
+      return null
     }
     return today
   }
 
   if (t.type === 'weekly') {
-    const day = parseInt(s[t.dayKey ?? ''] ?? '5', 10) || 5
-    let target = thisWeekdayDate(day, now)
-    if ((s[t.carryoverKey ?? ''] ?? '') === '1' && !defaultHolidayProvider.isWorkday(target)) {
-      target = computeNextWorkday(new Date(target), (d: string) => defaultHolidayProvider.isHoliday(d))
+    const dayRaw = s[t.dayKey ?? ''] ?? '5'
+    if (dayRaw === 'lastworkday') {
+      return thisWeekLastWorkday(now)
     }
-    return target
+    const day = parseInt(dayRaw, 10) || 5
+    return thisWeekdayDate(day, now)
   }
 
   // monthly
-  let target = thisMonthDate(s[t.monthDayKey ?? ''] ?? 'last', now)
-  if ((s[t.carryoverKey ?? ''] ?? '') === '1' && !defaultHolidayProvider.isWorkday(target)) {
-    target = computeNextWorkday(new Date(target), (d: string) => defaultHolidayProvider.isHoliday(d))
+  const dayRaw = s[t.monthDayKey ?? ''] ?? 'last'
+  if (dayRaw === 'lastworkday') {
+    return thisMonthLastWorkday(now)
   }
-  return target
+  return thisMonthDate(dayRaw, now)
 }
 
 // ── 执行调度 ──────────────────────────────────────────────────
@@ -206,6 +228,7 @@ function shouldFire(t: TaskSpec, s: Record<string, string>, now: Date): boolean 
   const time = s[t.timeKey] ?? ''
   if (!time) return false
   const target = computeTargetDate(t, s, now)
+  if (target === null) return false      // 本周期跳过（如日报非工作日）
   const today = formatLocalDate(now)
   // 已执行过 / 已被“不再提醒”跳过 → 不重复
   if (s[lastRunKey(t.type)] === target) return false
@@ -225,6 +248,7 @@ function collectMissed(s: Record<string, string>): TaskSpec[] {
     if (!taskActive(t, s)) continue
     if (!(s[t.timeKey] ?? '')) continue
     const target = computeTargetDate(t, s, now)
+    if (target === null) continue                      // 本周期跳过（如日报非工作日）
     if (target > today) continue                       // 未来，未到触发
     if (s[lastRunKey(t.type)] === target) continue     // 已执行
     if (s[ignoredKey(t.type)] === target) continue     // 已“不再提醒”
@@ -267,7 +291,8 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
         try {
           const ok = await dispatchTask(t, s)
           console.log('[AutoDiag]', t.type, 'dispatch=', ok)
-          if (ok) await markRun(s, t.type, computeTargetDate(t, s, now))
+          const runDate = computeTargetDate(t, s, now)
+          if (ok && runDate) await markRun(s, t.type, runDate)
         } catch (e) {
           console.log('[AutoDiag]', t.type, 'dispatch-ERR', e)
         }
@@ -285,8 +310,9 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
     const now = new Date()
     for (const t of missed) {
       const ok = await dispatchTask(t, s)
-      if (ok) await markRun(s, t.type, computeTargetDate(t, s, now))
-      else await markIgnored(s, t.type, computeTargetDate(t, s, now))
+      const runDate = computeTargetDate(t, s, now)
+      if (ok && runDate) await markRun(s, t.type, runDate)
+      else if (runDate) await markIgnored(s, t.type, runDate)
     }
     setMissed(null)
   }
