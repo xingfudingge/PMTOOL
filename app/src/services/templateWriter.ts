@@ -229,7 +229,7 @@ function parseDateStyles(sx: string): {
   const fm = new Map<string, string>()
   for (const m of sx.matchAll(/<numFmt numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) fm.set(m[1], m[2])
   const xfsMatch = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(sx)
-  const xfAttrs = xfsMatch ? [...xfsMatch[1].matchAll(/<xf([^>]*?)\/>/g)].map((m) => m[1]) : []
+  const xfAttrs = xfsMatch ? [...xfsMatch[1].matchAll(/<xf([^>]*?)\/?>/g)].map((m) => m[1]) : []
   const dateStyles = new Set<number>()
   const dateStyleByFill = new Map<number, number>()
   const fillByXf: number[] = []
