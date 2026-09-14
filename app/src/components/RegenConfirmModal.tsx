@@ -50,7 +50,7 @@ export function RegenConfirmModal() {
         style={{
           margin: 0,
           padding: '6px 14px',
-          background: 'var(--glass-bg)',
+          background: 'transparent',
           border: 'none',
           borderRadius: 'var(--radius)',
           listStyle: 'none',
@@ -67,7 +67,7 @@ export function RegenConfirmModal() {
               fontSize: '11.5px',
               color: 'var(--color-text-secondary)',
               padding: '5px 0',
-              borderBottom: '1px solid var(--glass-border)',
+              borderBottom: 'none',
               display: 'flex',
               alignItems: 'center',
               gap: 6,
