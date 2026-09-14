@@ -180,9 +180,14 @@ fn generate_license_command(
     duration_days: i32,
     startDate: String,
     expireDate: Option<String>,
+    order_no: String,
     state: tauri::State<Mutex<()>>,
 ) -> std::result::Result<String, String> {
     let _guard = state.lock().map_err(|e| e.to_string())?;
+
+    if order_no.trim().is_empty() {
+        return Err("请填写订单编号".to_string());
+    }
 
     let (signing_key, _verifying_key) = load_key_pair()?;
 
@@ -226,6 +231,7 @@ fn generate_license_command(
     records.push(LicenseHistoryRecord {
         id: payload.license_id.clone(),
         device_id: payload.device_id.clone(),
+        order_no: order_no.trim().to_string(),
         license: license.clone(),
         license_type: payload.license_type.clone(),
         start_time: payload.start_time.clone(),
@@ -243,6 +249,8 @@ fn generate_license_command(
 pub struct LicenseHistoryRecord {
     pub id: String,
     pub device_id: String,
+    #[serde(default)]
+    pub order_no: String,
     pub license: String,
     pub license_type: String,
     pub start_time: String,

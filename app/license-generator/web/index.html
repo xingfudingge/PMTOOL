@@ -433,6 +433,11 @@
             </div>
 
             <div class="card">
+                <div class="label">订单编号 <span style="color:#b91c1c">*</span></div>
+                <input type="text" id="orderNo" class="input-field" placeholder="仅作记录，不影响授权" />
+            </div>
+
+            <div class="card">
                 <div class="label">授权期限</div>
                 <div class="radio-group">
                     <label class="radio-option" onclick="selectDuration(30)">
@@ -579,6 +584,8 @@
         async function generateLicense() {
             const deviceId = document.getElementById('deviceId').value.trim();
             if (!deviceId) { showMsg('请输入设备唯一值'); return; }
+            const orderNo = document.getElementById('orderNo').value.trim();
+            if (!orderNo) { showMsg('请填写订单编号'); return; }
 
             const duration = parseInt(document.querySelector('input[name="duration"]:checked').value, 10);
             const startInput = document.getElementById('startDate');
@@ -594,7 +601,8 @@
             const args = {
                 deviceId: deviceId,
                 durationDays: duration,
-                startDate: start + 'T00:00:00+08:00'
+                startDate: start + 'T00:00:00+08:00',
+                order_no: orderNo
             };
             if (duration !== 0) {
                 args.expireDate = expireInput.value + 'T00:00:00+08:00';
@@ -691,6 +699,7 @@
                     <div class="history-top">
                         <div class="history-meta">
                             设备：<b>${r.device_id}</b><br>
+                            订单：<b>${r.order_no || '—'}</b><br>
                             <span class="history-type ${typeClass(r.license_type)}">${typeLabel(r.license_type)}</span>
                             &nbsp;${fmtDate(r.start_time)} ~ ${fmtDate(r.expire_time)}
                         </div>
