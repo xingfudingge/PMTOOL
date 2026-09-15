@@ -8,9 +8,19 @@
  *   - 右侧：机器码 · 授权状态徽章
  */
 
+import { useEffect, useState } from 'react'
 import { CircleCheck, Database, KeyRound, Cpu } from 'lucide-react'
+import { getDataDir } from '../services/settings'
 
 export function StatusBar() {
+  const [dataDir, setDataDir] = useState<string>('...')
+
+  useEffect(() => {
+    getDataDir()
+      .then(([dir]) => setDataDir(dir))
+      .catch(() => setDataDir('未获取'))
+  }, [])
+
   return (
     <footer
       style={{
@@ -42,7 +52,7 @@ export function StatusBar() {
             fontSize: '10.5px',
           }}
         >
-          ~/Library/Application Support/PMToolData
+          {dataDir}
         </span>
       </div>
 

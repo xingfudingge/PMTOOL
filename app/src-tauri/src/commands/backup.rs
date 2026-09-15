@@ -118,6 +118,47 @@ pub fn set_data_root(app: AppHandle, state: State<'_, AppState>, path: String) -
     Ok("数据目录已迁移，请重启应用生效".to_string())
 }
 
+/// 是否已由用户自选过数据目录（首启检测用；读 OS 默认应用目录下的覆盖标记）
+#[tauri::command]
+pub fn is_data_root_set(app: AppHandle) -> Result<bool, String> {
+    let default_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let override_file = default_dir.join("data_root.override");
+    Ok(data_maintenance::read_data_root_override(&override_file).is_some())
+}
+
+/// 首启：弹出原生目录选择器，用户自选数据存放目录并写入覆盖标记（复用迁移逻辑，重启生效）
+/// 返回所选目录；取消返回 None
+#[tauri::command]
+pub fn pick_data_root(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let picked = rfd::FileDialog::new()
+        .set_title("选择 PMTool 数据存放目录")
+        .pick_folder();
+    let Some(p) = picked else {
+        return Ok(None);
+    };
+
+    let target = PathBuf::from(p.to_string_lossy().to_string());
+    std::fs::create_dir_all(&target).map_err(|e| format!("目标目录不可写：{}", e))?;
+
+    // 拷贝 db + PMToolData 到目标（首启时 db 为空，拷贝无副作用）
+    let cur = state.data_dir.clone();
+    if cur != target {
+        let _ = std::fs::copy(cur.join("pmtool.db"), target.join("pmtool.db"));
+        let pm_data = cur.join("PMToolData");
+        if pm_data.exists() {
+            let _ = data_maintenance::copy_dir_recursive(&pm_data, &target.join("PMToolData"));
+        }
+    }
+
+    // 覆盖标记写到 OS 默认应用目录（启动时读取，早于 DB 初始化）
+    let default_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let override_file = default_dir.join("data_root.override");
+    data_maintenance::write_data_root_override(&override_file, target.to_string_lossy().as_ref())
+        .map_err(|e| format!("写入数据目录标记失败：{}", e))?;
+
+    Ok(Some(target.to_string_lossy().to_string()))
+}
+
 /// 读取当前备份位置设置（settings 键 backupDir）
 #[tauri::command]
 pub fn get_backup_location(state: State<'_, AppState>) -> Result<Option<String>, String> {

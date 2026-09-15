@@ -227,6 +227,8 @@ pub fn run() {
             commands::backup::backup_data,
             commands::backup::restore_data,
             commands::backup::set_data_root,
+            commands::backup::is_data_root_set,
+            commands::backup::pick_data_root,
             commands::backup::get_backup_location,
             commands::backup::set_backup_location,
             commands::backup::list_backups,

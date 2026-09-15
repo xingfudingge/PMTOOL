@@ -10,13 +10,12 @@ use std::sync::Mutex;
 use uuid::Uuid;
 
 mod auth_backup;
+mod workdir;
 
 // ============== Key Management ==============
 
 fn get_pmtool_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("Home directory not found")
-        .join(".pmtool")
+    workdir::pmtool_base_dir()
 }
 
 fn get_private_key_path() -> PathBuf {
@@ -444,6 +443,32 @@ fn sync_webdav(filename: String) -> Result<auth_backup::ImportReport, String> {
     Ok(report)
 }
 
+// ============== 工作目录（首次打开自选） ==============
+
+#[tauri::command]
+fn get_workdir_status() -> (bool, String) {
+    let set = workdir::is_workdir_set();
+    let dir = workdir::pmtool_base_dir();
+    (set, dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn pick_workdir() -> Result<Option<String>, String> {
+    let dir = rfd::FileDialog::new()
+        .set_title("选择 PMTool 授权工作目录")
+        .pick_folder();
+    Ok(dir.map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn set_workdir(path: String) -> Result<String, String> {
+    let target = PathBuf::from(path.trim());
+    std::fs::create_dir_all(&target).map_err(|e| format!("目录不可写：{}", e))?;
+    workdir::write_workdir_override(path.trim())
+        .map_err(|e| format!("保存工作目录失败：{}", e))?;
+    Ok("已设置工作目录".to_string())
+}
+
 // ============== Main Entry ==============
 
 fn main() {
@@ -465,7 +490,10 @@ fn main() {
             backup_to_webdav,
             preview_webdav_backup,
             restore_from_webdav,
-            sync_webdav
+            sync_webdav,
+            get_workdir_status,
+            pick_workdir,
+            set_workdir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -479,20 +507,46 @@ mod tests {
     /// 产物应满足 PMT1 前缀 + 健康长度，并落盘真实密钥对到 ~/.pmtool
     #[test]
     fn test_build_license_end_to_end() {
-        let (signing_key, _verifying_key) = load_key_pair().expect("密钥对加载/生成失败");
+        // 用隔离 HOME，避免写真实 ~/.pmtool（与 credential 测试避免并行竞争）
+        let tmp = std::env::temp_dir().join(format!(
+            "lic_e2e_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let old_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", &tmp);
 
-        let payload = create_license_payload(
-            "device-test-001".to_string(),
-            "DAYS_365".to_string(),
-            "2026-09-03T00:00:00+00:00".to_string(),
-            "2027-09-03T00:00:00+00:00".to_string(),
-        );
+        let result = (|| -> Result<(), String> {
+            let (signing_key, _verifying_key) = load_key_pair().map_err(|e| e.to_string())?;
 
-        let license = build_license_string(&payload, &signing_key).expect("授权码生成失败");
+            let payload = create_license_payload(
+                "device-test-001".to_string(),
+                "DAYS_365".to_string(),
+                "2026-09-03T00:00:00+00:00".to_string(),
+                "2027-09-03T00:00:00+00:00".to_string(),
+            );
 
-        assert!(license.starts_with("PMT1-"), "授权码应以 PMT1- 开头: {}", license);
-        let clean = license.replace("-", "");
-        assert!(clean.starts_with("PMT1"), "去连字符后应保留 PMT1 前缀");
-        assert!(clean.len() > 200, "授权码长度应健康，实际 {}", clean.len());
+            let license = build_license_string(&payload, &signing_key).map_err(|e| e.to_string())?;
+
+            assert!(license.starts_with("PMT1-"), "授权码应以 PMT1- 开头: {}", license);
+            let clean = license.replace("-", "");
+            assert!(clean.starts_with("PMT1"), "去连字符后应保留 PMT1 前缀");
+            assert!(clean.len() > 200, "授权码长度应健康，实际 {}", clean.len());
+            Ok(())
+        })();
+
+        // 恢复真实 HOME 并清理临时目录
+        if let Some(h) = old_home {
+            std::env::set_var("HOME", h);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        result.expect("授权码端到端生成失败");
     }
 }

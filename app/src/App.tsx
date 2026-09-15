@@ -26,6 +26,8 @@ import { TemplatesPage } from './pages/TemplatesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SettingsProvider } from './state/SettingsProvider'
 import { AutomationProvider } from './state/AutomationProvider'
+import FirstRunSetup from './components/FirstRunSetup'
+import { isDataRootSet } from './services/settings'
 
 export type PageId =
   | 'home'
@@ -62,11 +64,19 @@ function parseHash(): { page: PageId; param?: number } {
 
 function App() {
   const [hashState, setHashState] = useState(parseHash())
+  const [dataRootReady, setDataRootReady] = useState<boolean | null>(null)
 
   useEffect(() => {
     const onHashChange = () => setHashState(parseHash())
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  // 首启：未自选过数据目录时弹出覆盖层
+  useEffect(() => {
+    isDataRootSet()
+      .then(setDataRootReady)
+      .catch(() => setDataRootReady(true))
   }, [])
 
   const navigate = (page: PageId, param?: number) => {
@@ -114,6 +124,8 @@ function App() {
   const handleNavigate = (page: PageId) => navigate(page)
 
   return (
+    <>
+    {dataRootReady === false && <FirstRunSetup />}
     <LicenseGuard>
       <SettingsProvider>
       <AutomationProvider>
@@ -131,6 +143,7 @@ function App() {
       </SettingsProvider>
       <Toaster />
     </LicenseGuard>
+    </>
   )
 }
 

@@ -30,6 +30,16 @@ export async function getDataDir(): Promise<[string, string]> {
   return await invoke<[string, string]>('get_data_dir')
 }
 
+/** 是否已由用户自选过数据目录（首启检测用） */
+export async function isDataRootSet(): Promise<boolean> {
+  return await invoke<boolean>('is_data_root_set')
+}
+
+/** 首启：弹出原生目录选择器自选数据存放目录（需重启生效），返回所选目录；取消返回 null */
+export async function pickDataRoot(): Promise<string | null> {
+  return await invoke<string | null>('pick_data_root')
+}
+
 /** 立即备份到 dest_dir/<时间戳>/，返回生成的备份目录绝对路径 */
 export async function backupData(destDir: string): Promise<string> {
   return await invoke<string>('backup_data', { destDir })

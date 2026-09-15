@@ -392,6 +392,24 @@
             margin-bottom: 14px;
         }
 
+        /* 首启：选择工作目录
+        .workdir-mask { z-index: 999; }
+        .workdir-body {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.7;
+            margin-bottom: 12px;
+        }
+        .workdir-cur {
+            font-size: 12px;
+            color: var(--text-muted);
+            background: var(--bg-input);
+            padding: 8px 10px;
+            border-radius: 6px;
+            margin-bottom: 14px;
+            word-break: break-all;
+        }
+
         .modal-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -1240,7 +1258,30 @@
             if (cb) await cb(filename);
         }
 
+        // 首启：工作目录选择
+        async function onPickWorkdir() {
+            const p = await window.__TAURI__.core.invoke('pick_workdir');
+            if (!p) return;
+            const msg = await window.__TAURI__.core.invoke('set_workdir', { path: p });
+            reloadApp();
+            showMsg(msg);
+        }
+        async function skipWorkdir() {
+            document.getElementById('workdirMask').classList.remove('show');
+        }
+        function reloadApp() {
+            document.getElementById('workdirMask').classList.remove('show');
+            refreshHistory();
+            updateExpireDate();
+        }
+        async function checkWorkdir() {
+            const [set, dir] = await window.__TAURI__.core.invoke('get_workdir_status');
+            document.getElementById('workdirCurrent').textContent = dir;
+            if (!set) document.getElementById('workdirMask').classList.add('show');
+        }
+
         // 首次
+        checkWorkdir();
         refreshHistory();
         updateExpireDate();
     </script>
@@ -1279,6 +1320,19 @@
             <div class="modal-actions" style="margin-top:14px;">
                 <button class="sub-btn" onclick="closePromptModal()">取消</button>
                 <button class="sub-btn primary" id="promptGo" onclick="acceptPrompt()">下一步</button>
+            </div>
+        </div>
+    <!-- 首启选择工作目录 -->
+    <div id="workdirMask" class="modal-mask workdir-mask">
+        <div class="modal">
+            <div class="modal-title">选择工作目录</div>
+            <div class="workdir-body">
+                欢迎使用 PMTool 授权生成器。请选择存放密钥对、授权记录与备份配置的工作目录。
+            </div>
+            <div class="workdir-cur">当前：<span id="workdirCurrent">默认</span></div>
+            <div class="modal-actions">
+                <button class="sub-btn primary" onclick="onPickWorkdir()">选择目录…</button>
+                <button class="sub-btn" onclick="skipWorkdir()">暂不选择（使用默认）</button>
             </div>
         </div>
     </div>

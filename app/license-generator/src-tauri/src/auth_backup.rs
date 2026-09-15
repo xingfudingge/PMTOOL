@@ -28,12 +28,9 @@ use std::path::PathBuf;
 pub const BACKUP_FORMAT: &str = "pmtool-license-generator-backup";
 pub const BACKUP_VERSION: i64 = 1;
 
-/// 授权记录文件路径 ~/.pmtool/issue_history.json
+/// 授权记录文件路径 <工作目录>/issue_history.json
 pub fn history_path() -> PathBuf {
-    dirs::home_dir()
-        .expect("home dir")
-        .join(".pmtool")
-        .join("issue_history.json")
+    crate::workdir::pmtool_base_dir().join("issue_history.json")
 }
 
 // ============ 备份文件结构 ============
@@ -229,7 +226,7 @@ pub struct WebdavConfigView {
 }
 
 fn cfg_path() -> PathBuf {
-    dirs::home_dir().expect("home dir").join(".pmtool").join("webdav_config.json")
+    crate::workdir::pmtool_base_dir().join("webdav_config.json")
 }
 
 pub fn load_cfg() -> WebdavConfig {
@@ -465,7 +462,7 @@ struct EncCred {
 }
 
 fn pmtool_dir() -> PathBuf {
-    dirs::home_dir().expect("home dir").join(".pmtool")
+    crate::workdir::pmtool_base_dir()
 }
 
 /// 读取（或首次生成）加密密钥
@@ -546,14 +543,14 @@ pub fn credential_delete_password() -> Result<(), String> {
 }
 
 fn last_backup_at() -> Option<String> {
-    let p = dirs::home_dir().expect("home dir").join(".pmtool").join("webdav_last_backup.json");
+    let p = crate::workdir::pmtool_base_dir().join("webdav_last_backup.json");
     p.exists().then(|| std::fs::read_to_string(&p).unwrap_or_default())
 }
 
 pub fn set_last_backup_at(ts: &str) -> Result<(), String> {
-    let p = dirs::home_dir().expect("home dir").join(".pmtool").join("webdav_last_backup.json");
+    let p = crate::workdir::pmtool_base_dir().join("webdav_last_backup.json");
     if let Some(dir) = p.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("创建 .pmtool 目录失败：{}", e))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("创建工作目录失败：{}", e))?;
     }
     std::fs::write(p, ts).map_err(|e| format!("记录备份时间失败：{}", e))
 }
