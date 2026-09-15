@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { invoke } from '@tauri-apps/api/core'
 
 /** 全局 JS 错误捕获 → 直接渲染到 DOM · 不让白屏不告而别 */
 function showError(prefix: string, err: unknown) {
@@ -28,6 +29,12 @@ function showError(prefix: string, err: unknown) {
   div.textContent = `[${prefix}] ${msg}`
   panel.appendChild(div)
   console.error(`[${prefix}]`, err)
+  // 同时把 JS 错误写到后端日志 <数据目录>/pmtool.log，进程退出也能追查
+  try {
+    invoke('log_frontend_error', { level: 'error', message: `${prefix}: ${msg}` }).catch(() => {})
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

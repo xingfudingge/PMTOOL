@@ -34,3 +34,4 @@ pub mod project_knowledge_bindings;
 pub mod template_directory;
 pub mod settings;
 pub mod backup;
+pub mod diagnostics;

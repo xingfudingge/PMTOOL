@@ -59,9 +59,17 @@ pub fn run() {
             let data_dir = services::data_maintenance::read_data_root_override(&override_file)
                 .unwrap_or_else(|| default_data_dir.clone());
 
+            // 日志：启动即落盘（panic + 后续错误都进 <数据目录>/pmtool.log）
+            let log_path = services::logging::init(&data_dir);
+            services::logging::log_line(&format!("[INF] log file = {}", log_path.display()));
+            services::logging::log_line(&format!("[INF] data_dir = {}", data_dir.display()));
+
             // 初始化数据库（建库 + migration）
-            let pool = db::init(&data_dir)
-                .map_err(|e| format!("DB init failed: {}", e))?;
+            let pool = db::init(&data_dir).map_err(|e| {
+                services::logging::log_line(&format!("[ERR] DB init failed: {}", e));
+                format!("DB init failed: {}", e)
+            })?;
+            services::logging::log_line("[OK] DB init done");
 
             // 初始化文件存储 Provider（Phase 4 T4.9）
             let file_storage: BoxedProvider =
@@ -151,6 +159,8 @@ pub fn run() {
             commands::license::start_trial,                 // 新：主动开始 7 天试用
             commands::license::expire_overdue_licenses,     // 新：清理过期授权
             commands::clipboard::copy_to_clipboard,          // 新：复制到剪贴板
+            // 诊断/日志（前端 JS 错误落盘）
+            commands::diagnostics::log_frontend_error,
             // Holidays commands（Phase 4.5 · 维护者 2026-08-25 反馈补全）
             commands::holidays::list_holidays,
             // Reports commands（维护者 2026-08-25 · 报告中心重构）

@@ -14,4 +14,5 @@ pub mod file_storage;
 pub mod file_storage_local;
 pub mod data_maintenance;
 pub mod license;
+pub mod logging;
 pub mod trial;
