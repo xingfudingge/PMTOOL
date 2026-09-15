@@ -61,13 +61,14 @@ function numCell(addr: string, s: string, v: number): string {
   const sa = s && s !== '0' ? ` s="${s}"` : ''
   return `<c r="${addr}"${sa}><v>${v}</v></c>`
 }
+// 公式串已是 XML 安全（模板公式的引号以 &quot; 实体存在），原样输出即可；再 escF 会把 & 二次转义成 &amp;quot; 导致公式非法算出 0。
 function fNumCell(addr: string, s: string, formula: string): string {
   const sa = s && s !== '0' ? ` s="${s}"` : ''
-  return `<c r="${addr}"${sa}><f>${escF(formula)}</f><v>0</v></c>`
+  return `<c r="${addr}"${sa}><f>${formula}</f><v>0</v></c>`
 }
 function fStrCell(addr: string, s: string, formula: string): string {
   const sa = s && s !== '0' ? ` s="${s}"` : ''
-  return `<c r="${addr}"${sa} t="str"><f>${escF(formula)}</f><v> - </v></c>`
+  return `<c r="${addr}"${sa} t="str"><f>${formula}</f><v> - </v></c>`
 }
 
 function colLetters(n: number): string {
