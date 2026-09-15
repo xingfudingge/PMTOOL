@@ -20,23 +20,30 @@ import type { ProjectTodoItem } from './projectTodoItems'
 import type { ProjectMember } from './excelMembers'
 import type { HolidayEntry } from './holidayProvider'
 
+// 状态/等级 → 一律映射到【模板数据验证下拉】的合法值（维护者 2026-09-15 整改：写入值必须与模板要求一致，缺省兜底取下拉首值）
+// 风险·等级：模板下拉仅 高/中/低，CRITICAL 无对应项，归并入最高的“高”
 function levelToCN(l: ProjectIssue['level']): string {
-  return l === 'LOW' ? '低' : l === 'HIGH' ? '高' : l === 'CRITICAL' ? '严重' : '中'
+  return l === 'LOW' ? '低' : l === 'HIGH' || l === 'CRITICAL' ? '高' : '中'
 }
+// 风险·风险状态：模板下拉 识别中/应对中/已关闭（无“待应对/已应对”），RESOLVED/CLOSED 归并入“已关闭”
 function riskStatusToCN(s: ProjectIssue['status']): string {
-  return s === 'OPEN' ? '待应对' : s === 'IN_PROGRESS' ? '应对中' : s === 'RESOLVED' ? '已应对' : '已关闭'
+  return s === 'OPEN' ? '识别中' : s === 'IN_PROGRESS' ? '应对中' : '已关闭'
 }
+// 需求·响应状态：模板下拉 待设计/设计中/待开发/开发中/已完成；REJECTED 无对应项，归并入“待设计”
 function reqStatusToCN(s: string): string {
-  return s === 'PENDING' ? '待响应' : s === 'EVALUATING' ? '评估中' : s === 'CONFIRMED' ? '已确认' : s === 'IMPLEMENTED' ? '已实现' : '已拒绝'
+  return s === 'PENDING' ? '待设计' : s === 'EVALUATING' ? '设计中' : s === 'CONFIRMED' ? '待开发' : s === 'IMPLEMENTED' ? '已完成' : '待设计'
 }
+// 问题·状态：模板下拉 处理中/已处理（无“待处理/已解决/已关闭”），非未处理态一律归并入“已处理”
 function issStatusToCN(s: string): string {
-  return s === 'OPEN' ? '待处理' : s === 'IN_PROGRESS' ? '处理中' : s === 'RESOLVED' ? '已解决' : '已关闭'
+  return s === 'RESOLVED' || s === 'CLOSED' ? '已处理' : '处理中'
 }
+// 待办·任务状态：模板下拉 已完成/未完成（无“待办/进行中/已逾期”），非完成态归并入“未完成”
 function todoStatusToCN(s: string): string {
-  return s === 'PENDING' ? '待办' : s === 'IN_PROGRESS' ? '进行中' : s === 'COMPLETED' ? '已完成' : '已逾期'
+  return s === 'COMPLETED' ? '已完成' : '未完成'
 }
+// 每周·任务状态：模板下拉 已完成/未完成，非完成态归并入“未完成”
 function weeklyStatusToCN(s: WeeklyReportEntry['is_completed']): string {
-  return s === 'COMPLETED' ? '已完成' : s === 'IN_PROGRESS' ? '进行中' : '未完成'
+  return s === 'COMPLETED' ? '已完成' : '未完成'
 }
 
 // ---------- 项目管理（父子分层 · DFS 映射）----------
