@@ -1,3 +1,6 @@
+// Windows release 下禁止额外控制台窗口，不要移除
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use ed25519_dalek::{Signature, Signer, SECRET_KEY_LENGTH, PUBLIC_KEY_LENGTH};
 use serde::{Deserialize, Serialize};
