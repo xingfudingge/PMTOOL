@@ -110,22 +110,23 @@ function reqStatusFromCN(v: unknown): string {
   const t = toStr(v)
   if (!t) return 'PENDING'
   const s = t.toLowerCase()
-  if (s === '待响应' || s === 'pending') return 'PENDING'
-  if (s === '评估中' || s === 'evaluating') return 'EVALUATING'
-  if (s === '已确认' || s === 'confirmed') return 'CONFIRMED'
-  if (s === '已实现' || s === 'implemented') return 'IMPLEMENTED'
+  // 模板下拉合法值：待设计/设计中/待开发/开发中/已完成（维护者 2026-09-15 对齐）
+  if (s === '待响应' || s === '待设计' || s === 'pending') return 'PENDING'
+  if (s === '评估中' || s === '设计中' || s === 'evaluating') return 'EVALUATING'
+  if (s === '已确认' || s === '待开发' || s === 'confirmed') return 'CONFIRMED'
+  if (s === '已实现' || s === '已完成' || s === '开发中' || s === 'implemented') return 'IMPLEMENTED'
   if (s === '已拒绝' || s === 'rejected') return 'REJECTED'
   return 'PENDING'
 }
 
 function reqStatusToCN(s: string): string {
   switch (s) {
-    case 'PENDING': return '待响应'
-    case 'EVALUATING': return '评估中'
-    case 'CONFIRMED': return '已确认'
-    case 'IMPLEMENTED': return '已实现'
-    case 'REJECTED': return '已拒绝'
-    default: return '待响应'
+    case 'PENDING': return '待设计'
+    case 'EVALUATING': return '设计中'
+    case 'CONFIRMED': return '待开发'
+    case 'IMPLEMENTED': return '已完成'
+    case 'REJECTED': return '待设计'
+    default: return '待设计'
   }
 }
 
@@ -193,12 +194,13 @@ function issStatusFromCN(v: unknown): string {
 }
 
 function issStatusToCN(s: string): string {
+  // 模板下拉仅 处理中/已处理，非已处理态归并入“处理中”
   switch (s) {
-    case 'OPEN': return '待处理'
+    case 'OPEN':
     case 'IN_PROGRESS': return '处理中'
-    case 'RESOLVED': return '已解决'
-    case 'CLOSED': return '已关闭'
-    default: return '待处理'
+    case 'RESOLVED':
+    case 'CLOSED': return '已处理'
+    default: return '处理中'
   }
 }
 
@@ -260,7 +262,7 @@ function todoStatusFromCN(v: unknown): string {
   const t = toStr(v)
   if (!t) return 'PENDING'
   const s = t.toLowerCase()
-  if (s === '待办' || s === '未开始' || s === 'pending') return 'PENDING'
+  if (s === '待办' || s === '未开始' || s === '未完成' || s === 'pending') return 'PENDING'
   if (s === '进行中' || s === 'in_progress' || s === 'inprogress') return 'IN_PROGRESS'
   if (s === '已完成' || s === 'completed' || s === '完成') return 'COMPLETED'
   if (s === '已逾期' || s === '延期' || s === 'delayed') return 'DELAYED'
@@ -268,12 +270,10 @@ function todoStatusFromCN(v: unknown): string {
 }
 
 function todoStatusToCN(s: string): string {
+  // 模板下拉仅 已完成/未完成，非完成态归并入“未完成”
   switch (s) {
-    case 'PENDING': return '待办'
-    case 'IN_PROGRESS': return '进行中'
     case 'COMPLETED': return '已完成'
-    case 'DELAYED': return '已逾期'
-    default: return '待办'
+    default: return '未完成'
   }
 }
 

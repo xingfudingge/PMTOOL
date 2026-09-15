@@ -1,0 +1,31 @@
+<!--
+  PMTool License Generator - App Icon - macOS
+  Icon Master (sole source) - macOS - 1024x1024 viewBox
+
+  Platform rules (matches PMTool main icon; fixes the root cause of the
+  dock icon appearing too large):
+    - The rounded background square occupies only ~86% of the canvas,
+      leaving ~7% transparent safe area on every side. This aligns the
+      visual footprint with Apple system icons (Finder measures 85.9%
+      fill), so the Dock / Finder / Launchpad size matches native apps.
+    - The background does NOT fill the canvas edge-to-edge, avoiding the
+      look of a full-bleed square that reads as too large.
+    - Corner radius ~200/880 = 22.7%, close to Apple Big Sur squircle.
+    - The white token + keyhole glyph sits inside the safe area
+      (roughly the central 40% of the canvas).
+
+  Design language (same family as PMTool main app, clearly different mark):
+    - Main app = document + tent (the product where work is done)
+    - License generator = token + keyhole + generate star (the tool that
+      issues licenses)
+    - Same gradient-background + white-geometric-foreground treatment;
+      hue shifted toward violet to be distinguishable.
+
+  Palette:
+    - Background: indigo to blue-violet vertical gradient #3153e6 -> #7b5dff
+    - Token body: pure white #ffffff
+    - Keyhole: negative space revealing the background gradient
+    - Generate star: pure white #ffffff (small four-point star)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 5 4150 6450" fill="none">
+</svg>

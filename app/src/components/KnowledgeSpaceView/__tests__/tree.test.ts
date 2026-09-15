@@ -118,35 +118,31 @@ describe('KnowledgeSpaceView 目录树逻辑（维护者 2026-08-31）', () => {
  * 维护者 2026-09-04 重构 · 设计文档 §31
  *
  * buildUnifiedTree 行为约定：
- *   - 个人知识中心（withVirtualRoot=true）：最上插“目录”虚拟根（kind='root'），
- *     子节点含全部真实目录 + 根级笔记
+ *   - 个人知识中心（withVirtualRoot=true）：不再包裹「目录」伪根，真实目录/根级笔记直接平铺在顶层
  *   - 项目模式（withVirtualRoot=false）：直接返回真实目录根
  *   - note 节点 kind='note'，folder 节点 kind='folder'，PROJECT_ROOT kind='project-root'
  */
 describe('KnowledgeTreeView 统一树（2026-09-04 重构 · 设计文档 §31）', () => {
   describe('buildUnifiedTree · 个人中心 withVirtualRoot', () => {
-    it('空数据：仅返回虚拟根「目录」', () => {
+    it('空数据：无伪根，直接为空', () => {
       const tree = buildUnifiedTree([], [], { withVirtualRoot: true })
-      expect(tree).toHaveLength(1)
-      expect(tree[0].kind).toBe('root')
-      expect(tree[0].name).toBe('目录')
-      expect(tree[0].isSystem).toBe(true)
-      expect(tree[0].children).toHaveLength(0)
+      expect(tree).toHaveLength(0)
     })
 
-    it('真实目录嵌套 + 根级笔记合并到「目录」虚拟根', () => {
+    it('真实目录+根级笔记平铺在顶层，无「目录」伪根', () => {
       const folders = [mkFolder(1, null, '工作笔记'), mkFolder(2, 1, '经验')]
       const notes = [
         mkNote(100, { folderId: 1 }),
         mkNote(101, { folderId: null }), // 根级笔记
       ]
       const tree = buildUnifiedTree(folders, notes, { withVirtualRoot: true })
-      expect(tree).toHaveLength(1)
-      const root = tree[0]
-      expect(root.children).toHaveLength(2)
-      const workFolder = root.children.find((c) => c.id === 1)!
+      expect(tree).toHaveLength(2) // 文件夹 + 根级笔记，都在顶层
+      const workFolder = tree[0]
+      expect(workFolder.id).toBe(1)
       expect(workFolder.kind).toBe('folder')
       expect(workFolder.children).toHaveLength(2) // 子目录 + 知识
+      expect(tree[1].kind).toBe('note') // 根级笔记直接平铺
+      expect(tree[1].id).toBe(101)
     })
   })
 

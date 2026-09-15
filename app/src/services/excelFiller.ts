@@ -10,7 +10,7 @@
  */
 
 import * as XLSX from 'xlsx'
-import { findHeaderRow, findHeaderRows, colOf, colOfAfter, patch, ONE, TWO, HUNDRED, type CellPatch, type SheetPatch } from './templateWriter'
+import { findHeaderRow, findHeaderRows, colOf, colOfAfter, patch, dateSerial, ONE, TWO, HUNDRED, type CellPatch, type SheetPatch, type ProjectGridLayout, type ProjectGridRow } from './templateWriter'
 import type { ProjectTask } from './excelProjects'
 import type { ProjectIssue } from './excelRisks'
 import type { WeeklyReportEntry } from './excelWeekly'
@@ -20,39 +20,45 @@ import type { ProjectTodoItem } from './projectTodoItems'
 import type { ProjectMember } from './excelMembers'
 import type { HolidayEntry } from './holidayProvider'
 
+// 状态/等级 → 一律映射到【模板数据验证下拉】的合法值（维护者 2026-09-15 整改：写入值必须与模板要求一致，缺省兜底取下拉首值）
+// 风险·等级：模板下拉仅 高/中/低，CRITICAL 无对应项，归并入最高的“高”
 function levelToCN(l: ProjectIssue['level']): string {
-  return l === 'LOW' ? '低' : l === 'HIGH' ? '高' : l === 'CRITICAL' ? '严重' : '中'
+  return l === 'LOW' ? '低' : l === 'HIGH' || l === 'CRITICAL' ? '高' : '中'
 }
+// 风险·风险状态：模板下拉 识别中/应对中/已关闭（无“待应对/已应对”），RESOLVED/CLOSED 归并入“已关闭”
 function riskStatusToCN(s: ProjectIssue['status']): string {
-  return s === 'OPEN' ? '待应对' : s === 'IN_PROGRESS' ? '应对中' : s === 'RESOLVED' ? '已应对' : '已关闭'
+  return s === 'OPEN' ? '识别中' : s === 'IN_PROGRESS' ? '应对中' : '已关闭'
 }
+// 需求·响应状态：模板下拉 待设计/设计中/待开发/开发中/已完成；REJECTED 无对应项，归并入“待设计”
 function reqStatusToCN(s: string): string {
-  return s === 'PENDING' ? '待响应' : s === 'EVALUATING' ? '评估中' : s === 'CONFIRMED' ? '已确认' : s === 'IMPLEMENTED' ? '已实现' : '已拒绝'
+  return s === 'PENDING' ? '待设计' : s === 'EVALUATING' ? '设计中' : s === 'CONFIRMED' ? '待开发' : s === 'IMPLEMENTED' ? '已完成' : '待设计'
 }
+// 问题·状态：模板下拉 处理中/已处理（无“待处理/已解决/已关闭”），非未处理态一律归并入“已处理”
 function issStatusToCN(s: string): string {
-  return s === 'OPEN' ? '待处理' : s === 'IN_PROGRESS' ? '处理中' : s === 'RESOLVED' ? '已解决' : '已关闭'
+  return s === 'RESOLVED' || s === 'CLOSED' ? '已处理' : '处理中'
 }
+// 待办·任务状态：模板下拉 已完成/未完成（无“待办/进行中/已逾期”），非完成态归并入“未完成”
 function todoStatusToCN(s: string): string {
-  return s === 'PENDING' ? '待办' : s === 'IN_PROGRESS' ? '进行中' : s === 'COMPLETED' ? '已完成' : '已逾期'
+  return s === 'COMPLETED' ? '已完成' : '未完成'
 }
+// 每周·任务状态：模板下拉 已完成/未完成，非完成态归并入“未完成”
 function weeklyStatusToCN(s: WeeklyReportEntry['is_completed']): string {
-  return s === 'COMPLETED' ? '是' : s === 'IN_PROGRESS' ? '进行中' : '否'
+  return s === 'COMPLETED' ? '已完成' : '未完成'
 }
 
 // ---------- 项目管理（父子分层 · DFS 映射）----------
-export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch[] {
-  const patches: CellPatch[] = []
+export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): ProjectGridLayout {
   const hr = findHeaderRow(ws, ['序号']) ?? 0
   const cSeq = colOf(ws, hr, '序号')
+  if (cSeq < 0) return { dataStartRow: (hr + ONE) + TWO, rows: [] }
   const cTask = colOf(ws, hr, '任务')
   const cOwner = colOf(ws, hr, '跟进人')
   const cStart = colOf(ws, hr, '计划启动日期')
   const cNat = colOf(ws, hr, '自然日工时')
   const cProg = colOf(ws, hr, '当前完成度')
   const cNote = colOf(ws, hr, '任务完成情况说明')
-  if (cSeq < 0) return patches
 
-  // 建树（parent_id）：父子 DFS 先序
+  // 建树（parent_id）：父子 DFS 先序，并生成真正的层级序号（根=1，子=1.1，孙=1.1.1…）
   const childrenOf = new Map<number | null, ProjectTask[]>()
   for (const t of tasks) {
     const k = t.parent_id ?? null
@@ -60,47 +66,56 @@ export function fillProject(ws: XLSX.WorkSheet, tasks: ProjectTask[]): CellPatch
     if (arr) arr.push(t)
     else childrenOf.set(k, [t])
   }
+  const serialOf = new Map<number, string>()
   const nodeList: ProjectTask[] = []
-  const traverse = (nodes: ProjectTask[]) => {
-    for (const n of nodes) {
+  const traverse = (nodes: ProjectTask[], parentSerial: string) => {
+    nodes.forEach((n, i) => {
+      const s = parentSerial ? `${parentSerial}.${i + ONE}` : String(i + ONE)
+      serialOf.set(n.id, s)
       nodeList.push(n)
       const ch = childrenOf.get(n.id)
-      if (ch && ch.length) traverse(ch)
-    }
+      if (ch && ch.length) traverse(ch, s)
+    })
   }
-  traverse(childrenOf.get(null) || [])
+  const roots = [...(childrenOf.get(null) || [])]
+  traverse(roots, '')
   const seen = new Set(nodeList.map((n) => n.id))
-  traverse(tasks.filter((t) => !seen.has(t.id)))
-
-  const lastRow = XLSX.utils.decode_range(ws['!ref'] || 'A1').e.r
-  const isParentRow = (rr: number): boolean => {
-    if (cStart < 0) return false
-    const cell = ws[XLSX.utils.encode_cell({ r: rr, c: cStart })]
-    return !!(cell && (cell as { f?: string }).f)
-  }
-
-  let rowCursor = hr + ONE
-  let idx = 1
-  for (const node of nodeList) {
-    const nodeParent = (childrenOf.get(node.id) || []).length > 0
-    while (rowCursor <= lastRow && isParentRow(rowCursor) !== nodeParent) rowCursor++
-    if (rowCursor > lastRow) break
-    const rr = rowCursor
-    patch(patches, rr, cSeq, String(idx))
-    if (cTask >= 0) patch(patches, rr, cTask, node.task_name)
-    if (cOwner >= 0) patch(patches, rr, cOwner, node.owner ?? '')
-    if (!nodeParent) {
-      // 叶子/子行输入格（无公式）：D计划启动(日期序列数)、F自然日工时(整数)、G当前完成度(0-1小数带百分比格式)
-      // E计划完成日期 = D+F-1、H工作日工时 = NETWORKDAYS(D,E) 都是模板公式，自动算，绝不覆盖。
-      if (cStart >= 0) patch(patches, rr, cStart, node.start_date, true)
-      if (cNat >= 0) patch(patches, rr, cNat, node.natural_days || node.work_days || 0)
-      if (cProg >= 0) patch(patches, rr, cProg, (node.progress || 0) / HUNDRED)
+  const orphans = tasks.filter((t) => !seen.has(t.id))
+  if (orphans.length) {
+    let k = roots.length
+    for (const o of orphans) {
+      k += 1
+      const s = String(k)
+      serialOf.set(o.id, s)
+      nodeList.push(o)
+      const ch = childrenOf.get(o.id)
+      if (ch && ch.length) traverse(ch, s)
     }
-    if (cNote >= 0) patch(patches, rr, cNote, node.remark ?? '')
-    rowCursor++
-    idx++
   }
-  return patches
+
+  // 旧版：isParentRow 就近跳模板既有格位，固定网格塞不下 0 深任务树 → 越界 break 丢弃。
+  // 新版：全量展开为行，交给 projectGridWriter.rebuildProjectRows 按模板蓝图重排(阶段行公式按真实子行区间)。
+  const dataStartRow = (hr + ONE) + TWO
+  const rows: ProjectGridRow[] = nodeList.map((node, i) => ({
+    row: dataStartRow + i,
+    kind: node.parent_id === null ? 'phase' : 'task',
+    serial: serialOf.get(node.id) ?? String(i + ONE),
+    name: node.task_name,
+    owner: node.owner ?? '',
+    startSerial: node.parent_id === null ? null : dateSerial(node.start_date),
+    natural: node.parent_id === null ? null : (node.natural_days || node.work_days || 0),
+    progress: node.parent_id === null ? null : (node.progress || 0) / HUNDRED,
+    remark: node.remark ?? '',
+    childRows: [],
+  }))
+  // 阶段行的子行区间：其紧随其后的连续任务行(即阶段下所有后代行)
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].kind !== 'phase') continue
+    const kids: number[] = []
+    for (let j = i + 1; j < rows.length && rows[j].kind !== 'phase'; j++) kids.push(rows[j].row)
+    rows[i].childRows = kids
+  }
+  return { dataStartRow, rows }
 }
 
 // ---------- 每周工作情况（本周/下周双表头）----------
@@ -128,10 +143,10 @@ export function fillWeekly(ws: XLSX.WorkSheet, entries: WeeklyReportEntry[]): Ce
   const w = (row: number, e: WeeklyReportEntry, idx: number) => {
     if (cs >= 0) patch(patches, row, cs, String(idx))
     if (ct >= 0) patch(patches, row, ct, e.task_name)
-    if (cps >= 0) patch(patches, row, cps, e.plan_start_date) // 文本日期，避免无日期样式时显示序列号
-    if (cpe >= 0) patch(patches, row, cpe, e.plan_end_date)
-    if (cas >= 0) patch(patches, row, cas, e.actual_start_date)
-    if (cae >= 0) patch(patches, row, cae, e.actual_end_date)
+    if (cps >= 0) patch(patches, row, cps, e.plan_start_date, true)
+    if (cpe >= 0) patch(patches, row, cpe, e.plan_end_date, true)
+    if (cas >= 0) patch(patches, row, cas, e.actual_start_date, true)
+    if (cae >= 0) patch(patches, row, cae, e.actual_end_date, true)
     if (cA >= 0) patch(patches, row, cA, e.owner_party_a ?? '')
     if (cB >= 0) patch(patches, row, cB, e.owner_party_b ?? '')
     if (cn >= 0) patch(patches, row, cn, e.completion_note ?? '')
@@ -160,9 +175,9 @@ export function fillTodo(ws: XLSX.WorkSheet, items: ProjectTodoItem[]): CellPatc
     if (cSeq >= 0) patch(patches, rr, cSeq, String(i + ONE))
     if (cContent >= 0) patch(patches, rr, cContent, x.content)
     if (cPeople >= 0) patch(patches, rr, cPeople, x.related_people ?? '')
-    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date)
+    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date, true)
     if (cNote >= 0) patch(patches, rr, cNote, x.completion_note ?? '')
-    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date)
+    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date, true)
     if (cStatus >= 0) patch(patches, rr, cStatus, todoStatusToCN(x.status))
     if (cRemark >= 0) patch(patches, rr, cRemark, x.remark ?? '')
   })
@@ -189,7 +204,7 @@ export function fillRisk(ws: XLSX.WorkSheet, items: ProjectIssue[]): CellPatch[]
     if (cSeq >= 0) patch(patches, rr, cSeq, String(i + ONE))
     if (cTitle >= 0) patch(patches, rr, cTitle, x.title)
     if (cLevel >= 0) patch(patches, rr, cLevel, levelToCN(x.level))
-    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? x.created_at ?? '')
+    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? x.created_at ?? '', true)
     if (cImpact >= 0) patch(patches, rr, cImpact, x.description ?? '')
     if (cPlan >= 0) patch(patches, rr, cPlan, x.solution ?? '')
     if (cOwner >= 0) patch(patches, rr, cOwner, x.owner ?? '')
@@ -219,7 +234,7 @@ export function fillReq(ws: XLSX.WorkSheet, items: ProjectRequirement[]): CellPa
     if (cSystem >= 0) patch(patches, rr, cSystem, x.system ?? '')
     if (cSummary >= 0) patch(patches, rr, cSummary, x.summary)
     if (cDetail >= 0) patch(patches, rr, cDetail, x.detail ?? '')
-    if (cProposed >= 0) patch(patches, rr, cProposed, x.proposed_at ?? '')
+    if (cProposed >= 0) patch(patches, rr, cProposed, x.proposed_at ?? '', true)
     if (cProposer >= 0) patch(patches, rr, cProposer, x.proposer ?? '')
     if (cStatus >= 0) patch(patches, rr, cStatus, reqStatusToCN(x.status))
   })
@@ -249,12 +264,12 @@ export function fillIssueLog(ws: XLSX.WorkSheet, items: ProjectIssueLog[]): Cell
     if (cTitle >= 0) patch(patches, rr, cTitle, x.title)
     if (cProposer >= 0) patch(patches, rr, cProposer, x.proposer ?? '')
     if (cModule >= 0) patch(patches, rr, cModule, x.module ?? '')
-    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? '')
-    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date)
+    if (cFound >= 0) patch(patches, rr, cFound, x.discovered_at ?? '', true)
+    if (cPlan >= 0) patch(patches, rr, cPlan, x.plan_date, true)
     if (cPlanSol >= 0) patch(patches, rr, cPlanSol, x.plan_solution ?? '')
     if (cHandler >= 0) patch(patches, rr, cHandler, x.handler ?? '')
     if (cProgress >= 0) patch(patches, rr, cProgress, x.progress_note ?? '')
-    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date)
+    if (cActual >= 0) patch(patches, rr, cActual, x.actual_date, true)
     if (sc >= 0) patch(patches, rr, sc, issStatusToCN(x.status))
   })
   return patches
@@ -301,8 +316,8 @@ function fillHolidays(ws: XLSX.WorkSheet, holidays: HolidayEntry[]): CellPatch[]
   holidays.forEach((h, i) => {
     const rr = ds + i
     if (cn >= 0) patch(patches, rr, cn, h.name)
-    if (h.type === 'HOLIDAY') { if (co >= 0) patch(patches, rr, co, h.date) }
-    else if (cw >= 0) patch(patches, rr, cw, h.date)
+    if (h.type === 'HOLIDAY') { if (co >= 0) patch(patches, rr, co, h.date, true) }
+    else if (cw >= 0) patch(patches, rr, cw, h.date, true)
   })
   return patches
 }
@@ -332,7 +347,10 @@ export function fillAll(wb: XLSX.WorkBook, data: TemplateData): SheetPatch[] {
     const patches = fn(found.ws)
     if (patches.length) out.push({ sheetName: found.name, patches })
   }
-  push('项目管理', (ws) => fillProject(ws, data.tasks))
+  {
+    const proj = find('项目管理')
+    if (proj) out.push({ sheetName: proj.name, projectGrid: fillProject(proj.ws, data.tasks) })
+  }
   push('每周工作情况', (ws) => fillWeekly(ws, data.weekly))
   push('待办', (ws) => fillTodo(ws, data.todos))
   push('风险', (ws) => fillRisk(ws, data.risks))

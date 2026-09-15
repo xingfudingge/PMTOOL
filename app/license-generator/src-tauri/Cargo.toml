@@ -25,6 +25,11 @@ rand = "0.8"
 hex = "0.4"
 dirs = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
+ureq = { version = "2", features = ["json"] }
+chacha20poly1305 = "0.10"
+rfd = "0.14"
+sha2 = "0.10"
+regex = "1"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 # Include desktop-only features if needed

@@ -12,11 +12,34 @@
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
 import templateUrl from '@/assets/templates/pmtool_project_template.xlsx?url'
+import { rebuildProjectRows } from './projectGridWriter'
 
 /** 一个待写入的单元格（r/c 为 0 基行列；v 已序列化：日期为序列数(number)、其余 string|number） */
-export type CellPatch = { r: number; c: number; v: string | number }
+export type CellPatch = { r: number; c: number; v: string | number; isDate?: boolean }
 /** 一个 sheet 的全部补丁 */
-export interface SheetPatch { sheetName: string; patches: CellPatch[] }
+export interface SheetPatch { sheetName: string; patches?: CellPatch[]; projectGrid?: ProjectGridLayout }
+
+/** 「项目管理」数据区重排（保真：按模板自身 阶段行/任务行·蓝图 逐格生成，表头 rows 1..startRow-1 逐字节保留）。
+ * 上一版 fillProject 是“就近跳模板既有格位”，模板固定网格(5阶段+~30任务)塞不下任意深任务树→越界直接 break 丢弃。
+ * 本次改为：把任务树按 DFS 全量展开，阶段→阶段行、其余→任务行，阶段行公式(子行 MIN/MAX/加权)按真实子行区间重写，
+ * 并延展条件格式区间(甘特)与 dimension。 */
+export type ProjectGridRowKind = 'phase' | 'task'
+export interface ProjectGridRow {
+  row: number // 绝对 XML 行号（从 dataStartRow 起）
+  kind: ProjectGridRowKind
+  serial: string // A
+  name: string   // B
+  owner: string  // C
+  startSerial: number | null // D 仅 task 行（日期序列数）
+  natural: number | null     // F 仅 task 行
+  progress: number | null    // G 仅 task 行（0-1）
+  remark: string             // I
+  childRows: number[]        // 仅 phase 行：其下所有后代 task 行号（算 D/E/G 子行区间）
+}
+export interface ProjectGridLayout {
+  dataStartRow: number // 数据区首行（本项目 = 表头行 + 2，即 6）
+  rows: ProjectGridRow[]
+}
 
 let _templateBuf: ArrayBuffer | null = null
 
@@ -133,6 +156,7 @@ export function patch(patches: CellPatch[], r: number, c: number, v: unknown, is
     r,
     c,
     v: isDate && typeof v === 'string' ? (dateSerial(v) ?? v) : typeof v === 'number' ? v : String(v),
+    isDate,
   })
 }
 
@@ -159,13 +183,9 @@ function buildCellXml(addr: string, s: string, v: string | number): string {
 }
 
 /** 对单个地址做替换：命中已存在格（含公式格一律保留）则改值；否则插入 */
-<<<<<<< Updated upstream
-function replaceCell(xml: string, addr: string, v: string | number): string {
-=======
 function replaceCell(xml: string, addr: string, v: string | number, isDate = false, dateResolver?: (r: number, c: number, sourceS: string) => string): string {
   const rowNum = Number(/\d+$/.exec(addr)?.[1] ?? '0')
   const colNum = colIndexFromAddr(addr)
->>>>>>> Stashed changes
   const open = `<c r="${addr}"`
   const openIdx = xml.indexOf(open)
   if (openIdx >= 0) {
@@ -177,12 +197,8 @@ function replaceCell(xml: string, addr: string, v: string | number, isDate = fal
     // 公式格：绝不覆盖，保留模板公式
     if (/<f>/.test(block)) return xml
     const sM = /s="(\d+)"/.exec(block)
-<<<<<<< Updated upstream
-    const s = sM ? sM[1] : '0'
-=======
     let s = sM ? sM[1] : '0'
     if (isDate && dateResolver) s = dateResolver(rowNum, colNum, s)
->>>>>>> Stashed changes
     return xml.slice(0, openIdx) + buildCellXml(addr, s, v) + xml.slice(cellEnd)
   }
   // 未命中 → 读到行内，按列序插入
@@ -193,12 +209,8 @@ function replaceCell(xml: string, addr: string, v: string | number, isDate = fal
   if (rowOpen >= 0 && rowClose >= 0) {
     const rowBlock = xml.slice(rowOpen, rowClose)
     const sM = /<c[^>]*s="(\d+)"/.exec(rowBlock)
-<<<<<<< Updated upstream
-    const s = sM ? sM[1] : '0'
-=======
     let s = sM ? sM[1] : '0'
     if (isDate && dateResolver) s = dateResolver(rowNum, colNum, s)
->>>>>>> Stashed changes
     const newCell = buildCellXml(addr, s, v)
     let insertAt = rowClose
     for (const m of rowBlock.matchAll(/<c r="([A-Z]+\d+)"/g)) {
@@ -209,7 +221,7 @@ function replaceCell(xml: string, addr: string, v: string | number, isDate = fal
   // 行也不存在 → 在 </sheetData> 前新建一行（极少触发）
   const sdClose = xml.lastIndexOf('</sheetData>')
   if (sdClose >= 0) {
-    const newRow = `<row r="${row}" spans="1:${Math.max(col + 1, 1)}">${buildCellXml(addr, '0', v)}</row>`
+    const newRow = `<row r="${row}" spans="1:${Math.max(col + 1, 1)}"${isDate && dateResolver ? ` s="${dateResolver(rowNum, colNum, '0')}"` : ''}>${buildCellXml(addr, isDate && dateResolver ? dateResolver(rowNum, colNum, '0') : '0', v)}</row>`
     return xml.slice(0, sdClose) + newRow + xml.slice(sdClose)
   }
   return xml
@@ -227,9 +239,6 @@ function expandDimension(xml: string, maxRow: number, maxCol0: number): string {
   return xml.slice(0, match.index) + `${match[1]}A1:${newEnd}${match[3]}` + xml.slice(match.index + match[0].length)
 }
 
-<<<<<<< Updated upstream
-function applyCellPatchesToXml(xml: string, patches: CellPatch[]): string {
-=======
 function isDateFormat(code: string): boolean {
   const c = code.replace(/\\/g, '')
   return c.includes('yyy') || c.includes('m/d') || c.includes('dddd') || c.includes('aaa')
@@ -250,44 +259,52 @@ function collectColumnDateStyles(xml: string, dateStyles: Set<number>): Map<numb
 }
 
 // 解析 styles.xml：找出所有“日期数字格式”的 cellXf 索引，以及各填充/边框/字体下优先的日期样式，供日期单元格复用。
+// 数字格式码（去转义后的原始码）是否带“星期”（中文 aaaa 或英文 dddd）
+function isWeekdayCode(code: string): boolean {
+  const c = String(code).replace(/\\/g, '')
+  return c.includes('aaa') || c.includes('dddd')
+}
+
+// 解析 styles.xml：找出所有“日期数字格式”的 cellXf 索引。
+// 维护者 2026-09-14：登记册/项目管理日期一律要“带星期”，故 defaultDate 优先取星期格式（yyyy/m/d aaaa），
+// 而不是随便取首个带日期样式的格（那个常是纯日期或非数据格，导致同一列一正一错）。
 function parseDateStyles(sx: string): {
   dateStyles: Set<number>
-  dateStyleByFill: Map<number, number>
   defaultDate: number
-  fillByXf: number[]
+  styleCode: string[]
 } {
   const fm = new Map<string, string>()
   for (const m of sx.matchAll(/<numFmt numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) fm.set(m[1], m[2])
   const xfsMatch = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(sx)
   const xfAttrs = xfsMatch ? [...xfsMatch[1].matchAll(/<xf([^>]*?)\/?>/g)].map((m) => m[1]) : []
   const dateStyles = new Set<number>()
-  const dateStyleByFill = new Map<number, number>()
-  const fillByXf: number[] = []
+  const styleCode: string[] = []
   let defaultDate = 0
+  let firstWeekday = 0
   xfAttrs.forEach((attrs, i) => {
     const nf = Number(/numFmtId="(\d+)"/.exec(attrs)?.[1] ?? 0)
-    const fill = Number(/fillId="(\d+)"/.exec(attrs)?.[1] ?? 0)
-    fillByXf[i] = fill
     const code = fm.get(String(nf)) ?? ''
+    styleCode[i] = code
     if (isDateFormat(code)) {
       dateStyles.add(i)
-      if (!dateStyleByFill.has(fill)) dateStyleByFill.set(fill, i)
-      // 默认日期样式优先模板常用的 yyyy/m/d（177/178），否则取首个日期样式
-      if (nf === 178 || nf === 177) defaultDate = i
-      if (!defaultDate) defaultDate = i
+      if (isWeekdayCode(code)) {
+        if (!firstWeekday) firstWeekday = i
+      } else if (!defaultDate) {
+        defaultDate = i // 保底：若模板无星期格式日期，退回首个普通日期样式
+      }
     }
   })
-  return { dateStyles, dateStyleByFill, defaultDate, fillByXf }
+  if (firstWeekday) defaultDate = firstWeekday // 优先带星期的日期样式
+  return { dateStyles, defaultDate, styleCode }
 }
 
 function applyCellPatchesToXml(xml: string, patches: CellPatch[], dateResolver?: (r: number, c: number, sourceS: string) => string): string {
->>>>>>> Stashed changes
   let out = xml
   let maxRow = 0
   let maxCol0 = 0
   for (const p of patches) {
     const addr = XLSX.utils.encode_cell({ r: p.r, c: p.c })
-    out = replaceCell(out, addr, p.v)
+    out = replaceCell(out, addr, p.v, p.isDate === true, dateResolver)
     if (p.r + 1 > maxRow) maxRow = p.r + 1
     if (p.c + 1 > maxCol0) maxCol0 = p.c + 1
   }
@@ -313,23 +330,90 @@ async function loadSheetNameMap(zip: JSZip): Promise<Map<string, string>> {
   return map
 }
 
+// ==================== 「项目管理」数据区重排（保真生成）====================
+
+function escF(s: string): string {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** 读取模板里某数据行（阶段行/任务行）的“蓝图”：列→样式索引 + 行开标签 + 最大列号。
+ * 供重排时逐格克隆样式（含甘特 J..FU 的空样式格，条件格式靠 $D/$E/$G 上色）。 */
+interface RowBlueprint {
+  s: Map<number, string>
+  maxCol: number
+}
+function parseRowBlueprint(xml: string, sampleRow: number): RowBlueprint {
+  const s = new Map<number, string>()
+  let maxCol = 0
+  const re = new RegExp(`<c([^>]*?)r=\"([A-Z]+)\\d+\"((?:[^>]*?)\\?(?:>|/>)|[^>]*?/?>)`, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) && m) {
+    const addr = /r=\"(\d+)\"/.exec(xml.slice(m.index, m.index + 60))
+    if (addr && Number(addr[1]) !== sampleRow) continue
+    const colStr = m[2]
+    let n = 0
+    for (const ch of colStr) n = n * 26 + (ch.charCodeAt(0) - 64)
+    if (n > maxCol) maxCol = n
+    const sm = / s=\"(\d+)\"/.exec(m[0])
+    if (sm) s.set(n, sm[1])
+  }
+  return { s, maxCol }
+}
+
+function /** 把一个数据行生成为 OOXML 格串（阶段行/任务行共用：…) */
+_placeholder() {
+  return ''
+}
+
 /**
- * 保真导出入口：把各 sheet 的补丁以 XML 原位注入模板字节副本，返回新 Excel Blob。
  * 不覆盖任何公式格；保留全部样式/条件格式/数据验证/图形/冻结/命名区域；打开即重算。
  */
 export async function applyPatchesToTemplate(patchesBySheet: SheetPatch[]): Promise<Blob> {
   const buf = await loadTemplateBytes()
   const zip = await JSZip.loadAsync(new Uint8Array(buf))
   const nameToPart = await loadSheetNameMap(zip)
-  for (const { sheetName, patches } of patchesBySheet) {
-    if (!patches || patches.length === 0) continue
+  // 数字格式码 per cellXf 索引（用于判断是否“带星期”)
+  let styleCode: string[] = []
+  let dateStyles = new Set<number>()
+  let defaultDate = ''
+  const stylesFile = zip.file('xl/styles.xml')
+  if (stylesFile) {
+    const sx = await stylesFile.async('string')
+    const parsed = parseDateStyles(sx)
+    styleCode = parsed.styleCode
+    dateStyles = parsed.dateStyles
+    if (parsed.defaultDate !== 0) defaultDate = String(parsed.defaultDate)
+  }
+  for (const { sheetName, patches, projectGrid } of patchesBySheet) {
     const part = nameToPart.get(sheetName)
     if (!part) continue
     const path = 'xl/' + part
     const file = zip.file(path)
     if (!file) continue
     let xml = await file.async('string')
-    xml = applyCellPatchesToXml(xml, patches)
+    // 「项目管理」数据区重排（保真生成阶段/任务行）：优先走重排，不经格补丁
+    if (projectGrid && projectGrid.rows && projectGrid.rows.length) {
+      xml = rebuildProjectRows(xml, projectGrid)
+      zip.file(path, xml)
+      continue
+    }
+    if (!patches || patches.length === 0) continue
+    // 按列收集该 sheet 模板已用的日期样式（仅作补充；主要依据 defaultDate=星期格式，保证整列一致带星期）
+    const colDateStyle = collectColumnDateStyles(xml, dateStyles)
+    const resolver =
+      dateStyles.size > 0
+        ? (r: number, c: number, sourceS: string): string => {
+            const src = Number(sourceS)
+            // 目标格已是“星期”日期格式 → 保留；否则（纯日期/普通样式/新插入格）一律升级为模板的星期日期样式
+            if (defaultDate && !isWeekdayCode(styleCode[src] ?? '')) return defaultDate
+            if (dateStyles.has(src)) return sourceS
+            const col = colDateStyle.get(c)
+            if (col !== undefined)
+              return isWeekdayCode(styleCode[Number(col)] ?? '') ? col : defaultDate || col
+            return defaultDate || sourceS
+          }
+        : undefined
+    xml = applyCellPatchesToXml(xml, patches, resolver)
     zip.file(path, xml)
   }
   const wbFile = zip.file('xl/workbook.xml')

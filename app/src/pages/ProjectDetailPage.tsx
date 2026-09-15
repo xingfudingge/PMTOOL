@@ -1247,22 +1247,20 @@ function GanttTab({
       isParent: boolean
       rowIdx: number
       label: string
+      depth: number
     }> = []
-    parents.forEach((p, pIdx) => {
-      const parentNo = pIdx + 1
-      rows.push({ task: p, isParent: true, rowIdx: rows.length, label: String(parentNo) })
-      if (view === 'all' && expanded.has(p.id)) {
-        const children = childrenByParent.get(p.id) ?? []
-        children.forEach((c, cIdx) => {
-          rows.push({
-            task: c,
-            isParent: false,
-            rowIdx: rows.length,
-            label: `${parentNo}.${cIdx + 1}`,
-          })
-        })
-      }
-    })
+    // 递归 DFS：深度 0（大阶段）可折叠；更深层级（阶段明细 4.1 及其孙级 4.1.1…）始终下钻显示，不再被 2 层结构隐藏
+    const pushLevel = (list: ProjectTask[], prefix: string, depth: number) => {
+      list.forEach((n, i) => {
+        const label = depth === 0 ? String(i + 1) : `${prefix}.${i + 1}`
+        const kids = childrenByParent.get(n.id) ?? []
+        const hasKids = kids.length > 0
+        rows.push({ task: n, isParent: depth === 0, rowIdx: rows.length, label, depth })
+        const showKids = depth === 0 ? expanded.has(n.id) : true
+        if (view === 'all' && hasKids && showKids) pushLevel(kids, label, depth + 1)
+      })
+    }
+    pushLevel(parents, '', 0)
     return rows
   }, [parents, childrenByParent, expanded, view])
 
@@ -1376,12 +1374,13 @@ function GanttTab({
     setBusy(true)
     setError(null)
     try {
-      const [reqs, issLog, todos, risks, week] = await Promise.all([
+      const [reqs, issLog, todos, risks, week, members] = await Promise.all([
         listProjectRequirements(projectId),
         listProjectIssueLog(projectId),
         listProjectTodoItems(projectId),
         listProjectIssues(projectId),
         listWeeklyEntries(projectId),
+        listProjectMembers(projectId),
       ])
       await defaultHolidayProvider.load()
       const blob = await exportWholeProjectExcel({
@@ -1391,6 +1390,7 @@ function GanttTab({
         issues: issLog,
         todos,
         weeklyEntries: week,
+        members,
         holidays: defaultHolidayProvider.list(),
       })
       const ts = formatLocalDate(new Date())
@@ -1629,7 +1629,7 @@ function GanttTab({
                       display: 'flex',
                       alignItems: 'center',
                       gap: 4,
-                      paddingLeft: row.isParent ? 8 : 24,
+                      paddingLeft: row.isParent ? 8 : 8 + row.depth * 16,
                       paddingRight: 6,
                       borderBottom: '1px solid var(--color-border-thin)',
                       // sticky-left 需要不透明背景，避免滚动内容透出
@@ -2901,6 +2901,19 @@ function TaskPlanPanel({
     .filter((t) => t.parent_id === null)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 
+  // 全深度任务树：任意层级（父/子/孙…）都能按 parent_id 找到其子级，供阶段明细递归渲染（4.1.1 这类孙级不再被隐藏）
+  const taskTree = useMemo(() => {
+    const m = new Map<number | null, ProjectTask[]>()
+    for (const t of data.tasks) {
+      const k = t.parent_id ?? null
+      const a = m.get(k) ?? []
+      a.push(t)
+      m.set(k, a)
+    }
+    for (const list of m.values()) list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    return m
+  }, [data.tasks])
+
   // 默认全展开（折叠集合为空即展开）
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(() => new Set())
 
@@ -3350,6 +3363,7 @@ function TaskPlanPanel({
                   index={idx + 1}
                   parent={pt}
                   children={childTasks}
+                  tree={taskTree}
                   collapsed={collapsedIds.has(pt.id)}
                   onToggle={() => toggleCollapse(pt.id)}
                   onAddChild={() => handleAddChild(pt.id)}
@@ -3576,6 +3590,7 @@ function ParentTaskRow({
   index,
   parent,
   children,
+  tree,
   collapsed,
   onToggle,
   onAddChild,
@@ -3588,6 +3603,7 @@ function ParentTaskRow({
   index: number
   parent: ProjectTask
   children: ProjectTask[]
+  tree: Map<number | null, ProjectTask[]>
   collapsed: boolean
   onToggle: () => void
   onAddChild: () => void
@@ -3609,6 +3625,108 @@ function ParentTaskRow({
         : 'var(--color-text-tertiary)'
   const statusLabel = pct === 100 ? '完成' : pct > 0 ? '进行' : '未开始'
   const hasChildren = children.length > 0
+
+  // 递归渲染阶段明细：任意层级（4.1 → 4.1.1）都按 parent_id 子树继续下钻，序号按层级拼接（prefix.序号）
+  const renderLevel = (levelTasks: ProjectTask[], prefix: string, depth: number): React.ReactNode[] =>
+    levelTasks.map((c, k) => {
+      const seq = `${prefix}${k + 1}`
+      const grandkids = tree.get(c.id) ?? []
+      const isSubParent = grandkids.length > 0
+      return (
+        <Fragment key={c.id}>
+          <tr
+            data-testid={`child-task-row-${c.id}`}
+            style={isSubParent ? { background: 'rgba(59,130,246,0.05)' } : undefined}
+          >
+            <td
+              style={{
+                ...taskPlanTdStyle('80px', 'mono'),
+                whiteSpace: 'nowrap',
+                paddingLeft: depth > 0 ? 10 + (depth - 1) * 6 : 6,
+                color: depth > 0 ? 'var(--color-text-secondary)' : undefined,
+              }}
+            >
+              {seq}
+            </td>
+            <td style={taskPlanTdStyle()}>
+              <InlineEditableCell
+                value={c.task_name}
+                placeholder="任务名称"
+                onCommit={(v) => saveChildCell(c, { task_name: v })}
+              />
+            </td>
+            <td style={taskPlanTdStyle('76px')}>
+              <InlineEditableCell
+                value={c.owner}
+                placeholder="跟进人"
+                onCommit={(v) => saveChildCell(c, { owner: v || null })}
+              />
+            </td>
+            <td style={taskPlanTdStyle('96px', 'mono')}>
+              <InlineEditableCell
+                value={c.start_date}
+                type="date"
+                mono
+                onCommit={(v) => saveChildCell(c, { start_date: v || null })}
+              />
+            </td>
+            <td style={taskPlanTdStyle('96px', 'mono')} title="= 启动日期 + 自然日工时 - 1">
+              <InlineEditableCell value={c.end_date} mono readonly />
+            </td>
+            <td style={taskPlanTdStyle('64px', 'mono')}>
+              <InlineEditableCell
+                value={c.natural_days}
+                type="number"
+                mono
+                onCommit={(v) => saveChildCell(c, { natural_days: Math.max(0, Number(v) || 0) })}
+              />
+            </td>
+            <td style={taskPlanTdStyle('72px', 'mono')}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <InlineEditableCell
+                  value={Math.round(c.progress)}
+                  type="number"
+                  mono
+                  onCommit={(v) =>
+                    saveChildCell(c, { progress: Math.max(0, Math.min(100, Number(v) || 0)) })
+                  }
+                />
+                <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>%</span>
+              </span>
+            </td>
+            <td style={taskPlanTdStyle('64px', 'mono')} title="按启动→完成之间的工作日（含法定节假日排除）">
+              <InlineEditableCell
+                value={c.work_days > 0 ? `${c.work_days}天` : ''}
+                mono
+                readonly
+                displayFormatter={() => (c.work_days > 0 ? `${c.work_days}天` : '—')}
+              />
+            </td>
+            <td style={taskPlanTdStyle()}>
+              <InlineEditableCell
+                value={c.remark}
+                placeholder="任务完成情况说明"
+                onCommit={(v) => saveChildCell(c, { remark: v || null })}
+              />
+            </td>
+            <td style={taskPlanTdStyle('72px')}>
+              <div style={{ display: 'inline-flex', gap: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => onDeleteChild(c)}
+                  data-testid={`task-plan-child-delete-${c.id}`}
+                  title="删除子任务"
+                  style={{ ...rowIconBtnStyle, padding: '1px 4px', color: 'var(--color-status-danger)' }}
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            </td>
+          </tr>
+          {isSubParent && renderLevel(grandkids, `${seq}.`, depth + 1)}
+        </Fragment>
+      )
+    })
 
   /**
    * 保存子任务单元格变更（行内编辑）
@@ -3875,7 +3993,7 @@ function ParentTaskRow({
           >
             <thead>
               <tr>
-                <th style={taskPlanThStyle('46px')}>序号</th>
+                <th style={{ ...taskPlanThStyle('80px'), whiteSpace: 'nowrap' }}>序号</th>
                 <th style={taskPlanThStyle()}>任务</th>
                 <th style={taskPlanThStyle('76px')}>跟进人</th>
                 <th style={taskPlanThStyle('96px')}>计划启动日期</th>
@@ -3888,87 +4006,7 @@ function ParentTaskRow({
               </tr>
             </thead>
             <tbody>
-              {children.map((c, cIdx) => (
-                <tr key={c.id} data-testid={`child-task-row-${c.id}`}>
-                  <td style={taskPlanTdStyle('46px', 'mono')}>
-                    {index}.{cIdx + 1}
-                  </td>
-                  <td style={taskPlanTdStyle()}>
-                    <InlineEditableCell
-                      value={c.task_name}
-                      placeholder="任务名称"
-                      onCommit={(v) => saveChildCell(c, { task_name: v })}
-                    />
-                  </td>
-                  <td style={taskPlanTdStyle('76px')}>
-                    <InlineEditableCell
-                      value={c.owner}
-                      placeholder="跟进人"
-                      onCommit={(v) => saveChildCell(c, { owner: v || null })}
-                    />
-                  </td>
-                  <td style={taskPlanTdStyle('96px', 'mono')}>
-                    <InlineEditableCell
-                      value={c.start_date}
-                      type="date"
-                      mono
-                      onCommit={(v) => saveChildCell(c, { start_date: v || null })}
-                    />
-                  </td>
-                  <td style={taskPlanTdStyle('96px', 'mono')} title="= 启动日期 + 自然日工时 - 1">
-                    <InlineEditableCell value={c.end_date} mono readonly />
-                  </td>
-                  <td style={taskPlanTdStyle('64px', 'mono')}>
-                    <InlineEditableCell
-                      value={c.natural_days}
-                      type="number"
-                      mono
-                      onCommit={(v) => saveChildCell(c, { natural_days: Math.max(0, Number(v) || 0) })}
-                    />
-                  </td>
-                  <td style={taskPlanTdStyle('72px', 'mono')}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <InlineEditableCell
-                        value={Math.round(c.progress)}
-                        type="number"
-                        mono
-                        onCommit={(v) =>
-                          saveChildCell(c, { progress: Math.max(0, Math.min(100, Number(v) || 0)) })
-                        }
-                      />
-                      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>%</span>
-                    </span>
-                  </td>
-                  <td style={taskPlanTdStyle('64px', 'mono')} title="按启动→完成之间的工作日（含法定节假日排除）">
-                    <InlineEditableCell
-                      value={c.work_days > 0 ? `${c.work_days}天` : ''}
-                      mono
-                      readonly
-                      displayFormatter={() => (c.work_days > 0 ? `${c.work_days}天` : '—')}
-                    />
-                  </td>
-                  <td style={taskPlanTdStyle()}>
-                    <InlineEditableCell
-                      value={c.remark}
-                      placeholder="任务完成情况说明"
-                      onCommit={(v) => saveChildCell(c, { remark: v || null })}
-                    />
-                  </td>
-                  <td style={taskPlanTdStyle('72px')}>
-                    <div style={{ display: 'inline-flex', gap: 4 }}>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteChild(c)}
-                        data-testid={`task-plan-child-delete-${c.id}`}
-                        title="删除子任务"
-                        style={{ ...rowIconBtnStyle, padding: '1px 4px', color: 'var(--color-status-danger)' }}
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {renderLevel(children, `${index}.`, 0)}
             </tbody>
           </table>
         </div>
@@ -5979,7 +6017,7 @@ const confirmOverlayStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
   zIndex: 300,
-  background: 'rgba(0,0,0,0.4)',
+  background: 'var(--glass-overlay)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -5987,10 +6025,13 @@ const confirmOverlayStyle: React.CSSProperties = {
 
 const confirmBoxStyle: React.CSSProperties = {
   width: '420px',
-  background: 'var(--color-surface)',
-  borderRadius: 'var(--radius-md)',
+  background: 'var(--glass-bg-strong)',
+  backdropFilter: 'var(--glass-blur)',
+  WebkitBackdropFilter: 'var(--glass-blur)',
+  border: '1px solid var(--glass-border)',
+  borderRadius: 'var(--radius-xl)',
   padding: '20px',
-  border: '1px solid var(--color-border-thin)',
+
 }
 
 const confirmTitleStyle: React.CSSProperties = {
@@ -7575,7 +7616,7 @@ function FilesTab({
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.35)',
+  background: 'var(--glass-overlay)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -7587,13 +7628,16 @@ function FilesTab({
         >
           <div
             style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
+              background: 'var(--glass-bg-strong)',
+              backdropFilter: 'var(--glass-blur)',
+              WebkitBackdropFilter: 'var(--glass-blur)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: 'var(--radius-xl)',
+
               padding: 20,
               minWidth: 380,
               maxWidth: 520,
-              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+              boxShadow: 'var(--glass-shadow)',
             }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') cancelCreate()

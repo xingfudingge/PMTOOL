@@ -140,9 +140,6 @@ export interface UnifiedNode extends DbFolder {
   isSystem?: boolean
 }
 
-/** 个人知识中心顶部虚拟「目录」根 id（与 DB 无对应 · 用 0 不冲突） */
-const VIRTUAL_ROOT_ID = 0
-
 function toNoteNode(n: DbNote): UnifiedNode {
   return {
     id: n.id,
@@ -202,26 +199,12 @@ export function buildUnifiedTree(
     }
   }
 
-  // 个人知识中心：最上插“目录”虚拟根
+  // 个人知识中心：不再包裹一层系统「目录」伪根，直接把真实文件夹/知识平铺在顶层。
+  // 与项目知识库一致（项目每库一个真实根，目录直接挂它下面），避免出现「多出的根目录」。
   if (opts.withVirtualRoot) {
     const rootNotes = notes.filter((n) => n.folderId == null)
-    const virtual: UnifiedNode = {
-      id: VIRTUAL_ROOT_ID,
-      parentId: null,
-      space: folders[0]?.space ?? 'personal',
-      spaceId: folders[0]?.spaceId ?? null,
-      projectId: null,
-      name: '目录',
-      systemType: 'ROOT',
-      sortOrder: -1,
-      createdAt: '',
-      updatedAt: '',
-      kind: 'root',
-      children: [...folderRoots, ...rootNotes.map((n) => toNoteNode(n))],
-      expanded: true,
-      isSystem: true,
-    }
-    return [virtual]
+    const visible = folderRoots.filter((n) => n.kind !== 'project-root')
+    return [...visible, ...rootNotes.map((n) => toNoteNode(n))]
   }
 
   return folderRoots

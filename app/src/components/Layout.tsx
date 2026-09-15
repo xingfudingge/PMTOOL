@@ -15,7 +15,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Sidebar } from './Sidebar'
-import { TopBar } from './TopBar'
 import { ToastHost } from './Toast'
 import { useEditingMaximized, clearEditingMaximizedOnBoot } from './DocumentEditor/editingMaximized'
 import { useSettings } from '@/state/SettingsProvider'
@@ -67,21 +66,6 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
         overflow: 'hidden',
       }}
     >
-      {/* 维护者 2026-08-31：编辑区最大化时把顶栏收起（height:0 + overflow:hidden）*/}
-      <div
-        style={{
-          height: editingMaximized ? 0 : 'auto',
-          // 编辑最大化时折叠顶栏需要 hidden；正常时用 visible，否则绝对定位的下拉菜单会被裁掉
-          overflow: editingMaximized ? 'hidden' : 'visible',
-          flexShrink: 0,
-        }}
-      >
-              <TopBar
-          currentPage={currentPage}
-          theme={resolvedTheme}
-          onToggleTheme={() => save('theme', resolvedTheme === 'dark' ? 'light' : 'dark')}
-        />
-      </div>
       <div
         style={{
           flex: 1,

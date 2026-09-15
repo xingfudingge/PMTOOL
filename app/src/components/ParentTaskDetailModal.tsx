@@ -759,7 +759,7 @@ export function ParentTaskDetailModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.4)',
+        background: 'var(--glass-overlay)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -771,9 +771,12 @@ export function ParentTaskDetailModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           ...containerStyle,
-          background: 'var(--color-surface)',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.18)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'var(--glass-blur)',
+          WebkitBackdropFilter: 'var(--glass-blur)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: 'var(--glass-radius)',
+          boxShadow: 'var(--glass-shadow)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -3308,7 +3311,7 @@ function TaskExcelRow({
             style={{
               fontSize: '10px',
               padding: '1px 6px',
-              borderRadius: 999,
+              borderRadius: 'var(--radius-xl)',
               background: 'rgba(255, 77, 79, 0.12)',
               color: COLOR_DELAYED,
               fontWeight: 500,
@@ -3379,7 +3382,7 @@ function TaskExcelRow({
             display: 'inline-block',
             padding: '2px 8px',
             fontSize: '11px',
-            borderRadius: 999,
+            borderRadius: 'var(--radius-xl)',
             background: statusBg(task.status),
             color: statusFg(task.status),
             textAlign: 'center',
@@ -3704,7 +3707,7 @@ function ConfirmCascadeModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.5)',
+        background: 'var(--glass-overlay)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -3716,10 +3719,13 @@ function ConfirmCascadeModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '440px',
-          background: 'var(--color-surface)',
-          borderRadius: 'var(--radius-md)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'var(--glass-blur)',
+          WebkitBackdropFilter: 'var(--glass-blur)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: 'var(--glass-radius)',
           padding: '24px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.2)',
+          boxShadow: 'var(--glass-shadow)',
         }}
       >
         <div

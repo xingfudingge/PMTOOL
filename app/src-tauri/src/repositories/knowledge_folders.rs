@@ -275,17 +275,23 @@ pub fn cascade_delete(conn: &mut Connection, id: i64) -> rusqlite::Result<Vec<St
         if leaf_pass > 512 {
             return Err(rusqlite::Error::InvalidQuery);
         }
-        let placeholders = remaining.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let n = remaining.len();
+        // 外层 id IN 用 ?1..?n，内层子查询用 ?n+1..?2n（同一集合 bind 两次）。
+        // 不能复用同一个占位串：否则 SQL 里有 2n 个 ? 但只 bind n 个，报
+        // "Wrong number of parameters"。
+        let outer = (1..=n).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
+        let inner = (n + 1..=2 * n).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
         let leaf_ids: Vec<i64> = {
             let sql = format!(
                 "SELECT id FROM knowledge_folders \
-                 WHERE id IN ({0}) \
+                 WHERE id IN ({}) \
                    AND id NOT IN (SELECT parent_id FROM knowledge_folders \
-                                  WHERE id IN ({0}) AND parent_id IS NOT NULL)",
-                placeholders
+                                  WHERE id IN ({}) AND parent_id IS NOT NULL)",
+                outer, inner
             );
+            let params = remaining.iter().chain(remaining.iter());
             let mut stmt = tx.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(remaining.iter()), |r| {
+            let rows = stmt.query_map(rusqlite::params_from_iter(params), |r| {
                 r.get::<_, i64>(0)
             })?;
             rows.collect::<Result<Vec<_>, _>>()?

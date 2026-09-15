@@ -1016,7 +1016,7 @@ function ReportContentModal({
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: maximized ? 'var(--color-bg)' : 'rgba(0, 0, 0, 0.5)',
+        background: maximized ? 'var(--color-bg)' : 'var(--glass-overlay)',
         display: 'flex',
         alignItems: maximized ? 'stretch' : 'center',
         justifyContent: maximized ? 'stretch' : 'center',
@@ -1026,7 +1026,10 @@ function ReportContentModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: 'var(--color-surface)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'var(--glass-blur)',
+          WebkitBackdropFilter: 'var(--glass-blur)',
+          border: '1px solid var(--glass-border)',
           borderRadius: maximized ? 0 : 12,
           padding: maximized ? '14px 22px' : '20px 22px',
           maxWidth: maximized ? '100%' : 720,
@@ -1035,7 +1038,7 @@ function ReportContentModal({
           height: maximized ? '100vh' : undefined,
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: maximized ? '0 16px 48px rgba(0,0,0,0.3)' : '0 12px 40px rgba(0, 0, 0, 0.25)',
+          boxShadow: 'var(--glass-shadow)',
         }}
       >
         <div

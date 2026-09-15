@@ -785,7 +785,7 @@ function AutomationSection() {
     <TimePicker value={get(key) ?? '09:00'} onChange={(v) => saveSchedule(key, v)} testid={`${key}-picker`} minuteStep={1} />
   )
   const toggleField = (key: string) => <Toggle checked={get(key) === '1'} onChange={(v) => save(key, v ? '1' : '0')} />
-  // 变更调度配置（周几/几号/时间/顺延）时，清掉该任务的 lastRun/ignored。
+  // 变更调度配置（周几/几号/时间/跳过工作日）时，清掉该任务的 lastRun/ignored。
   // 否则旧时间已触发并写入 lastRun=今天，改新时间后 shouldFire 判定「今天已执行」永不触发。
   const saveSchedule = (key: string, value: string) => {
     const task = key.startsWith('autoWeekly')
@@ -797,24 +797,29 @@ function AutomationSection() {
           : null
     save(key, value)
     if (!task) return
-    // 只有报告主开关开着，且改的是该任务的调度键，才需要重置执行记录
+    // 只对报告的调度键（时间/周几/几号/跳过工作日）重置执行记录
     const mainKey = 'auto' + (task === 'daily' ? 'Daily' : task === 'weekly' ? 'Weekly' : 'Monthly') + 'Report'
-    if (key !== mainKey && key !== mainKey + 'Time' && key !== mainKey + 'Day' && key !== mainKey + 'Carryover') return
-    if (get(mainKey) !== '1') return
+    const isScheduleKey = key === mainKey || key === mainKey + 'Time' || key === mainKey + 'Day' || key === mainKey + 'Carryover'
+    if (!isScheduleKey) return
     void save('autoTask_lastRun_' + task, '')
     void save('autoTask_ignored_' + task, '')
   }
 
   const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-  const DAY_OPTIONS = ['last', ...Array.from({ length: 31 }, (_, i) => String(i + 1))]
-  const keyToDayLabel = (k: string) => (k === 'last' ? '每月最后一天' : `每月 ${parseInt(k, 10)} 日`)
+  const DAY_OPTIONS = ['last', 'lastworkday', ...Array.from({ length: 31 }, (_, i) => String(i + 1))]
+  const keyToDayLabel = (k: string) => {
+    if (k === 'last') return '每月最后一天'
+    if (k === 'lastworkday') return '每月最后一个工作日'
+    return `每月 ${parseInt(k, 10)} 日`
+  }
   const weekSelect = (
     <select
       className="pm-time"
       value={get('autoWeeklyReportDay') ?? '5'}
-      style={{ maxWidth: '110px', flexShrink: 0 }}
+      style={{ maxWidth: '140px', flexShrink: 0 }}
       onChange={(e) => saveSchedule('autoWeeklyReportDay', e.target.value)}
     >
+      <option value="lastworkday">每周最后一个工作日</option>
       {WEEKDAYS.map((w, i) => (
         <option key={String(i + 1)} value={String(i + 1)}>{w}</option>
       ))}
@@ -824,19 +829,13 @@ function AutomationSection() {
     <select
       className="pm-time"
       value={get('autoMonthlyReportDay') ?? 'last'}
-      style={{ maxWidth: '150px', flexShrink: 0 }}
-      onChange={(e) => save('autoMonthlyReportDay', e.target.value)}
+      style={{ maxWidth: '170px', flexShrink: 0 }}
+      onChange={(e) => saveSchedule('autoMonthlyReportDay', e.target.value)}
     >
       {DAY_OPTIONS.map((d) => (
         <option key={d} value={d}>{keyToDayLabel(d)}</option>
       ))}
     </select>
-  )
-  const carrySwitch = (key: string, label: string) => (
-    <span className="ms-carry">
-      {toggleField(key)}
-      <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>{label}</span>
-    </span>
   )
   const miniToggle = (key: string, label: string) => (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
@@ -847,46 +846,42 @@ function AutomationSection() {
   return (
     <>
       <SectionHeader title="自动化" desc="自动顺延 · 自动生成日报/周报/月报" />
-      <Field label="任务自动顺延">
-        <span style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) max-content', alignItems: 'center', gap: '10px', width: '100%' }}>
-          {toggleField('autoPostpone')}
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{timeField('postponeTime')}<span style={{ flex: 1 }} /></span>
-          <span />
-        </span>
-      </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 60px 60px 60px 124px 90px 96px', alignItems: 'center', gap: '8px 12px', rowGap: '12px', width: '100%', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>报告自动生成</span>
-          <span style={{ textAlign: 'center' }}>开启</span>
-          <span style={{ textAlign: 'center' }}>个人</span>
-          <span style={{ textAlign: 'center' }}>项目</span>
-          <span style={{ textAlign: 'center' }}>日期</span>
-          <span style={{ textAlign: 'center' }}>时间</span>
-          <span style={{ textAlign: 'center' }}>工作日顺延</span>
+<div style={{ display: 'grid', gridTemplateColumns: '120px 56px 56px 150px 110px 80px', alignItems: 'center', gap: '20px', rowGap: '13px', width: '100%', fontSize: '12px' }}>
+<span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>任务自动顺延</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoPostpone')}</span>
+<span />
+<span />
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('postponeTime')}</span>
+<span />
 
-          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>日报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReport')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportPersonal')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportProject')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoDailyReportTime')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportCarryover')}</span>
+<span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>报告自动生成</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>个人</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>项目</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>日期</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>时间</span>
+<span style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>跳过工作日</span>
 
-          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>周报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReport')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportPersonal')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportProject')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{weekSelect}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoWeeklyReportTime')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportCarryover')}</span>
+<span style={{ fontWeight: 500, color: 'var(--color-text)' }}>日报</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportPersonal')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportProject')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoDailyReportTime')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoDailyReportCarryover')}</span>
 
-          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>月报</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReport')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportPersonal')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportProject')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{daySelect}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoMonthlyReportTime')}</span>
-          <span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportCarryover')}</span>
-        </div>
+<span style={{ fontWeight: 500, color: 'var(--color-text)' }}>周报</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportPersonal')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoWeeklyReportProject')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{weekSelect}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoWeeklyReportTime')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
+
+<span style={{ fontWeight: 500, color: 'var(--color-text)' }}>月报</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportPersonal')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{toggleField('autoMonthlyReportProject')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{daySelect}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}>{timeField('autoMonthlyReportTime')}</span>
+<span style={{ display: 'flex', justifyContent: 'center' }}><span /></span>
+</div>
       <Field label="启动补偿提醒">
         <span className="pms-row">
           {toggleField('autoCompensationReminder')}
@@ -897,7 +892,7 @@ function AutomationSection() {
       </Field>
       <div className="pms-msg">
         到点后自动执行对应任务（应用开启时有效）。周报/月报需报告中心已有周期日报数据。
-        开启「工作日顺延」后，若触发日为节假日/周末，自动顺延到下一个工作日执行；应用未开启期间错过的任务，启动时补偿提示。
+        日报开启「跳过工作日」后，若触发日为节假日/周末，当天不生成日报；周报/月报可在日期中选「最后一个工作日」（参考法定节假日与调休上班日）。应用未开启期间错过的任务，启动时补偿提示。
       </div>
     </>
   )

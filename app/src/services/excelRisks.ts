@@ -69,11 +69,12 @@ function mapLevel(v: unknown): ProjectIssue['level'] {
 }
 
 export function levelToCN(level: ProjectIssue['level']): string {
+  // 模板下拉仅 高/中/低，CRITICAL 归并入“高”
   switch (level) {
     case 'LOW': return '低'
     case 'MEDIUM': return '中'
     case 'HIGH': return '高'
-    case 'CRITICAL': return '严重'
+    case 'CRITICAL': return '高'
     default: return '中'
   }
 }
@@ -82,7 +83,8 @@ function mapStatus(v: unknown): ProjectIssue['status'] {
   const t = toStr(v)
   if (!t) return 'OPEN'
   const s = t.toLowerCase()
-  if (s === '待应对' || s === '未处理' || s === '未解决' || s === 'open') return 'OPEN'
+  // 模板下拉合法值：识别中/应对中/已关闭
+  if (s === '待应对' || s === '识别中' || s === '未处理' || s === '未解决' || s === 'open') return 'OPEN'
   if (s === '应对中' || s === '处理中' || s === 'in_progress' || s === 'inprogress' || s === 'in progress') return 'IN_PROGRESS'
   if (s === '已应对' || s === '已解决' || s === 'resolved') return 'RESOLVED'
   if (s === '已关闭' || s === '关闭' || s === 'closed') return 'CLOSED'
@@ -90,12 +92,13 @@ function mapStatus(v: unknown): ProjectIssue['status'] {
 }
 
 export function statusToCN(status: ProjectIssue['status']): string {
+  // 模板下拉仅 识别中/应对中/已关闭；RESOLVED/CLOSED 归并入“已关闭”
   switch (status) {
-    case 'OPEN': return '待应对'
+    case 'OPEN': return '识别中'
     case 'IN_PROGRESS': return '应对中'
-    case 'RESOLVED': return '已应对'
+    case 'RESOLVED': return '已关闭'
     case 'CLOSED': return '已关闭'
-    default: return status
+    default: return '识别中'
   }
 }
 
