@@ -392,7 +392,7 @@
             margin-bottom: 14px;
         }
 
-        /* 首启：选择工作目录
+        /* 首启：选择工作目录 */
         .workdir-mask { z-index: 999; }
         .workdir-body {
             font-size: 12px;
@@ -698,6 +698,21 @@
                 <input type="file" id="importFile" accept=".json" style="display:none;" onchange="onImportFileSelected(event)">
             </div>
 
+            <!-- 数据目录：更换存放位置（已有数据一并迁移） -->
+            <div class="card">
+                <div class="label">数据目录</div>
+                <div class="backup-help">
+                    授权记录与备份配置保存在当前数据目录。更换目录会把已有数据一并迁移到新位置，避免丢失历史授权。
+                </div>
+                <div class="sub-row">
+                    <div class="label">当前目录</div>
+                    <div class="input-field" id="backupWorkdirCur" style="font-family:inherit;font-size:11px;overflow-wrap:anywhere;">—</div>
+                </div>
+                <div class="btn-row" style="margin-top:8px;">
+                    <button class="sub-btn primary" onclick="onChangeDataDir()">更换数据目录…</button>
+                </div>
+            </div>
+
             <!-- WebDAV 备份配置 -->
             <div class="card">
                 <div class="label">WebDAV 备份</div>
@@ -769,7 +784,7 @@
                 b.classList.toggle('active', b.dataset.tab === name);
             });
             if (name === 'history') refreshHistory();
-            if (name === 'backup') loadWebdavCfg();
+            if (name === 'backup') { loadWebdavCfg(); loadWorkdirStatus(); }
         }
 
         // ============ 期限 / 日期联动 ============
@@ -1047,6 +1062,30 @@
                 refreshHistory();
             } catch (e) {
                 showMsg('导入失败（已回滚）：' + e);
+            }
+        }
+
+        // ============ 数据目录（备份页） ============
+
+        async function loadWorkdirStatus() {
+            try {
+                const [set, dir] = await window.__TAURI__.core.invoke('get_workdir_status');
+                document.getElementById('backupWorkdirCur').textContent = dir;
+            } catch (e) {
+                document.getElementById('backupWorkdirCur').textContent = '读取失败';
+            }
+        }
+
+        async function onChangeDataDir() {
+            const p = await window.__TAURI__.core.invoke('pick_workdir');
+            if (!p) return;
+            try {
+                const msg = await window.__TAURI__.core.invoke('set_workdir', { path: p });
+                showMsg(msg, 'success');
+                loadWorkdirStatus();
+                refreshHistory();
+            } catch (e) {
+                showMsg('设置数据目录失败：' + e);
             }
         }
 

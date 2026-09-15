@@ -459,10 +459,25 @@ fn pick_workdir() -> Result<Option<String>, String> {
 #[tauri::command]
 fn set_workdir(path: String) -> Result<String, String> {
     let target = PathBuf::from(path.trim());
-    std::fs::create_dir_all(&target).map_err(|e| format!("目录不可写：{}", e))?;
+    std::fs::create_dir_all(&target).map_err(|e| format!("目标目录不可写：{}", e))?;
+
+    // 迁移已有业务数据到新目录：避免更换数据目录后"丢授权记录/丢备份配置"。
+    // 与主应用 set_data_root 同模式，但仅当来源文件存在且目标无同名文件时复制，
+    // 不覆盖目标已有内容，保证数据完整性。
+    let src = get_pmtool_dir();
+    if src != target {
+        for name in ["issue_history.json", "webdav_config.json"] {
+            let from = src.join(name);
+            let to = target.join(name);
+            if from.is_file() && !to.exists() {
+                let _ = std::fs::copy(&from, &to);
+            }
+        }
+    }
+
     workdir::write_workdir_override(path.trim())
-        .map_err(|e| format!("保存工作目录失败：{}", e))?;
-    Ok("已设置工作目录".to_string())
+        .map_err(|e| format!("保存数据目录失败：{}", e))?;
+    Ok("已设置数据目录，已有数据已一并迁移".to_string())
 }
 
 // ============== Main Entry ==============
