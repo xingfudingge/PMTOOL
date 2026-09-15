@@ -21,6 +21,9 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+// 编译期嵌入的迁移列表（build.rs 生成；生产安装后 cwd 变化，运行时找不到相对目录时回退用）
+include!(concat!(env!("OUT_DIR"), "/migrations.rs"));
+
 /// 应用数据库连接（带 Mutex 保护）
 pub type DbPool = Mutex<Connection>;
 
@@ -73,18 +76,15 @@ fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     // 但因为 include_str! 在编译时确定，这里用 try_include_str! 风格不可行
     // 实际方案：开发期从相对路径读取，生产期由 build.rs 嵌入
 
-    // 简化：先支持运行时读取 + 编译时 fallback
-    let migrations_dir = find_migrations_dir();
-
-    match migrations_dir {
-        Some(dir) => {
-            // 运行时读取模式（开发 + 生产）
-            run_migrations_from_dir(conn, &dir)
-        }
-        None => {
-            eprintln!("[Migration] ⚠️ 找不到 migrations 目录，使用空 schema（首次运行）");
-            Ok(())
-        }
+    // 开发期 cwd=项目根能找到运行时目录；生产安装后 cwd 变化 → 回退编译期嵌入。
+    if let Some(dir) = find_migrations_dir() {
+        eprintln!("[Migration] 运行时目录: {:?}", dir);
+        let entries = list_migration_files(&dir)?;
+        let refs: Vec<(&str, &str)> = entries.iter().map(|(n, s)| (n.as_str(), s.as_str())).collect();
+        run_migrations_from_list(conn, &refs)
+    } else {
+        eprintln!("[Migration] 运行时目录不可用，使用编译期嵌入的迁移");
+        run_migrations_from_list(conn, &MIGRATIONS)
     }
 }
 
@@ -107,37 +107,48 @@ fn find_migrations_dir() -> Option<PathBuf> {
     None
 }
 
-/// 从目录读取并执行 migrations
-fn run_migrations_from_dir(conn: &Connection, dir: &PathBuf) -> Result<(), rusqlite::Error> {
-    // 收集 .sql 文件
-    let entries: Vec<PathBuf> = std::fs::read_dir(dir)
+/// 按文件名排序收集运行时 .sql 文件（仅开发期 cwd=项目根可命中）
+fn list_migration_files(dir: &PathBuf) -> Result<Vec<(String, String)>, rusqlite::Error> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .map_err(|e| {
             eprintln!("[Migration] 读取目录失败: {:?}", e);
-            rusqlite::Error::QueryReturnedNoRows // placeholder，实际应该自定义错误类型
+            rusqlite::Error::QueryReturnedNoRows
         })?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("sql"))
         .collect();
+    files.sort();
 
-    // 按文件名排序（0001 → 0002 → ...）
-    let mut entries = entries;
-    entries.sort();
-
-    eprintln!("[Migration] 发现 {} 个迁移文件", entries.len());
-
-    for path in entries {
-        let filename = path
+    let mut out = Vec::new();
+    for path in files {
+        let name = path
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown")
             .to_string();
+        let sql = std::fs::read_to_string(&path).map_err(|e| {
+            eprintln!("[Migration] 读取文件失败 {:?}: {:?}", path, e);
+            rusqlite::Error::QueryReturnedNoRows
+        })?;
+        out.push((name, sql));
+    }
+    Ok(out)
+}
 
+/// 通用迁移执行：接收 (文件名, SQL) 列表（运行时读取 / 编译期嵌入共用）
+fn run_migrations_from_list(
+    conn: &Connection,
+    migrations: &[(&str, &str)],
+) -> Result<(), rusqlite::Error> {
+    eprintln!("[Migration] 发现 {} 个迁移文件", migrations.len());
+
+    for &(filename, sql) in migrations {
         // 检查是否已应用
         let already_applied: bool = conn
             .query_row(
                 "SELECT 1 FROM migrations WHERE filename = ?1",
-                [&filename],
+                rusqlite::params![filename],
                 |_| Ok(true),
             )
             .optional()
@@ -150,11 +161,6 @@ fn run_migrations_from_dir(conn: &Connection, dir: &PathBuf) -> Result<(), rusql
         }
 
         eprintln!("[Migration] 应用: {}", filename);
-
-        let sql = std::fs::read_to_string(&path).map_err(|e| {
-            eprintln!("[Migration] 读取文件失败 {:?}: {:?}", path, e);
-            rusqlite::Error::QueryReturnedNoRows
-        })?;
 
         // drizzle-kit 格式：按 `--> statement-breakpoint` 拆分
         let statements: Vec<&str> = sql
@@ -184,7 +190,7 @@ fn run_migrations_from_dir(conn: &Connection, dir: &PathBuf) -> Result<(), rusql
         // 记录已应用（OR IGNORE · 兼容 schema.sql 末尾预插的 INSERT OR IGNORE INTO migrations）
         conn.execute(
             "INSERT OR IGNORE INTO migrations (filename) VALUES (?1)",
-            [&filename],
+            rusqlite::params![filename],
         )?;
     }
 
