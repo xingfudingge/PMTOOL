@@ -12,21 +12,24 @@ use uuid::Uuid;
 mod auth_backup;
 mod workdir;
 
-// ============== Key Management ==============
+// ============== Key Management (方案 A：官方密钥固化，与工作目录解耦) ==============
+// 官方私钥由 build.rs 在编译期从 GitHub Actions 的 LG_PRIVATE_KEY 注入并
+// include_bytes! 嵌入二进制：随安装包固化，不随工作目录/首启/重装/换机变化，
+// 绝不自动"新造一套"。
 
-fn get_pmtool_dir() -> PathBuf {
+// 编译期嵌入的官方私钥 PEM（由 build.rs 写入 OUT_DIR）。
+static OFFICIAL_PRIVATE_KEY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/official_private_key.pem"));
+
+// 与私钥配对的官方公钥（随客户端安装包固化，编译期嵌入）。
+const PUBLIC_KEY_PEM: &str = include_str!("../keys/generator_public.pem");
+
+/// 业务数据目录（仅存 issue_history / WebDAV 配置等，不含签发密钥）。
+pub fn get_pmtool_dir() -> PathBuf {
     workdir::pmtool_base_dir()
 }
 
-fn get_private_key_path() -> PathBuf {
-    get_pmtool_dir().join("license_generator_private.pem")
-}
-
-fn get_public_key_path() -> PathBuf {
-    get_pmtool_dir().join("license_generator_public.pem")
-}
-
-fn create_pmtool_dir() -> std::result::Result<(), String> {
+/// 创建业务数据目录（若不存在）。
+pub fn create_pmtool_dir() -> std::result::Result<(), String> {
     let pmtool_dir = get_pmtool_dir();
     if !pmtool_dir.exists() {
         fs::create_dir_all(&pmtool_dir)
@@ -35,69 +38,62 @@ fn create_pmtool_dir() -> std::result::Result<(), String> {
     Ok(())
 }
 
-pub fn generate_key_pair() -> std::result::Result<(ed25519_dalek::SigningKey, ed25519_dalek::VerifyingKey), String> {
-    create_pmtool_dir()?;
-
-    let mut csprng = rand::thread_rng();
-    let signing_key = ed25519_dalek::SigningKey::generate(&mut csprng);
-    let verifying_key = signing_key.verifying_key();
-
-    let private_key_bytes: [u8; SECRET_KEY_LENGTH] = *signing_key.as_bytes();
-    let private_pem = format!(
-        "-----BEGIN ED25519 PRIVATE KEY-----\n{}\n-----END ED25519 PRIVATE KEY-----",
-        hex::encode(private_key_bytes)
-    );
-    fs::write(get_private_key_path(), &private_pem)
-        .map_err(|e| format!("Failed to write private key: {}", e))?;
-
-    let public_key_bytes: [u8; PUBLIC_KEY_LENGTH] = *verifying_key.as_bytes();
-    let public_pem = format!(
-        "-----BEGIN ED25519 PUBLIC KEY-----\n{}\n-----END ED25519 PUBLIC KEY-----",
-        hex::encode(public_key_bytes)
-    );
-    fs::write(get_public_key_path(), &public_pem)
-        .map_err(|e| format!("Failed to write public key: {}", e))?;
-
-    Ok((signing_key, verifying_key))
-}
-
-pub fn load_key_pair() -> std::result::Result<(ed25519_dalek::SigningKey, ed25519_dalek::VerifyingKey), String> {
-    if !get_private_key_path().exists() || !get_public_key_path().exists() {
-        return generate_key_pair();
+/// 从嵌入的官方私钥 PEM 解析 Ed25519 签名私钥。
+/// 私钥来源为编译期嵌入的 OFFICIAL_PRIVATE_KEY，不读运行时文件、不随工作目录。
+pub fn load_embedded_signing_key() -> std::result::Result<ed25519_dalek::SigningKey, String> {
+    let pem_str = std::str::from_utf8(OFFICIAL_PRIVATE_KEY)
+        .map_err(|e| format!("官方私钥编码错误: {}", e))?;
+    // 若未注入（dev 编译下 LG_PRIVATE_KEY 为空），给出明确提示而非静默新造。
+    if pem_str.trim().is_empty() {
+        return Err("未嵌入官方私钥：构建时需从 LG_PRIVATE_KEY 注入官方密钥".to_string());
     }
-
-    let private_pem = fs::read_to_string(get_private_key_path())
-        .map_err(|e| format!("Failed to read private key: {}", e))?;
-    let private_hex = private_pem
+    let hex_body = pem_str
         .lines()
-        .filter(|line| !line.starts_with("-----"))
+        .filter(|l| !l.starts_with("-----"))
         .collect::<Vec<_>>()
         .join("");
-    let private_bytes = hex::decode(&private_hex)
-        .map_err(|e| format!("Failed to decode private key hex: {}", e))?;
-    let mut private_array = [0u8; SECRET_KEY_LENGTH];
-    private_array.copy_from_slice(&private_bytes[..SECRET_KEY_LENGTH]);
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&private_array);
+    let bytes = hex::decode(&hex_body)
+        .map_err(|e| format!("官方私钥 hex 解析失败: {}", e))?;
+    if bytes.len() != ed25519_dalek::SECRET_KEY_LENGTH {
+        return Err(format!("官方私钥长度无效（期望 {} 字节）", ed25519_dalek::SECRET_KEY_LENGTH));
+    }
+    let mut arr = [0u8; ed25519_dalek::SECRET_KEY_LENGTH];
+    arr.copy_from_slice(&bytes);
+    Ok(ed25519_dalek::SigningKey::from_bytes(&arr))
+}
 
-    let public_pem = fs::read_to_string(get_public_key_path())
-        .map_err(|e| format!("Failed to read public key: {}", e))?;
-    let public_hex = public_pem
+/// 官方公钥（随客户端嵌入，与私钥配对）。
+pub fn load_public_key() -> std::result::Result<ed25519_dalek::VerifyingKey, String> {
+    use ed25519_dalek::VerifyingKey;
+    let pem_str = PUBLIC_KEY_PEM;
+    let hex_body = pem_str
         .lines()
-        .filter(|line| !line.starts_with("-----"))
+        .filter(|l| !l.starts_with("-----"))
         .collect::<Vec<_>>()
         .join("");
-    let public_bytes = hex::decode(&public_hex)
-        .map_err(|e| format!("Failed to decode public key hex: {}", e))?;
-    let mut public_array = [0u8; PUBLIC_KEY_LENGTH];
-    public_array.copy_from_slice(&public_bytes[..PUBLIC_KEY_LENGTH]);
-    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&public_array)
-        .map_err(|e| format!("Failed to create verifying key: {}", e))?;
+    let bytes = hex::decode(&hex_body)
+        .map_err(|e| format!("官方公钥 hex 解析失败: {}", e))?;
+    if bytes.len() != ed25519_dalek::PUBLIC_KEY_LENGTH {
+        return Err(format!("官方公钥长度无效（期望 {} 字节）", ed25519_dalek::PUBLIC_KEY_LENGTH));
+    }
+    let mut arr = [0u8; ed25519_dalek::PUBLIC_KEY_LENGTH];
+    arr.copy_from_slice(&bytes);
+    VerifyingKey::from_bytes(&arr).map_err(|e| format!("官方公钥格式无效: {}", e))
+}
 
+
+/// 加载/保持官方密钥对：签名私钥来自编译期嵌入的 OFFICIAL_PRIVATE_KEY，
+/// 验证公钥来自客户端嵌入的 PUBLIC_KEY_PEM。两者恒为同一对，不随工作目录/首启/重装变化。
+pub fn load_key_pair() -> std::result::Result<(ed25519_dalek::SigningKey, ed25519_dalek::VerifyingKey), String> {
+    let signing_key = load_embedded_signing_key()?;
+    let verifying_key = load_public_key()?;
     Ok((signing_key, verifying_key))
 }
 
+/// 是否已具备官方密钥能力（私钥已嵌入且公钥已嵌入）。
 pub fn key_exists() -> bool {
-    get_private_key_path().exists() && get_public_key_path().exists()
+    !OFFICIAL_PRIVATE_KEY.is_empty()
+        && !PUBLIC_KEY_PEM.trim().is_empty()
 }
 
 // ============== Simplified License Payload ==============

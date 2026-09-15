@@ -39,6 +39,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: app/license-generator
+        env:
+          # 方案 A：构建时注入官方私钥（由 build.rs 编进安装包），保证生成器用稳定官方密钥
+          LG_PRIVATE_KEY: ${{ secrets.LG_PRIVATE_KEY }}
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
