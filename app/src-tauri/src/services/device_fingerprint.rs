@@ -78,10 +78,12 @@ fn get_stable_hardware_id() -> Option<String> {
         {
             if let Ok(txt) = String::from_utf8(output.stdout) {
                 if let Some(idx) = txt.find("MachineGuid") {
+                    // 值行形如: MachineGuid    REG_SZ    <guid>（同一行），取行内最后一个非空 token
                     let rest = &txt[idx..];
-                    if let Some(line) = rest.lines().nth(1) {
+                    if let Some(line) = rest.lines().next() {
                         let id = line.trim().split_whitespace().last().unwrap_or("");
-                        if !id.is_empty() {
+                        // 长度守卫：防止误取 REG_SZ 等字段，MachineGuid 为 36 位 GUID
+                        if id.len() >= 16 && id.chars().any(|c| c == '-') {
                             return Some(format!("windows::{}", id));
                         }
                     }
@@ -92,14 +94,120 @@ fn get_stable_hardware_id() -> Option<String> {
     }
 }
 
+/// 无法读取硬件 UUID 时的**稳定兜底**（绝不 panic）：
+/// 以所有网卡 MAC + 已安装目录哈希出确定性 ID，使同一台机器仍得到同一指纹。
+fn fallback_stable_id() -> String {
+    use sha2::{Sha256, Digest};
+    let mut h = Sha256::new();
+    h.update(b"pmtool-device-fallback-v1");
+
+    if let Some(macs) = collect_mac_addresses() {
+        h.update(b"mac:");
+        h.update(macs.as_bytes());
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            h.update(b"exe:");
+            h.update(parent.to_string_lossy().as_bytes());
+        }
+    }
+
+    let r = h.finalize();
+    format!("fallback::{}", hex::encode(&r[..16]))
+}
+
+/// 收集本机所有网卡 MAC（跳过回环），排序去重后逗号拼接。
+fn collect_mac_addresses() -> Option<String> {
+    let mut macs: Vec<String> = Vec::new();
+
+    // macOS：ifconfig -a 里的 ether 行
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(o) = Command::new("ifconfig").arg("-a").output() {
+            if let Ok(t) = String::from_utf8(o.stdout) {
+                for line in t.lines() {
+                    let l = line.trim();
+                    if l.starts_with("ether ") {
+                        if let Some(e) = l.strip_prefix("ether ") {
+                            let mac = e.split_whitespace().next().unwrap_or("");
+                            if !mac.is_empty() {
+                                macs.push(mac.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Linux：读 /sys/class/net/*/address（跳过 lo 与全零）
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(rd) = std::fs::read_dir("/sys/class/net") {
+            for e in rd.flatten() {
+                let ifname = e.file_name().to_string_lossy().into_owned();
+                if ifname == "lo" {
+                    continue;
+                }
+                if let Ok(s) = std::fs::read_to_string(e.path().join("address")) {
+                    let mac = s.trim();
+                    if !mac.is_empty() && mac != "00:00:00:00:00:00" {
+                        macs.push(format!("{}={}", ifname, mac));
+                    }
+                }
+            }
+        }
+    }
+
+    // Windows：getmac 输出（MAC 形如 aa-bb-cc-dd-ee-ff）
+    #[cfg(target_os = "windows")]
+    {
+        for cmd in [["getmac", "/fo", "csv", "/nh"], ["getmac", "/fo", "list", "/v"]] {
+            if let Ok(o) = Command::new(cmd[0]).args(&cmd[1..]).output() {
+                if let Ok(t) = String::from_utf8(o.stdout) {
+                    for m in t.split_whitespace() {
+                        if is_mac_like(m) {
+                            macs.push(m.trim_matches(&['\"', ',', '\''][..]).to_string());
+                        }
+                    }
+                }
+            }
+            if !macs.is_empty() {
+                break;
+            }
+        }
+    }
+
+    macs.sort();
+    macs.dedup();
+    if macs.is_empty() {
+        None
+    } else {
+        Some(macs.join(","))
+    }
+}
+
+/// 粗略判断一段文本是否像 MAC（>=12 个十六进制字符，且含 - 或 :）
+fn is_mac_like(s: &str) -> bool {
+    let t = s.trim().trim_end_matches(&['\"', ',', '\''][..]);
+    let hexn = t.chars().filter(|c| c.is_ascii_hexdigit()).count();
+    hexn >= 15 && (t.contains('-') || t.contains(':'))
+}
+
 impl DeviceFingerprint {
     /// 生成设备指纹（**纯确定性**，仅基于平台硬件 UUID）
     /// **绝不含**：随机数、时间戳、hostname（用户可改）、CPU 型号等可能漂移的字段
     pub fn generate() -> Self {
         use sha2::{Sha256, Digest};
 
-        let hardware_id = get_stable_hardware_id()
-            .expect("无法获取硬件 UUID（IOPlatformUUID / machine-id / MachineGuid）");
+        let hardware_id = get_stable_hardware_id().unwrap_or_else(|| {
+            let fb = fallback_stable_id();
+            crate::services::logging::log_line(&format!(
+                "[WARN] 无法读取平台硬件 UUID，回退到 MAC/安装目录指纹: {}",
+                fb
+            ));
+            fb
+        });
 
         // 直接对硬件 UUID 做 SHA-256，无任何额外输入
         let mut sha_hasher = Sha256::new();
