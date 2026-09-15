@@ -56,7 +56,7 @@
 | 构建产物 | `dist/` `build/` `app/dist/` | 编译产物，可重现 |
 | Rust 产物 | `target/` `**/target/` `**/*.rs.bk` | cargo 自动生成 |
 | 密钥 | `**/private*.pem` `**/secret*.key` `keys/` | 安全风险 |
-| 本地数据 | `pmtool.db` `pmtool.db-*` `PMToolData/` `com.example.pmtool/` | 用户私有数据 |
+| 本地数据 | `pmtool.db` `pmtool.db-*` `PMToolData/` `com.pmtool/` | 用户私有数据 |
 | 测试产物 | `coverage/` `playwright-report/` `*.json`（license generator）| 临时结果 |
 | 日志 | `*.log` `pnpm-debug.log*` | 临时 |
 | 编辑器 | `.idea/` `.vscode/` `.DS_Store` `*.swp` | 个人环境 |
