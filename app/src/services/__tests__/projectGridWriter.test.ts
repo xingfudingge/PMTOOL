@@ -9,10 +9,10 @@
  */
 import { describe, it, expect } from 'vitest'
 import { rebuildProjectRows } from '../projectGridWriter'
-import type { ProjectGridLayout } from '../templateWriter'
+import type { ProjectGridLayout, ProjectGridRow } from '../templateWriter'
 
 function makeLayout(maxRow: number): ProjectGridLayout {
-  const rows = []
+  const rows: ProjectGridRow[] = []
   for (let r = 6; r <= maxRow; r++) {
     rows.push({
       row: r,
