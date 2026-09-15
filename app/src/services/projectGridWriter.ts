@@ -151,11 +151,19 @@ export function rebuildProjectRows(xml: string, layout: ProjectGridLayout): stri
   const samples = findSamples(xml, start)
   const phaseBp = parseBp(xml, samples.phase)
   const taskBp = parseBp(xml, samples.task)
-  const head = xml.slice(0, rowIdx)
+  let head = xml.slice(0, rowIdx)
   const tail = xml.slice(sdIdx)
   let body = ''
   for (const row of layout.rows) body += buildRow(row, phaseBp, taskBp)
   const maxRow = layout.rows.length ? Math.max(...layout.rows.map((x) => x.row)) : start
+  // 关键修复：模板 R1/R2 的「项目持续周数」汇总公式引用的是固定示例行区间
+  //   C2 = MINIFS(D6:D34, D6:D34, ">0")        （最早计划启动日期的周一 → 甘特起点）
+  //   AQ1 = INT((MAX($E$6:$E$53) - 起点)/7)+1  （项目持续周数 → 甘特终点 = 最晚日期所在周周日）
+  // 当任务树实际行数超过模板预留的最大行(53)时，最晚任务日期落在区间外，
+  // MAX 算不到 → 该项目持续周数偏小 → 甘特图在(最晚任务之前)提前截断。
+  // 这里按实际最大行 maxRow 动态扩展这两个区间的结束行，使甘特图正确覆盖到「最晚日期所在周的周日」。
+  if (maxRow > 34) head = head.replaceAll('D6:D34', `D6:D${maxRow}`)
+  if (maxRow > 53) head = head.replaceAll('$E$6:$E$53', `$E$6:$E$${maxRow}`)
   let out = head + body + tail
   // 延展条件格式(甘特)区间到 maxRow
   out = out.replace(/sqref="([A-Z]+\d+):([A-Z]+\d+)"/g, (mm, s0, e0) => {
