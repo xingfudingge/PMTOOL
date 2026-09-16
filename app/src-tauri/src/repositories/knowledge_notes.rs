@@ -94,19 +94,6 @@ pub fn list_by_space(conn: &Connection, space_id: i64) -> rusqlite::Result<Vec<K
     rows.collect()
 }
 
-/// 列出某空间类型下的所有笔记（'personal'/'project'）
-/// 用于前端兼容旧 API，按 space 类型筛选
-pub fn list_by_space_type(conn: &Connection, space: &str) -> rusqlite::Result<Vec<KnowledgeNote>> {
-    let sql = format!(
-        "SELECT {} FROM knowledge_notes WHERE space = ?1 \
-         ORDER BY pinned DESC, updated_at DESC",
-        SELECT_COLS
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params![space], row_to_knowledge_note)?;
-    rows.collect()
-}
-
 pub fn get_by_id(conn: &Connection, id: i64) -> rusqlite::Result<Option<KnowledgeNote>> {
     let sql = format!("SELECT {} FROM knowledge_notes WHERE id = ?1", SELECT_COLS);
     let mut stmt = conn.prepare(&sql)?;
@@ -198,6 +185,17 @@ pub fn upsert(conn: &Connection, input: KnowledgeNoteInput) -> rusqlite::Result<
     };
 
     get_by_id(conn, final_id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+}
+
+/// 移动笔记到另一目录（folder_id=None 表示移到顶层）· 仅改归属，不动 updated_at
+/// 原因：移动不是内容编辑 —— updated_at 驱动列表排序与前端编辑器 key，
+/// 刷新它会连带打乱列表顺序并导致编辑器 remount。
+pub fn move_to_folder(conn: &Connection, id: i64, folder_id: Option<i64>) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        "UPDATE knowledge_notes SET folder_id = ?2 WHERE id = ?1",
+        params![id, folder_id],
+    )?;
+    Ok(n > 0)
 }
 
 /// 删除知识笔记及其关联的附件（级联删除由外键约束处理）

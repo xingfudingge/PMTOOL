@@ -9,7 +9,10 @@
  *
  * 三者必须保持一致（RFC-01 §9 实施约束）。
  *
- * 验收样例 #1：PM 决策 A1 后，schema 应为 16 张表。
+ * 验收样例 #1：schema.sql SHALL 与登记的表基线完全一致。
+ *   原断言「16 张表（PM 决策 A1）」冻结于 Phase 0（见验收清单 §10 风险 7），
+ *   Phase 5+/知识中心重构已合法扩展到 22 张表。2026-09-16 改为精确表名白名单：
+ *   允许 schema 演进，但新表必须显式登记进 EXPECTED_TABLES，保留漂移守护意图。
  */
 
 import { describe, it, expect } from 'vitest'
@@ -19,14 +22,37 @@ import { resolve } from 'node:path'
 const SCHEMA_SQL_PATH = resolve(__dirname, '../../../../database/schema.sql')
 const INIT_SQL_PATH = resolve(__dirname, '../../../../database/migrations/0001_init.sql')
 
+// schema.sql 当前基线（22 张表）· 新增表必须显式加入此处，测试即漂移守护
+const EXPECTED_TABLES = [
+  'attachments',
+  'audit_logs',
+  'holidays',
+  'knowledge_folders',
+  'knowledge_note_tags',
+  'knowledge_notes',
+  'knowledge_tags',
+  'license',
+  'project_issue_log',
+  'project_issues',
+  'project_members',
+  'project_requirements',
+  'project_tasks',
+  'project_todo_items',
+  'projects',
+  'reports',
+  'system_config',
+  'template_variables',
+  'templates',
+  'todos',
+  'weekly_report_entries',
+  'work_schedule',
+]
+
 describe('Schema 三方一致性', () => {
-  // 已知失败 · 三方冲突冻结（C 方案）· 等 RFC 决策（schema.sql=20 vs PM A1=16）
-  // 不允许 it.skip · 测试该失败就失败 · 记录在 V8/验收/Phase0-4验证清单.md §10 风险 7
-  it('schema.sql 包含 16 张表（PM 决策 A1）', () => {
+  it('schema.sql 表集合与基线一致（当前 22 张 · 漂移即失败）', () => {
     const sql = readFileSync(SCHEMA_SQL_PATH, 'utf-8')
-    const tableMatches = sql.match(/CREATE TABLE IF NOT EXISTS \w+/g) ?? []
-    const tableCount = tableMatches.length
-    expect(tableCount).toBe(16) // PM 决策 A1：正式基线 16 张表
+    const tables = [...sql.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map(m => m[1])
+    expect([...tables].sort()).toEqual([...EXPECTED_TABLES].sort())
   })
 
   it('schema.sql 不含已废除的 source_type（TODO/PLAN/RISK/AI）', () => {

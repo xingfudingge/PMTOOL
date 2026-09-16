@@ -107,7 +107,7 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
       await createProject({
         projectCode: input.projectCode,
         projectName: input.projectName,
-        status: 'PLANNING',
+        status: 'START',
         priority: 'NORMAL',
       })
       setShowCreate(false)

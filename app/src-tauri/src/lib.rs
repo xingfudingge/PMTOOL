@@ -48,6 +48,9 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // 前端 @tauri-apps/plugin-dialog（DocumentEditor 导出 .md / 导入 Markdown）依赖此插件，
+        // 未注册时 invoke plugin:dialog|* 会报 "Command not found"
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 获取应用数据目录（RFC-03 §2：使用 OS 应用数据目录）
             let default_data_dir = app
@@ -214,6 +217,7 @@ pub fn run() {
             commands::knowledge::get_knowledge_note,
             commands::knowledge::upsert_knowledge_note,
             commands::knowledge::delete_knowledge_note,
+            commands::knowledge::move_knowledge_note,
             commands::knowledge::search_knowledge_notes,
             commands::knowledge::search_knowledge_notes_by_space_type,
             // 知识目录 commands（维护者 2026-08-31 · Phase C 三栏布局）

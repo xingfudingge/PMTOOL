@@ -53,7 +53,7 @@ export const projects = sqliteTable('projects', {
   projectCode: text('project_code').notNull().unique(),
   projectName: text('project_name').notNull(),
   customerName: text('customer_name'),
-  status: text('status').notNull().default('PLANNING'),
+  status: text('status').notNull().default('START'),
   priority: text('priority').notNull().default('NORMAL'),
   owner: text('owner'),
   startDate: text('start_date'),

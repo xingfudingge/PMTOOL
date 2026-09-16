@@ -19,6 +19,12 @@
  *
  * 删除一律走 DeleteConfirmDialog（设计文档 §2）。
  * 真删除在后端已级联（数据库 + BlockNote 内容 + 附件记录 + 本地文件）。
+ *
+ * 拖拽移动（2026-09-16 · 文件管理器式）：
+ *   - 知识节点可拖起（HTML5 DnD · WebView 需 tauri.conf dragDropEnabled:false）
+ *   - 放置目标：目录行 / 真实根目录行 / 聚合模式知识库行（= 该库顶层）/ 树空白区「松开：移动到顶层」（非聚合）
+ *   - 跨知识库不开放移动（space_id 涉及附件/绑定语义）；后端 move_knowledge_note 二次校验同库
+ *   - 移动只改 folder_id，不动 updated_at（避免打乱列表排序、避免编辑器 remount）
  */
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
@@ -51,7 +57,6 @@ import {
 } from './tree'
 import {
   listKnowledgeNotes,
-  listKnowledgeNotesBySpaceType,
   listKnowledgeFolders,
   listKnowledgeFoldersByProject,
   listKnowledgeFoldersBySpaceId,
@@ -60,6 +65,7 @@ import {
   upsertKnowledgeNote,
   deleteKnowledgeFolder,
   deleteKnowledgeNote,
+  moveKnowledgeNote,
   getKnowledgeNote,
   type KnowledgeNote as DbNote,
   type KnowledgeFolder as DbFolder,
@@ -291,6 +297,88 @@ export function KnowledgeTreeView({
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // ───────── 拖拽移动（文件管理器式：拖动知识 → 悬停目标高亮 → 落下移动） ─────────
+  const [drag, setDrag] = useState<{ note: DbNote } | null>(null)
+  const [dropKey, setDropKey] = useState<string | null>(null)
+
+  const resetDrag = useCallback(() => {
+    setDrag(null)
+    setDropKey(null)
+  }, [])
+
+  /**
+   * 计算某节点的放置目标；null = 不可放置（知识节点自身 / 跨知识库目录）。
+   * - folder / 真实根目录行 → 移入该目录（folderId = node.id）
+   * - 聚合模式的知识库行（node.id 即 spaceId，非目录 id）→ 移到该库顶层（folderId = null）
+   * - 跨知识库不允许（数据按空间归属，移动 space_id 涉及附件/绑定语义，暂不开放）
+   */
+  const dropTargetOf = useCallback(
+    (node: UnifiedNode): DropTarget | null => {
+      if (!drag) return null
+      if (node.kind === 'note') return null
+      if (node.spaceId != null && node.spaceId !== drag.note.spaceId) return null
+      if (node.kind === 'folder') {
+        return { key: `f:${node.id}`, folderId: node.id, label: node.name }
+      }
+      // project-root / root：聚合模式下 id 是知识库 spaceId → 顶层；否则是真实根目录 → 移入该目录
+      if (aggregate) {
+        return { key: `r:${node.id}`, folderId: null, label: node.name }
+      }
+      return { key: `r:${node.id}`, folderId: node.id, label: node.name }
+    },
+    [drag, aggregate],
+  )
+
+  /** 执行移动（同位置 no-op；成功后 toast + 刷新树） */
+  const moveNoteTo = useCallback(
+    async (target: DropTarget) => {
+      const note = drag?.note
+      if (!note) return
+      if ((note.folderId ?? null) === target.folderId) {
+        resetDrag()
+        return
+      }
+      try {
+        await moveKnowledgeNote(note.id, target.folderId)
+        toast.success(
+          target.folderId == null
+            ? `已将「${note.title || '未命名'}」移动到顶层`
+            : `已将「${note.title || '未命名'}」移动到「${target.label}」`,
+        )
+        await refresh()
+      } catch (e) {
+        toast.error(`移动失败：${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        resetDrag()
+      }
+    },
+    [drag, refresh, resetDrag],
+  )
+
+  const dnd = useMemo<TreeDnd>(
+    () => ({
+      dragging: drag != null,
+      draggingNoteId: drag?.note.id ?? null,
+      dropKey,
+      setHover: setDropKey,
+      onNoteDragStart: (n, e) => {
+        e.dataTransfer.effectAllowed = 'move'
+        try {
+          e.dataTransfer.setData('text/plain', String(n.id))
+        } catch {
+          /* WebView 个别情况下 setData 受限，不影响组件内状态拖拽 */
+        }
+        setDrag({ note: n })
+      },
+      onDragEnd: resetDrag,
+      dropTargetOf,
+      drop: (t) => {
+        void moveNoteTo(t)
+      },
+    }),
+    [drag, dropKey, dropTargetOf, moveNoteTo, resetDrag],
+  )
 
   // ───────── 树组装 ─────────
   const tree = useMemo(
@@ -660,7 +748,58 @@ export function KnowledgeTreeView({
             </button>
           )}
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 6px 16px' }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '6px 6px 16px',
+            ...(drag && !aggregate && dropKey === 'container'
+              ? { background: 'rgba(127, 127, 127, 0.08)' }
+              : null),
+          }}
+          onDragOver={(e) => {
+            // 空白处 = 当前知识空间顶层（聚合视图顶层有多个库，禁用此语义）
+            if (!drag || aggregate) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            if (dropKey !== 'container') setDropKey('container')
+          }}
+          onDrop={(e) => {
+            if (!drag || aggregate) return
+            e.preventDefault()
+            void moveNoteTo({ key: 'container', folderId: null, label: '顶层' })
+          }}
+        >
+          {/* 拖拽中显示「移到顶层」落点，避免密集树没有空白处可投 */}
+          {drag && !aggregate && (
+            <div
+              style={{
+                margin: '0 2px 6px',
+                padding: '5px 8px',
+                fontSize: 12,
+                color: 'var(--color-text-tertiary)',
+                border: '1px dashed var(--color-border)',
+                borderRadius: 'var(--radius)',
+                textAlign: 'center',
+                ...(dropKey === 'container'
+                  ? { borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'rgba(127, 127, 127, 0.08)' }
+                  : null),
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                e.dataTransfer.dropEffect = 'move'
+                if (dropKey !== 'container') setDropKey('container')
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                void moveNoteTo({ key: 'container', folderId: null, label: '顶层' })
+              }}
+            >
+              松开：移动到顶层
+            </div>
+          )}
           {loading && folders.length === 0 ? (
             <div style={{ padding: 16, fontSize: 12, color: 'var(--color-text-tertiary)' }}>加载中…</div>
           ) : tree.length === 0 ? (
@@ -673,6 +812,7 @@ export function KnowledgeTreeView({
                 key={`${node.kind}:${node.id}`}
                 node={node}
                 depth={0}
+                dnd={dnd}
                 activeNoteId={activeNoteId}
                 onOpenNote={openNote}
                 onCreateChildFolder={(parentId) => createFolder(parentId)}
@@ -885,9 +1025,30 @@ function SaveBridge(_props: { onSaved: () => void | Promise<void> }): null {
 // TreeNodeRow（递归 · 悬停 ⋯ 菜单按 nodeKind 决定）
 // ============================================================
 
+/** 拖拽放置目标（由 dropTargetOf 计算） */
+interface DropTarget {
+  key: string
+  /** null = 移到顶层 */
+  folderId: number | null
+  label: string | null
+}
+
+/** 拖拽上下文（主组件 → 递归 TreeNodeRow 透传） */
+interface TreeDnd {
+  dragging: boolean
+  draggingNoteId: number | null
+  dropKey: string | null
+  setHover: (key: string | null) => void
+  onNoteDragStart: (n: DbNote, e: React.DragEvent) => void
+  onDragEnd: () => void
+  dropTargetOf: (node: UnifiedNode) => DropTarget | null
+  drop: (t: DropTarget) => void
+}
+
 interface TreeNodeRowProps {
   node: UnifiedNode
   depth: number
+  dnd: TreeDnd
   activeNoteId: number | null
   onOpenNote: (n: DbNote) => void
   onCreateChildFolder: (parentId: number | null) => Promise<DbFolder | null>
@@ -907,6 +1068,7 @@ interface TreeNodeRowProps {
 function TreeNodeRow({
   node,
   depth,
+  dnd,
   activeNoteId,
   onOpenNote,
   onCreateChildFolder,
@@ -942,6 +1104,12 @@ function TreeNodeRow({
   const isFolder = node.kind === 'folder'
   const hasChildren = node.children.length > 0
 
+  // ── 拖拽：note 可拖起；目录/根/知识库行是放置目标 ──
+  const isNote = node.kind === 'note'
+  const draggingSelf = isNote && dnd.draggingNoteId === node.id
+  const target = dnd.dragging ? dnd.dropTargetOf(node) : null
+  const isHover = !!target && dnd.dropKey === target.key
+
   const submitRename = () => {
     const v = renameValue.trim()
     if (v && v !== node.name && isFolder) {
@@ -962,7 +1130,28 @@ function TreeNodeRow({
 
   return (
     <div>
-      <div style={rowContainerStyle}>
+      <div
+        style={rowContainerStyle}
+        onDragOver={(e) => {
+          if (!dnd.dragging) return
+          // 行内吃掉事件，阻止冒泡到树容器（否则拖到知识/无效目标上会误触发「移到顶层」）
+          e.stopPropagation()
+          if (target) {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            if (dnd.dropKey !== target.key) dnd.setHover(target.key)
+          } else if (dnd.dropKey) {
+            dnd.setHover(null)
+          }
+        }}
+        onDrop={(e) => {
+          if (!dnd.dragging) return
+          e.stopPropagation()
+          if (!target) return
+          e.preventDefault()
+          dnd.drop(target)
+        }}
+      >
         {renaming && isFolder ? (
           <input
             autoFocus
@@ -986,7 +1175,20 @@ function TreeNodeRow({
         ) : (
           <button
             type="button"
-            style={rowStyle(isActive, depth)}
+            style={{
+              ...rowStyle(isActive, depth),
+              ...(isHover
+                ? { background: 'var(--color-bg-active)', boxShadow: 'inset 0 0 0 1.5px var(--color-accent)' }
+                : null),
+              ...(draggingSelf ? { opacity: 0.45 } : null),
+            }}
+            draggable={isNote}
+            onDragStart={(e) => {
+              if (isNote && node.note) dnd.onNoteDragStart(node.note, e)
+            }}
+            onDragEnd={() => {
+              if (isNote) dnd.onDragEnd()
+            }}
             onClick={() => {
               if (node.kind === 'note' && node.note) onOpenNote(node.note)
               else if (hasChildren) setExpanded((v) => !v)
@@ -1149,6 +1351,7 @@ function TreeNodeRow({
               key={`${c.kind}:${c.id}`}
               node={c}
               depth={depth + 1}
+              dnd={dnd}
               activeNoteId={activeNoteId}
               onOpenNote={onOpenNote}
               onCreateChildFolder={onCreateChildFolder}

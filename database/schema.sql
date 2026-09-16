@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS projects (
     project_code    TEXT NOT NULL UNIQUE,
     project_name    TEXT NOT NULL,
     customer_name   TEXT,
-    status          TEXT NOT NULL DEFAULT 'PLANNING',  -- 五态：START/PLANNING/EXECUTING/MONITORING/CLOSING
+    status          TEXT NOT NULL DEFAULT 'START',  -- 五态：START/PLANNING/EXECUTING/MONITORING/CLOSING（新建默认启动）
     priority        TEXT NOT NULL DEFAULT 'NORMAL',    -- LOW/NORMAL/HIGH/URGENT
     owner           TEXT,                                -- 项目负责人
     start_date      DATE,

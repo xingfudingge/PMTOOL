@@ -4,6 +4,8 @@
   "description": "PMTool V2.0 默认权限",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "shell:default",
+    "dialog:default"
   ]
 }

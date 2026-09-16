@@ -55,16 +55,6 @@ pub fn list_knowledge_folders_by_space_id(
     repo::list_by_space_id(&conn, space_id).map_err(|e| e.to_string())
 }
 
-/// 获取单个目录
-#[tauri::command]
-pub fn get_knowledge_folder(
-    state: State<'_, AppState>,
-    id: i64,
-) -> Result<Option<KnowledgeFolder>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    repo::get_by_id(&conn, id).map_err(|e| e.to_string())
-}
-
 /// 创建或更新目录
 #[tauri::command]
 pub fn upsert_knowledge_folder(

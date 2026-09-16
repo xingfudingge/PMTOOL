@@ -8,11 +8,10 @@
  *
  * 对应 Rust commands/knowledge.rs：
  *   - list_knowledge_notes(space_id)
- *   - list_knowledge_notes_by_space_type(space)  // 兼容旧 API
  *   - get_knowledge_note(id)
  *   - upsert_knowledge_note(note)
  *   - delete_knowledge_note(id)
- *   - search_knowledge_notes_by_space(space_id, query)
+ *   - search_knowledge_notes(space_id, query)
  *   - search_knowledge_notes_by_space_type(space, query)  // 兼容旧 API
  */
 
@@ -109,16 +108,6 @@ export async function listKnowledgeNotes(
 }
 
 /**
- * 列出某个空间类型下的所有笔记（兼容旧 API）
- * @param space 'personal' | 'project'
- */
-export async function listKnowledgeNotesBySpaceType(
-  space: KnowledgeSpace,
-): Promise<KnowledgeNote[]> {
-  return await invoke<KnowledgeNote[]>('list_knowledge_notes_by_space_type', { space })
-}
-
-/**
  * 获取单个知识笔记
  * @deprecated 使用 listKnowledgeNotes 代替
  */
@@ -145,13 +134,26 @@ export async function deleteKnowledgeNote(id: number): Promise<boolean> {
 }
 
 /**
+ * 移动知识笔记到目录（树内拖拽 · 文件管理器式）
+ * @param folderId null = 移到顶层；后端校验目标目录与笔记同属一个知识空间
+ */
+export async function moveKnowledgeNote(
+  id: number,
+  folderId: number | null,
+): Promise<boolean> {
+  return await invoke<boolean>('move_knowledge_note', { id, folderId })
+}
+
+/**
  * 全文搜索：按知识空间 ID 筛选
  */
 export async function searchKnowledgeNotesBySpace(
   spaceId: number,
   query: string,
 ): Promise<KnowledgeNote[]> {
-  return await invoke<KnowledgeNote[]>('search_knowledge_notes_by_space', {
+  // 命令名必须与 lib.rs 注册的 search_knowledge_notes 一致（曾误写为
+  // search_knowledge_notes_by_space → 全局搜索报 "Command not found"）
+  return await invoke<KnowledgeNote[]>('search_knowledge_notes', {
     spaceId,
     query,
   })
@@ -203,15 +205,6 @@ export async function listKnowledgeFoldersBySpaceId(
   return await invoke<KnowledgeFolder[]>('list_knowledge_folders_by_space_id', {
     spaceId,
   })
-}
-
-/**
- * 获取单个目录
- */
-export async function getKnowledgeFolder(
-  id: number,
-): Promise<KnowledgeFolder | null> {
-  return await invoke<KnowledgeFolder | null>('get_knowledge_folder', { id })
 }
 
 /**

@@ -7,7 +7,7 @@
  *   - 项目知识中心通过 project_knowledge_bindings 绑定到项目知识空间
  *
  * 对应 Rust repositories/knowledge_notes.rs：
- *   - list_by_space() / list_by_space_type()
+ *   - list_by_space()
  *   - get_by_id()
  *   - upsert()
  *   - delete()
@@ -28,6 +28,7 @@ use tauri::State;
 
 use crate::AppState;
 use crate::repositories::attachments as att_repo;
+use crate::repositories::knowledge_folders as folder_repo;
 use crate::repositories::knowledge_notes::{
     self as repo, KnowledgeNote, KnowledgeNoteInput,
 };
@@ -41,17 +42,6 @@ pub fn list_knowledge_notes(
 ) -> Result<Vec<KnowledgeNote>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     repo::list_by_space(&conn, space_id).map_err(|e| e.to_string())
-}
-
-/// 列出某个空间类型下的所有笔记（兼容旧 API）
-/// space: 'personal' | 'project'
-#[tauri::command]
-pub fn list_knowledge_notes_by_space_type(
-    state: State<'_, AppState>,
-    space: String,
-) -> Result<Vec<KnowledgeNote>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    repo::list_by_space_type(&conn, &space).map_err(|e| e.to_string())
 }
 
 /// 按 id 查一条笔记
@@ -104,6 +94,36 @@ pub fn delete_knowledge_note(
     }
 
     Ok(deleted)
+}
+
+/// 移动笔记到另一目录（树内拖拽 · 文件管理器式）
+/// folder_id: Some(目录 id) = 移入该目录；None = 移到知识空间顶层
+/// 校验目标目录与笔记同属一个知识库，防止跨库串数据（旧数据目录 space_id 为空时放宽）
+#[tauri::command]
+pub fn move_knowledge_note(
+    state: State<'_, AppState>,
+    id: i64,
+    folder_id: Option<i64>,
+) -> Result<bool, String> {
+    if id <= 0 {
+        return Err("无效的知识 ID".to_string());
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let note = repo::get_by_id(&conn, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "知识不存在或已被删除".to_string())?;
+    if note.folder_id == folder_id {
+        return Ok(true); // 移回原位置：幂等 no-op
+    }
+    if let Some(fid) = folder_id {
+        let folder = folder_repo::get_by_id(&conn, fid)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "目标目录不存在或已被删除".to_string())?;
+        if folder.space_id.is_some() && folder.space_id != Some(note.space_id) {
+            return Err("不能跨知识库移动知识".to_string());
+        }
+    }
+    repo::move_to_folder(&conn, id, folder_id).map_err(|e| e.to_string())
 }
 
 /// 全文搜索：按知识空间 ID 筛选（别名）
