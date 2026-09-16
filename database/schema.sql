@@ -16,15 +16,8 @@ CREATE TABLE IF NOT EXISTS system_config (
 );
 
 -- License 授权
-CREATE TABLE IF NOT EXISTS license (
-    id            INTEGER PRIMARY KEY,
-    license_key   TEXT NOT NULL UNIQUE,
-    customer_name TEXT,
-    expire_date   DATE NOT NULL,
-    status        INTEGER NOT NULL DEFAULT 1,  -- 0=无效 1=有效
-    signature     TEXT NOT NULL,                 -- RSA 签名
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+-- 2026-09-16 授权隔离改造：license 表已废弃，授权数据移入 OS 安全存储，
+-- 数据库不再保存任何授权信息（备份/恢复/复制均不携带授权）。
 
 -- ============================================================
 -- 2. 项目相关表

@@ -1,44 +1,37 @@
 /**
- * PMTool V2.0 · License 类型定义
- * Phase 1 · T1.2 + T1.3 + T1.4
+ * PMTool V2.0 · License 类型定义（2026-09-16 授权隔离改造）
  *
  * 必须与 Rust 端保持一致
+ *
+ * 变更记录：
+ *   - 2026-08-21：LicenseInput / LicenseVerification / LicenseStatus（RSA 旧版，已废弃）
+ *   - 2026-09-16：授权隔离改造 —— 数据库不再存授权，前端只读取后端运行时判定
+ *     （get_authorization_state），移除旧 RSA 类型
  */
 
-// 旧版 LicenseInput (向后兼容)
-export interface LicenseInput {
-  license_key: string
-  customer_name: string
-  expire_date: string // YYYY-MM-DD
-  signature: string // base64 RSA-2048 signature
-}
-
-// 旧版 LicenseVerification (向后兼容)
-export interface LicenseVerification {
-  valid: boolean
+// ========== 授权状态视图（get_authorization_state 返回）==========
+export interface AuthorizationStateView {
+  /** licensed | trial | not_authorized */
+  state: string
+  licensed: boolean
+  trial_active: boolean
+  /** 试用剩余天数（trial 时） */
+  days_remaining: number | null
+  /** 到期时间（licensed 时；null = 永久授权） */
+  expire_time: string | null
+  /** 授权类型（PERPETUAL / DAYS_N） */
+  license_type: string | null
+  /** 授权 ID（licensed 时） */
+  license_id: string | null
+  /** 未授权原因码（LICENSE_NOT_FOUND / LICENSE_EXPIRED / ...） */
+  reason_code: string | null
+  /** 未授权原因（用户可读） */
   reason: string | null
+  /** 当前设备绑定值 */
+  device_id: string
 }
 
-// License (数据库记录)
-export interface License {
-  id: number
-  license_key: string
-  customer_name: string | null
-  expire_date: string
-  status: number // 0=无效 1=有效
-  signature: string
-  created_at: string
-}
-
-// 旧版 LicenseStatus (向后兼容)
-export interface LicenseStatus {
-  activated: boolean
-  license: License | null
-  expired: boolean
-  reason: string | null
-}
-
-// ========== 新接口 ==========\n\n// 授权激活结果
+// ========== 授权激活结果（activate_license_simple 返回）==========
 export interface ActivateLicenseResult {
   success: boolean
   reason: string | null
@@ -47,21 +40,10 @@ export interface ActivateLicenseResult {
   expire_time: string | null
 }
 
-// 试用状态结果
+// ========== 试用状态结果（start_trial 返回）==========
 export interface TrialStatusResult {
   is_trial: boolean
   days_remaining: number | null
   started_at: string | null
   expire_at: string | null
-}
-
-// ========== UI 组件状态 ==========\n\n// LicenseSection 组件使用的状态
-export type LicenseStatusDisplay = 'trial' | 'activated' | 'expired'
-
-export interface LicenseActivationResult {
-  success: boolean
-  reason: string | null
-  product: string | null
-  license_type: string | null
-  expire_time: string | null
 }

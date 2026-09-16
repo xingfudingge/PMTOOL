@@ -33,7 +33,6 @@ rfd = "0.14"
 # 维护者 2026-08-31 · FilesTab：递归扫描用 std::fs（之前用 ignore 但 git 仓库上下文会把内容全部过滤掉）
 
 # Phase 1 · License 授权
-rsa = "0.9"
 sha2 = { version = "0.10", features = ["oid"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
@@ -44,9 +43,9 @@ rand = "0.8"
 base32 = "0.4"
 hex = "0.4"
 
-# 设备指纹采集
-sysinfo = "0.30"
-regex = "1.10"
+# 授权安全存储（2026-09-16 · 授权体系与数据库隔离改造）
+# Windows → Credential Manager / macOS → Keychain / Linux → Secret Service
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
 # 剪贴板写入（复制设备唯一值）
 arboard = "3.4"

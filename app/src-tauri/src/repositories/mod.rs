@@ -8,7 +8,6 @@
 
 pub mod projects;
 pub mod todos;
-pub mod license;
 pub mod project_tasks;
 pub mod project_issues;
 pub mod project_members;

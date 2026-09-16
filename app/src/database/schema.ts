@@ -32,16 +32,9 @@ export const systemConfig = sqliteTable('system_config', {
   updatedAt: text('updated_at').notNull(),
 })
 
-/** License 授权 */
-export const license = sqliteTable('license', {
-  id: integer('id').primaryKey(),
-  licenseKey: text('license_key').notNull().unique(),
-  customerName: text('customer_name'),
-  expireDate: text('expire_date').notNull(),
-  status: integer('status').notNull().default(1), // 0=无效 1=有效
-  signature: text('signature').notNull(),
-  createdAt: text('created_at').notNull(),
-})
+// License 授权
+// 2026-09-16 授权隔离改造：license 表已废弃，授权数据移入 OS 安全存储。
+// 本表定义不再导出，数据库为纯业务库。
 
 // ============================================================
 // 2. 项目相关表

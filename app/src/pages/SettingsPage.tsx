@@ -24,7 +24,7 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { LicenseStatus, ActivateLicenseResult } from '@/types/license'
+import type { AuthorizationStateView, ActivateLicenseResult } from '@/types/license'
 import { useSettings, SETTING_KEYS } from '@/state/SettingsProvider'
 import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, setBackupLocation, setDataRoot, revealPath, syncHolidays, clearHolidays, deleteBackup, type BackupItem } from '@/services/settings'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
@@ -359,7 +359,7 @@ function LicenseSection() {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  // 初始化：获取设备 ID 和授权状态
+  // 初始化：获取设备 ID 和授权状态（2026-09-16 授权隔离改造：单一后端判定源）
   const initialize = async () => {
     setLoading(true)
     try {
@@ -369,34 +369,27 @@ function LicenseSection() {
       const deviceIdResult = await invoke<string>('get_device_id')
       setDeviceId(deviceIdResult)
 
-      // 优先检查正式授权（license 表里有记录就直接视为已授权，不看试用）
-      const licenseResult = await invoke<LicenseStatus>('get_license_status')
-      if (licenseResult.activated) {
+      // 授权状态由后端运行时判定（安全存储 + 设备绑定 + 验签，无 DB）
+      const auth = await invoke<AuthorizationStateView>('get_authorization_state')
+      if (auth.state === 'licensed') {
         setStatus('activated')
-        if (licenseResult.license?.expire_date) {
-          setExpireDate(licenseResult.license.expire_date)
-          const expire = new Date(licenseResult.license.expire_date)
+        if (auth.expire_time) {
+          setExpireDate(auth.expire_time.slice(0, 10))
+          const expire = new Date(auth.expire_time)
           const today = new Date()
           const diffDays = Math.floor((expire.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
           setDaysRemaining(diffDays > 0 ? diffDays : null)
         } else {
           setDaysRemaining(null) // 永久授权
         }
+      } else if (auth.state === 'trial') {
+        setStatus(auth.days_remaining !== null && auth.days_remaining > 0 ? 'trial' : 'expired')
+        setDaysRemaining(auth.days_remaining)
+        if (auth.expire_time) setExpireDate(auth.expire_time.slice(0, 10))
       } else {
-        // 没有正式授权，回退到试用状态
-        const trialResult = await invoke<{
-          is_trial: boolean
-          days_remaining: number | null
-          started_at: string | null
-          expire_at: string | null
-        }>('check_trial_status')
-
-        if (trialResult.is_trial && trialResult.days_remaining !== null) {
-          setStatus('trial')
-          setDaysRemaining(trialResult.days_remaining)
-        } else {
-          setStatus('expired')
-        }
+        // 未授权：无授权记录或授权已失效
+        setStatus(auth.reason_code && auth.reason_code !== 'LICENSE_NOT_FOUND' ? 'expired' : 'expired')
+        setError(auth.reason || null)
       }
     } catch (e) {
       console.error('初始化授权状态失败:', e)
@@ -633,28 +626,24 @@ function LicenseSection() {
 function AboutSection() {
   const [status, setStatus] = useState<string>('loading')
 
-  // 读真实授权状态，避免写死"待激活"
+  // 读真实授权状态，避免写死"待激活"（2026-09-16：单一后端判定源）
   useEffect(() => {
     let alive = true
     const load = async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core')
-        const r = await invoke<LicenseStatus>('get_license_status')
+        const auth = await invoke<AuthorizationStateView>('get_authorization_state')
         if (!alive) return
-        if (r.activated) {
-          if (r.license?.expire_date) {
-            setStatus(`已激活 · 有效期至 ${r.license.expire_date}`)
+        if (auth.state === 'licensed') {
+          if (auth.expire_time) {
+            setStatus(`已激活 · 有效期至 ${auth.expire_time.slice(0, 10)}`)
           } else {
             setStatus('已激活 · 永久授权')
           }
+        } else if (auth.state === 'trial' && auth.days_remaining !== null) {
+          setStatus(`试用中 · 剩 ${auth.days_remaining} 天`)
         } else {
-          const trial = await invoke<{ is_trial: boolean; days_remaining: number | null }>('check_trial_status')
-          if (!alive) return
-          if (trial.is_trial && trial.days_remaining !== null) {
-            setStatus(`试用中 · 剩 ${trial.days_remaining} 天`)
-          } else {
-            setStatus('待激活')
-          }
+          setStatus('待激活')
         }
       } catch (e) {
         if (alive) setStatus('待激活')

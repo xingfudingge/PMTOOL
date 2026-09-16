@@ -31,7 +31,7 @@ const EXPECTED_TABLES = [
   'knowledge_note_tags',
   'knowledge_notes',
   'knowledge_tags',
-  'license',
+  // 2026-09-16 授权隔离改造：license 表废弃，授权数据移入 OS 安全存储
   'project_issue_log',
   'project_issues',
   'project_members',

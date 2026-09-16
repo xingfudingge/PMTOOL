@@ -17,15 +17,8 @@ CREATE TABLE IF NOT EXISTS system_config (
 --> statement-breakpoint
 
 -- License 授权
-CREATE TABLE IF NOT EXISTS license (
-    id            INTEGER PRIMARY KEY,
-    license_key   TEXT NOT NULL UNIQUE,
-    customer_name TEXT,
-    expire_date   DATE NOT NULL,
-    status        INTEGER NOT NULL DEFAULT 1,  -- 0=无效 1=有效
-    signature     TEXT NOT NULL,                 -- RSA 签名
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+-- 2026-09-16 授权隔离改造：license 表已废弃，授权数据移入 OS 安全存储。
+-- 旧安装由 0018_license_isolation.sql DROP（IF EXISTS 兜底）。
 --> statement-breakpoint
 
 -- ============================================================

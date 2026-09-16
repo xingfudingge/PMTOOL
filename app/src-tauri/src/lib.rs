@@ -20,7 +20,6 @@
  */
 
 pub mod commands;
-pub mod crypto;
 pub mod crypto_ed25519;  // Ed25519 签名验签工具
 pub mod db;
 pub mod repositories;
@@ -42,6 +41,11 @@ pub struct AppState {
     /// 应用数据目录 app_data_dir（设置中心「数据」分区用）
     /// 用 Mutex 包裹以支持首启/迁移时热切到自选目录（避免「写入默认库、重启读自选库」丢数据）
     pub data_dir: Mutex<std::path::PathBuf>,
+    /// 授权运行时状态（2026-09-16 授权隔离改造：纯运行时，永不落库）
+    /// 启动时由 Device Identity + 安全存储 License 独立计算
+    pub authorization: Mutex<crate::services::auth::authorization::AuthorizationContext>,
+    /// 当前设备绑定值（启动时计算，运行时只读）
+    pub device_id: String,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -89,6 +93,53 @@ pub fn run() {
             services::logging::log_line(&format!("[INF] log file = {}", log_path.display()));
             services::logging::log_line(&format!("[INF] data_dir = {}", data_dir.display()));
 
+            // ===== 授权体系启动链路（2026-09-16 隔离改造）=====
+            // 1. 当前设备实时计算 Device Identity（纯硬件派生，无 DB）
+            let device_identity = services::auth::device_identity::compute_current_identity()
+                .unwrap_or_else(|e| {
+                    services::logging::log_line(&format!("[ERR] 设备身份计算失败: {}", e));
+                    services::auth::device_identity::DeviceIdentity {
+                        binding_id: String::new(),
+                        multi_feature_fingerprint: String::new(),
+                    }
+                });
+            let device_id = device_identity.binding_id.clone();
+
+            // 2. 旧版数据库授权数据迁移（必须在 db::init 前执行，之后 DROP 旧授权表）
+            let storage = services::auth::secure_storage::KeyringStorage;
+            let validator = services::auth::license_validator::LicenseValidator::new()
+                .map_err(|e| {
+                    services::logging::log_line(&format!("[ERR] 授权验证器初始化失败: {}", e));
+                    e
+                })?;
+            match services::auth::migration::migrate_legacy_auth(
+                &data_dir.join("pmtool.db"),
+                &storage,
+                &device_id,
+                &validator,
+            ) {
+                Ok(r) => {
+                    if r.migrated {
+                        services::logging::log_line(&format!(
+                            "[OK] 授权迁移完成 license_imported={} trial_imported={}",
+                            r.license_imported, r.trial_imported
+                        ));
+                    }
+                }
+                Err(e) => services::logging::log_line(&format!("[WARN] 授权迁移失败: {}", e)),
+            }
+
+            // 3. 启动授权判定（Device Identity + 安全存储 License 独立验证，无 DB）
+            let authorization_ctx = services::auth::authorization::startup_check(
+                &storage,
+                &device_id,
+                &validator,
+            );
+            services::logging::log_line(&format!(
+                "[INF] 授权状态 code={}",
+                authorization_ctx.decision.reason_code().code()
+            ));
+
             // 初始化数据库（建库 + migration）
             let pool = db::init(&data_dir).map_err(|e| {
                 services::logging::log_line(&format!("[ERR] DB init failed: {}", e));
@@ -107,6 +158,8 @@ pub fn run() {
                 db: pool,
                 file_storage,
                 data_dir: Mutex::new(data_dir.clone()),
+                authorization: Mutex::new(authorization_ctx),
+                device_id,
             });
 
             Ok(())
@@ -174,15 +227,12 @@ pub fn run() {
             commands::todos::complete_todo,
             commands::todos::uncomplete_todo,
             commands::todos::delete_todo,
-            // License commands (Phase 1 - 简化授权系统)
-            commands::license::verify_license,              // 旧版 (向后兼容)
-            commands::license::get_license_status,          // 旧版 (向后兼容)
-            commands::license::deactivate_license,          // 旧版 (向后兼容)
-            commands::license::get_device_id,               // 新：获取设备 ID
-            commands::license::activate_license_simple,     // 新：授权码激活
-            commands::license::check_trial_status,          // 新：检查试用状态
-            commands::license::start_trial,                 // 新：主动开始 7 天试用
-            commands::license::expire_overdue_licenses,     // 新：清理过期授权
+            // License commands (2026-09-16 授权隔离改造：无 DB 授权数据)
+            commands::license::get_device_id,               // 获取设备绑定值（纯计算）
+            commands::license::get_authorization_state,     // 获取授权状态（运行时判定结果）
+            commands::license::activate_license_simple,     // 授权码激活（安全存储）
+            commands::license::start_trial,                 // 开始 7 天试用（安全存储）
+            commands::license::delete_license,              // 删除授权（安全存储）
             commands::clipboard::copy_to_clipboard,          // 新：复制到剪贴板
             // 诊断/日志（前端 JS 错误落盘）
             commands::diagnostics::log_frontend_error,

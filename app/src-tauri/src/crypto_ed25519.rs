@@ -119,77 +119,22 @@ impl LicenseVerifier {
 
     /// 验证授权字符串 (与 License Generator 主实现一致)
     pub fn verify(&self, license_b64: &str) -> LicenseVerification {
-        // 1. 移除分隔符
-        let license_clean = license_b64.replace("-", "").replace(" ", "");
-
-        // 2. 检查 PMT1 前缀
-        if !license_clean.starts_with("PMT1") {
-            return LicenseVerification {
-                valid: false,
-                reason: Some("授权码格式错误，需要以 PMT1 开头".to_string()),
-                payload: None,
-            };
-        }
-
-        // 3. 提取授权数据部分 (PMT1 后面的所有字符)
-        let data_part = &license_clean[4..];
-
-        // 4. 结构：sig_b64(固定171) + encoded(不定长)
-        if data_part.len() < SIG_B64_LEN {
-            return LicenseVerification {
-                valid: false,
-                reason: Some("授权码数据不完整".to_string()),
-                payload: None,
-            };
-        }
-        let (sig_b64, encoded) = data_part.split_at(SIG_B64_LEN);
-
-        // 5. 解码签名：sig_b64 → base64(hex 字符) → hex → 64 字节签名
-        let sig_hex = match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(sig_b64) {
-            Ok(b) => b,
-            Err(_) => {
+        // 拆解（格式/签名数据/payload JSON）
+        let (encoded, signature_bytes, payload) = match parse_license_string(license_b64) {
+            Ok(p) => p,
+            Err(e) => {
                 return LicenseVerification {
                     valid: false,
-                    reason: Some("授权码签名格式错误".to_string()),
+                    reason: Some(e),
                     payload: None,
                 };
             }
         };
-        let signature_bytes = match hex::decode(&sig_hex) {
-            Ok(b) => b,
-            Err(_) => {
-                return LicenseVerification {
-                    valid: false,
-                    reason: Some("授权码签名格式错误".to_string()),
-                    payload: None,
-                };
-            }
-        };
-
-        if signature_bytes.len() != SIGNATURE_LENGTH {
-            return LicenseVerification {
-                valid: false,
-                reason: Some("授权码签名长度错误".to_string()),
-                payload: None,
-            };
-        }
 
         let signature_array: [u8; SIGNATURE_LENGTH] = signature_bytes.try_into().unwrap();
         let signature = Signature::from_bytes(&signature_array);
 
-        // 6. 解码 JSON 数据 (URL_SAFE_NO_PAD)
-        let json_bytes = match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded) {
-            Ok(b) => b,
-            Err(e) => {
-                return LicenseVerification {
-                    valid: false,
-                    reason: Some(format!("授权数据 Base64 解码失败：{}", e)),
-                    payload: None,
-                };
-            }
-        };
-
-        // 7. 验证签名（对 encoded 的字符串字节验签，与生成端 sign(encoded.as_bytes()) 一致）
+        // 验签（对 encoded 的字符串字节验签，与生成端 sign(encoded.as_bytes()) 一致）
         if self.verifying_key.verify(encoded.as_bytes(), &signature).is_err() {
             return LicenseVerification {
                 valid: false,
@@ -197,18 +142,6 @@ impl LicenseVerifier {
                 payload: None,
             };
         }
-
-        // 8. 解析 JSON
-        let payload: LicensePayload = match serde_json::from_slice(&json_bytes) {
-            Ok(p) => p,
-            Err(e) => {
-                return LicenseVerification {
-                    valid: false,
-                    reason: Some(format!("授权数据解析失败：{}", e)),
-                    payload: None,
-                };
-            }
-        };
 
         // 9. 检查有效期
         use chrono::Utc;
@@ -247,6 +180,67 @@ impl LicenseVerifier {
             payload: Some(payload),
         }
     }
+}
+
+impl LicenseVerifier {
+    /// 对 encoded 字节验签（授权验证器流水线用）
+    pub fn verify_signature_bytes(&self, encoded: &str, signature_bytes: &[u8]) -> bool {
+        use ed25519_dalek::Verifier;
+        if signature_bytes.len() != SIGNATURE_LENGTH {
+            return false;
+        }
+        let mut arr = [0u8; SIGNATURE_LENGTH];
+        arr.copy_from_slice(signature_bytes);
+        let signature = Signature::from_bytes(&arr);
+        self.verifying_key.verify(encoded.as_bytes(), &signature).is_ok()
+    }
+}
+
+/// 拆解授权字符串为（encoded, 签名原始字节, 解析后的 payload）
+/// 供授权验证器拆分流水线复用（格式校验/签名校验/Claims/过期/设备绑定 分步判定）
+///
+/// # 返回
+/// - Ok((encoded, signature_bytes, payload))
+/// - Err(中文错误信息)
+pub fn parse_license_string(
+    license_b64: &str,
+) -> Result<(String, Vec<u8>, LicensePayload), String> {
+    // 1. 移除分隔符
+    let license_clean = license_b64.replace("-", "").replace(" ", "");
+
+    // 2. 检查 PMT1 前缀
+    if !license_clean.starts_with("PMT1") {
+        return Err("授权码格式错误，需要以 PMT1 开头".to_string());
+    }
+
+    // 3. 提取授权数据部分 (PMT1 后面的所有字符)
+    let data_part = &license_clean[4..];
+
+    // 4. 结构：sig_b64(固定171) + encoded(不定长)
+    if data_part.len() < SIG_B64_LEN {
+        return Err("授权码数据不完整".to_string());
+    }
+    let (sig_b64, encoded) = data_part.split_at(SIG_B64_LEN);
+
+    // 5. 解码签名：sig_b64 → base64(hex 字符) → hex → 64 字节签名
+    let sig_hex = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(sig_b64)
+        .map_err(|_| "授权码签名格式错误".to_string())?;
+    let signature_bytes = hex::decode(&sig_hex).map_err(|_| "授权码签名格式错误".to_string())?;
+    if signature_bytes.len() != SIGNATURE_LENGTH {
+        return Err("授权码签名长度错误".to_string());
+    }
+
+    // 6. 解码 JSON 数据 (URL_SAFE_NO_PAD)
+    let json_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|e| format!("授权数据 Base64 解码失败：{}", e))?;
+
+    // 7. 解析 payload
+    let payload: LicensePayload =
+        serde_json::from_slice(&json_bytes).map_err(|e| format!("授权数据解析失败：{}", e))?;
+
+    Ok((encoded.to_string(), signature_bytes, payload))
 }
 
 /// LicenseSigner (简化版：签名由 License Generator 工具完成)

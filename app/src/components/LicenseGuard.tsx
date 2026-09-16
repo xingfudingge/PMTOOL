@@ -1,32 +1,20 @@
 /**
- * PMTool V2.0 · License Route Guard
+ * PMTool V2.0 · License Route Guard（2026-09-16 授权隔离改造版）
  *
- * 设计依据：维护者 2026-09-04 反馈
- *   - 启动时检查授权状态
- *   - 三种状态机：
- *     1) 已有正式授权 → 直接渲染主应用
- *     2) 有有效试用（is_trial=true 且 days_remaining>0） → 直接渲染主应用
- *     3) 既无 license 又无试用记录 → 弹出「选择弹窗」（开始试用 / 激活授权）
- *     4) 试用已过期 → 强制激活授权（仅显示激活弹窗）
+ * 设计依据：
+ *   - 启动授权判定由【后端】完成（Device Identity + 安全存储 License 独立验证），
+ *     前端只读取 get_authorization_state 结果并渲染，不再自行查询数据库判定。
+ *   - 状态机：
+ *     1) licensed            → 渲染主应用
+ *     2) trial 且剩余天数>0   → 渲染主应用
+ *     3) not_authorized      → 首次启动（无授权记录）→ 选择弹窗（开始试用 / 激活授权）
+ *     4) trial 过期 / License 失效 → 强制激活授权（仅显示激活弹窗）
  */
 
 import { useState, useEffect, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { LicenseActivation } from './LicenseActivation'
-
-interface TrialStatusResult {
-  is_trial: boolean
-  days_remaining: number | null
-  started_at: string | null
-  expire_at: string | null
-}
-
-interface LicenseStatus {
-  activated: boolean
-  license: any | null
-  expired: boolean
-  reason: string | null
-}
+import type { AuthorizationStateView, TrialStatusResult } from '@/types/license'
 
 type GuardState = 'loading' | 'authorized' | 'choice' | 'activation'
 
@@ -36,59 +24,61 @@ interface LicenseGuardProps {
 
 export function LicenseGuard({ children }: LicenseGuardProps) {
   const [state, setState] = useState<GuardState>('loading')
+  const [auth, setAuth] = useState<AuthorizationStateView | null>(null)
   const [trialInfo, setTrialInfo] = useState<TrialStatusResult | null>(null)
-  const [licenseInfo, setLicenseInfo] = useState<LicenseStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const checkStatus = async () => {
     try {
       setError(null)
+      // 后端启动时已计算授权判定（安全存储 + 设备绑定 + 验签，无 DB）
+      const result = await invoke<AuthorizationStateView>('get_authorization_state')
+      setAuth(result)
 
-      // 0. 先清理过期的 license 记录（status=1 但 expire_date < today → status=0）
-      // 这样后续 get_license_status 不会返回过期的"已激活"假象
-      try {
-        await invoke('expire_overdue_licenses')
-      } catch (e) {
-        console.warn('清理过期授权失败（不致命）:', e)
-      }
-
-      // 1. 先查 license 表
-      const licenseResult = await invoke<LicenseStatus>('get_license_status')
-      setLicenseInfo(licenseResult)
-
-      // 1.1 license 存在但已过期 → **强制重新激活**（关键：过期不能继续用）
-      if (licenseResult.license && licenseResult.expired) {
-        setState('activation')
-        return
-      }
-
-      // 1.2 license 有效且未过期 → 放行
-      if (licenseResult.activated) {
+      // 1. 正式授权有效 → 放行
+      if (result.state === 'licensed') {
         setState('authorized')
         return
       }
 
-      // 2. 无 license，查试用
-      const trialResult = await invoke<TrialStatusResult>('check_trial_status')
-      setTrialInfo(trialResult)
-
-      // 3. 有有效试用记录（days_remaining > 0）→ 放行
+      // 2. 试用中 → 放行
       if (
-        trialResult.is_trial &&
-        trialResult.days_remaining !== null &&
-        trialResult.days_remaining > 0
+        result.state === 'trial' &&
+        result.days_remaining !== null &&
+        result.days_remaining > 0
       ) {
+        setTrialInfo({
+          is_trial: true,
+          days_remaining: result.days_remaining,
+          started_at: null,
+          expire_at: result.expire_time,
+        })
         setState('authorized')
         return
       }
 
-      // 4. 既无 license 也无试用（首次启动）→ 让用户选择
-      // 5. 试用过期（is_trial=true 且 days_remaining<=0）→ 强制激活
-      if (trialResult.is_trial && trialResult.days_remaining !== null && trialResult.days_remaining <= 0) {
+      // 3. 试用已过期 → 强制激活
+      if (result.state === 'trial' && result.days_remaining !== null && result.days_remaining <= 0) {
         setState('activation')
-      } else {
-        setState('choice')
+        return
       }
+
+      // 4. 未授权：区分首次启动与授权失效
+      if (result.state === 'not_authorized') {
+        // 曾有 License 但失效（过期/设备不匹配/篡改）→ 强制激活
+        // 从未有 License（LICENSE_NOT_FOUND）→ 选择弹窗
+        if (result.reason_code && result.reason_code !== 'LICENSE_NOT_FOUND') {
+          setError(result.reason || '当前授权已失效，请重新激活')
+          setState('activation')
+        } else {
+          setState('choice')
+        }
+        return
+      }
+
+      // 5. 未知状态兜底
+      setError(result.reason || '授权状态异常')
+      setState('activation')
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
       setError(errorMsg)
@@ -143,7 +133,7 @@ export function LicenseGuard({ children }: LicenseGuardProps) {
     return <>{children}</>
   }
 
-  // 首次启动（既无 license 也无试用）→ 选择弹窗
+  // 首次启动（无授权无试用）→ 选择弹窗
   if (state === 'choice') {
     return (
       <>
