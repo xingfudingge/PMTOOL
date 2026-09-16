@@ -59,6 +59,33 @@ window.addEventListener('unhandledrejection', (e) => {
   showError('UNHANDLED_PROMISE', e.reason)
 })
 
+/**
+ * 维护者 2026-09-16：全局屏蔽 WebView 原生右键菜单
+ *
+ * 问题：Tauri/WebView2 默认在任意位置右键都弹浏览器菜单（刷新 / 另存为 / 检查、
+ * 翻译成中文…）。这是浏览器的东西，不是本软件的，随处弹出会让人觉得软件很业余、很难用。
+ *
+ * 策略：只在「右键确实有用途」的地方保留原生菜单 —— 输入框 / 文本域 / 富文本编辑器
+ * （BlockNote 是 contenteditable），那里用户需要系统自带的 剪切/复制/粘贴。
+ * 其余位置一律不弹；本软件自己的右键菜单（FileTree / 知识树）由各自组件自己渲染，
+ * 不受影响（它们自己会 preventDefault 并画菜单）。
+ */
+function isEditableTarget(target: EventTarget | null): boolean {
+  let el = target as HTMLElement | null
+  while (el && el !== document.body) {
+    const tag = el.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+    if (el.isContentEditable) return true
+    el = el.parentElement
+  }
+  return false
+}
+
+document.addEventListener('contextmenu', (e) => {
+  if (isEditableTarget(e.target)) return
+  e.preventDefault()
+})
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>

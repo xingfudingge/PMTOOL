@@ -19,22 +19,22 @@ import type { KnowledgeSpace } from '@/services/knowledgeSpaces'
 export function KnowledgePage() {
   const editingMaximized = useEditingMaximized()
   const [space, setSpace] = useState<'personal' | 'project'>('personal')
-  // 输入框实时值（每字符更新，不触发搜索）
+  // 搜索框输入值（只跟着输入走，不触发搜索）
   const [globalInput, setGlobalInput] = useState('')
-  // 真正触发搜索的值（≥2 字符 + 350ms 防抖后才更新）
+  // 真正执行搜索的关键词：只有点「搜索」按钮 / 回车才更新（维护者 2026-09-16：改为显式提交，不再边输边搜）
   const [globalQuery, setGlobalQuery] = useState('')
   const [selectedSpace, setSelectedSpace] = useState<KnowledgeSpace | null>(null)
   const [showManager, setShowManager] = useState(false)
 
-  // 顶部全局搜索：<2 字符不搜（避免输一个字就触发，结果又宽又噪），≥2 字符后防抖再搜
-  useEffect(() => {
+  /** 提交搜索：输入为空则退出结果页；否则按当前关键词搜索 */
+  const submitSearch = () => {
     const q = globalInput.trim()
-    if (q.length < 2) {
-      setGlobalQuery('')
-      return
-    }
-    const t = setTimeout(() => setGlobalQuery(q), 350)
-    return () => clearTimeout(t)
+    setGlobalQuery(q)
+  }
+
+  // 清空输入即退出搜索结果页（避免清空了还停在结果里）
+  useEffect(() => {
+    if (!globalInput.trim()) setGlobalQuery('')
   }, [globalInput])
 
   const clearSearch = () => {
@@ -75,6 +75,12 @@ export function KnowledgePage() {
             type="search"
             value={globalInput}
             onChange={(e) => setGlobalInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                submitSearch()
+              }
+            }}
             placeholder="🔍 搜索全部知识…"
             style={{
               flex: 1,
@@ -105,6 +111,29 @@ export function KnowledgePage() {
               ×
             </button>
           )}
+          {/* 维护者 2026-09-16：显式搜索——输入完点这里（或按回车）才搜，不再边输边搜 */}
+          <button
+            type="button"
+            onClick={submitSearch}
+            disabled={!globalInput.trim()}
+            title="搜索"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              flexShrink: 0,
+              padding: '3px 10px',
+              fontSize: 12,
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--color-border-thin)',
+              background: globalInput.trim() ? 'var(--color-bg-active)' : 'transparent',
+              color: globalInput.trim() ? 'var(--color-text)' : 'var(--color-text-tertiary)',
+              cursor: globalInput.trim() ? 'pointer' : 'default',
+            }}
+          >
+            <Search size={12} strokeWidth={1.75} />
+            搜索
+          </button>
         </div>
       </div>
 

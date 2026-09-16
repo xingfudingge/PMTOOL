@@ -145,6 +145,17 @@ export async function moveKnowledgeNote(
 }
 
 /**
+ * 复制知识到指定目录（右键「复制 → 粘贴」· 维护者 2026-09-16）
+ * 返回新知识 id（后端生成「原标题 - 副本」）
+ */
+export async function copyKnowledgeNote(
+  id: number,
+  folderId: number | null,
+): Promise<number> {
+  return await invoke<number>('copy_knowledge_note', { id, folderId })
+}
+
+/**
  * 全文搜索：按知识空间 ID 筛选
  */
 export async function searchKnowledgeNotesBySpace(

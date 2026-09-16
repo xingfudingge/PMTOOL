@@ -27,7 +27,7 @@
  *   - 移动只改 folder_id，不动 updated_at（避免打乱列表排序、避免编辑器 remount）
  */
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
   ChevronRight,
   ChevronDown,
@@ -41,10 +41,14 @@ import {
   FolderPlus,
   Library,
   BookOpen,
+  Copy,
+  Scissors,
+  ClipboardPaste,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Block } from '@blocknote/core'
 
+import { FileContextMenu, type ContextMenuItem } from '@/components/FileContextMenu'
 import { DocumentEditor } from '@/components/DocumentEditor'
 import { useEditingMaximized } from '@/components/DocumentEditor/editingMaximized'
 import type { SaveStatus } from '@/components/DocumentEditor/types'
@@ -66,6 +70,7 @@ import {
   deleteKnowledgeFolder,
   deleteKnowledgeNote,
   moveKnowledgeNote,
+  copyKnowledgeNote,
   getKnowledgeNote,
   type KnowledgeNote as DbNote,
   type KnowledgeFolder as DbFolder,
@@ -316,11 +321,15 @@ export function KnowledgeTreeView({
    * - 聚合模式的知识库行（node.id 即 spaceId，非目录 id）→ 移到该库顶层（folderId = null）
    * - 跨知识库不允许（数据按空间归属，移动 space_id 涉及附件/绑定语义，暂不开放）
    */
-  const dropTargetOf = useCallback(
-    (node: UnifiedNode): DropTarget | null => {
-      if (!drag) return null
+  /**
+   * 计算「某条知识」落在某节点上的目标；null = 不可放置。
+   * 拖拽与右键剪贴板粘贴共用这一套规则（拖拽传正在拖的知识，粘贴传剪贴板里的知识）。
+   */
+  const targetForNote = useCallback(
+    (note: { spaceId: number | null }, node: UnifiedNode): DropTarget | null => {
       if (node.kind === 'note') return null
-      if (node.spaceId != null && node.spaceId !== drag.note.spaceId) return null
+      // 跨知识库不允许（数据按空间归属，移动涉及附件/绑定语义，暂不开放）
+      if (node.spaceId != null && node.spaceId !== note.spaceId) return null
       if (node.kind === 'folder') {
         return { key: `f:${node.id}`, folderId: node.id, label: node.name }
       }
@@ -330,7 +339,15 @@ export function KnowledgeTreeView({
       }
       return { key: `r:${node.id}`, folderId: node.id, label: node.name }
     },
-    [drag, aggregate],
+    [aggregate],
+  )
+
+  const dropTargetOf = useCallback(
+    (node: UnifiedNode): DropTarget | null => {
+      if (!drag) return null
+      return targetForNote(drag.note, node)
+    },
+    [drag, targetForNote],
   )
 
   /** 执行移动（同位置 no-op；成功后 toast + 刷新树） */
@@ -359,12 +376,61 @@ export function KnowledgeTreeView({
     [drag, refresh, resetDrag],
   )
 
+  // ───────── 剪贴板（右键 复制 / 剪切 → 粘贴到目录 · 维护者 2026-09-16） ─────────
+  const [clipboard, setClipboard] = useState<KnowledgeClipboard | null>(null)
+
+  /** 该节点能否接收粘贴（跨库 / 知识节点 / 原地 = 不可） */
+  const canPasteInto = useCallback(
+    (node: UnifiedNode): boolean => {
+      if (!clipboard) return false
+      const t = targetForNote({ spaceId: clipboard.spaceId }, node)
+      if (!t) return false
+      if (t.folderId === clipboard.folderId) return false // 已在那个位置
+      return true
+    },
+    [clipboard, targetForNote],
+  )
+
+  /** 执行粘贴：剪切 = 移动（真移动），复制 = 后端生成一条「- 副本」 */
+  const pasteInto = useCallback(
+    async (node: UnifiedNode) => {
+      if (!clipboard) return
+      const t = targetForNote({ spaceId: clipboard.spaceId }, node)
+      if (!t) {
+        toast.error('不能粘贴到这里（跨知识库）')
+        return
+      }
+      const title = clipboard.title || '未命名'
+      const where = t.folderId == null ? '顶层' : `「${t.label}」`
+      try {
+        if (clipboard.mode === 'cut') {
+          await moveKnowledgeNote(clipboard.id, t.folderId)
+          toast.success(`已将「${title}」移动到${where}`)
+        } else {
+          await copyKnowledgeNote(clipboard.id, t.folderId)
+          toast.success(`已复制「${title}」到${where}`)
+        }
+        await refresh()
+      } catch (e) {
+        toast.error(`${clipboard.mode === 'cut' ? '移动' : '复制'}失败：${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        // 剪切粘贴后清空剪贴板；复制保留，可连续粘贴
+        if (clipboard.mode === 'cut') setClipboard(null)
+      }
+    },
+    [clipboard, refresh, targetForNote],
+  )
+
   const dnd = useMemo<TreeDnd>(
     () => ({
       dragging: drag != null,
       draggingNoteId: drag?.note.id ?? null,
       dropKey,
       setHover: setDropKey,
+      clipboard,
+      setClipboard,
+      canPasteInto,
+      pasteInto,
       onNoteDragStart: (n, e) => {
         e.dataTransfer.effectAllowed = 'move'
         try {
@@ -380,7 +446,7 @@ export function KnowledgeTreeView({
         void moveNoteTo(t)
       },
     }),
-    [drag, dropKey, dropTargetOf, moveNoteTo, resetDrag],
+    [drag, dropKey, dropTargetOf, moveNoteTo, resetDrag, clipboard, canPasteInto, pasteInto],
   )
 
   // ───────── 树组装 ─────────
@@ -1052,6 +1118,16 @@ interface DropTarget {
   label: string | null
 }
 
+/** 剪贴板（右键 复制 / 剪切 一条知识 → 粘贴到目录） */
+interface KnowledgeClipboard {
+  id: number
+  title: string
+  spaceId: number | null
+  /** 当前所在目录（用于判断"已在那个位置"） */
+  folderId: number | null
+  mode: 'copy' | 'cut'
+}
+
 /** 拖拽上下文（主组件 → 递归 TreeNodeRow 透传） */
 interface TreeDnd {
   dragging: boolean
@@ -1062,6 +1138,11 @@ interface TreeDnd {
   onDragEnd: () => void
   dropTargetOf: (node: UnifiedNode) => DropTarget | null
   drop: (t: DropTarget) => void
+  /** 剪贴板：复制 / 剪切 / 粘贴（右键菜单用） */
+  clipboard: KnowledgeClipboard | null
+  setClipboard: (c: KnowledgeClipboard | null) => void
+  canPasteInto: (node: UnifiedNode) => boolean
+  pasteInto: (node: UnifiedNode) => void
 }
 
 interface TreeNodeRowProps {
@@ -1103,19 +1184,8 @@ function TreeNodeRow({
   const [expanded, setExpanded] = useState(true)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(node.name)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDoc = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [menuOpen])
+  // 菜单（⋯ 按钮 与 右键 共用一套 · 维护者 2026-09-16 统一为 FileContextMenu）
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
 
   const isActive = node.kind === 'note' && node.note?.id === activeNoteId
   const isSystem = node.kind === 'root'
@@ -1128,6 +1198,131 @@ function TreeNodeRow({
   const draggingSelf = isNote && dnd.draggingNoteId === node.id
   const target = dnd.dragging ? dnd.dropTargetOf(node) : null
   const isHover = !!target && dnd.dropKey === target.key
+
+  // ── 菜单项（⋯ 按钮 与 右键 共用 · 按 nodeKind 决定 · 设计文档 §31） ──
+  const isCut = isNote && dnd.clipboard?.mode === 'cut' && dnd.clipboard.id === node.id
+  const items: ContextMenuItem[] = []
+  if (isProjectRoot) {
+    items.push({
+      key: 'add-folder',
+      label: '添加子目录',
+      icon: <FolderPlus size={11} />,
+      onSelect: () => void onAddProjectFolder?.(node.spaceId!),
+    })
+    items.push({
+      key: 'add-note',
+      label: '新建知识',
+      icon: <Plus size={11} />,
+      onSelect: () => void onAddProjectNote?.(node.spaceId!),
+    })
+  }
+  if (node.kind === 'folder' || node.kind === 'root') {
+    items.push({
+      key: 'add-child-folder',
+      label: '添加子目录',
+      icon: <FolderPlus size={11} />,
+      onSelect: () => void onCreateChildFolder(node.kind === 'root' ? null : node.id),
+    })
+  }
+  if (node.kind === 'folder') {
+    items.push({
+      key: 'create-note',
+      label: '新建知识',
+      icon: <Plus size={11} />,
+      onSelect: () => void onCreateNote(node.id),
+    })
+  }
+  // 知识节点：打开 / 复制 / 剪切（目录行不接受知识，故只在 note 上给）
+  if (isNote && node.note) {
+    const n = node.note
+    items.push({
+      key: 'open',
+      label: '打开编辑',
+      icon: <FileText size={11} />,
+      onSelect: () => onOpenNote(n),
+    })
+    items.push({
+      key: 'copy',
+      dividerBefore: true,
+      label: '复制',
+      icon: <Copy size={11} />,
+      onSelect: () =>
+        dnd.setClipboard({
+          id: n.id,
+          title: n.title,
+          spaceId: n.spaceId ?? null,
+          folderId: n.folderId ?? null,
+          mode: 'copy',
+        }),
+    })
+    items.push({
+      key: 'cut',
+      label: '剪切',
+      icon: <Scissors size={11} />,
+      onSelect: () =>
+        dnd.setClipboard({
+          id: n.id,
+          title: n.title,
+          spaceId: n.spaceId ?? null,
+          folderId: n.folderId ?? null,
+          mode: 'cut',
+        }),
+    })
+  }
+  // 目录 / 根 / 知识库行：粘贴
+  if (node.kind !== 'note') {
+    items.push({
+      key: 'paste',
+      dividerBefore: items.length > 0,
+      label: dnd.clipboard?.mode === 'cut' ? '粘贴（移动到这里）' : '粘贴',
+      icon: <ClipboardPaste size={11} />,
+      disabled: !dnd.canPasteInto(node),
+      onSelect: () => dnd.pasteInto(node),
+    })
+  }
+  if (node.kind === 'folder') {
+    items.push({
+      key: 'rename-folder',
+      dividerBefore: true,
+      label: '重命名',
+      icon: <Pencil size={11} />,
+      onSelect: () => {
+        setRenameValue(node.name)
+        setRenaming(true)
+      },
+    })
+  }
+  if (isNote) {
+    items.push({
+      key: 'rename-note',
+      dividerBefore: true,
+      label: '重命名',
+      icon: <Pencil size={11} />,
+      onSelect: () => node.note && onRenameNotePrompt(node.note),
+    })
+  }
+  // 删除：folder（除 PROJECT_ROOT）与 note 均可；聚合模式的知识库行删除整个库
+  if (isProjectRoot && onDeleteLibrary) {
+    items.push({
+      key: 'delete-library',
+      dividerBefore: true,
+      label: '删除知识库',
+      icon: <Trash2 size={11} />,
+      danger: true,
+      onSelect: () => onDeleteLibrary(node.spaceId!, node.name),
+    })
+  }
+  if (node.kind === 'folder' || isNote) {
+    items.push({
+      key: 'delete',
+      label: '删除',
+      icon: <Trash2 size={11} />,
+      danger: true,
+      onSelect: () => onAskDelete(isNote ? 'note' : 'folder', node.id, node.name),
+    })
+  }
+  // ai 系统目录 / root 虚拟根不可删不可改名 → 不在上面分支里
+  // （聚合模式的知识库行在这里是 project-root：只给「新建 + 删除库」）
 
   const submitRename = () => {
     const v = renameValue.trim()
@@ -1151,6 +1346,15 @@ function TreeNodeRow({
     <div>
       <div
         style={rowContainerStyle}
+        // 维护者 2026-09-16：右键节点行 → 弹出与 ⋯ 相同的菜单（资源管理器习惯）
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (items.length === 0) return
+          // 右键知识 → 同步选中（右侧编辑区跟随）
+          if (isNote && node.note) onOpenNote(node.note)
+          setMenuPos({ x: e.clientX, y: e.clientY })
+        }}
         // 维护者 2026-09-16 修复：拖拽源必须挂在 div 上，不能挂 <button>。
         // Blink/WebView2（旧版本）对表单控件（button 等）无视 draggable="true"，
         // dragstart 永远不触发 → 真机「完全拖不动」，而 jsdom 测试绕过原生门控全部通过。
@@ -1211,6 +1415,8 @@ function TreeNodeRow({
                 ? { background: 'var(--color-bg-active)', boxShadow: 'inset 0 0 0 1.5px var(--color-accent)' }
                 : null),
               ...(draggingSelf ? { opacity: 0.45 } : null),
+              // 已剪切的知识淡显（提示「它将被移走」）
+              ...(isCut ? { opacity: 0.5 } : null),
             }}
             onClick={() => {
               if (node.kind === 'note' && node.note) onOpenNote(node.note)
@@ -1241,129 +1447,31 @@ function TreeNodeRow({
           </button>
         )}
 
-        {/* 悬停 ⋯ 按钮（始终保留占位 · hover 显示） */}
+        {/* 悬停 ⋯ 按钮（始终保留占位 · hover 显示）· 菜单与右键菜单同一套（维护者 2026-09-16） */}
         {!renaming && (
           <button
             type="button"
-            style={{ ...iconBtnStyle, marginRight: 4, opacity: menuOpen ? 1 : 0.5 }}
-            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v) }}
+            style={{ ...iconBtnStyle, marginRight: 4, opacity: menuPos ? 1 : 0.5 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              const r = e.currentTarget.getBoundingClientRect()
+              setMenuPos({ x: r.right - 168, y: r.bottom + 2 })
+            }}
             title="操作"
             onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-            onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.opacity = '0.5' }}
+            onMouseLeave={(e) => { if (!menuPos) e.currentTarget.style.opacity = '0.5' }}
           >
             <MoreHorizontal size={12} />
           </button>
         )}
 
-        {menuOpen && (
-          <div
-            ref={menuRef}
-            style={{
-              position: 'absolute',
-              top: '100%',
-              right: 4,
-              zIndex: 50,
-              minWidth: 160,
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius)',
-              boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
-              padding: 4,
-              fontSize: 12,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* 按 nodeKind 决定菜单项（设计文档 §31） */}
-            {isProjectRoot && (
-              <MenuItem
-                icon={<FolderPlus size={11} />}
-                label="添加子目录"
-                onClick={async () => {
-                  setMenuOpen(false)
-                  await onAddProjectFolder?.(node.spaceId!)
-                }}
-              />
-            )}
-            {isProjectRoot && (
-              <MenuItem
-                icon={<Plus size={11} />}
-                label="新建知识"
-                onClick={async () => {
-                  setMenuOpen(false)
-                  await onAddProjectNote?.(node.spaceId!)
-                }}
-              />
-            )}
-            {/* 聚合模式：顶层知识库（space）可删除整个库（目录+知识+附件+绑定） */}
-            {isProjectRoot && onDeleteLibrary && (
-              <MenuItem
-                icon={<Trash2 size={11} />}
-                label="删除知识库"
-                danger
-                onClick={() => {
-                  setMenuOpen(false)
-                  onDeleteLibrary(node.spaceId!, node.name)
-                }}
-              />
-            )}
-            {(node.kind === 'folder' || node.kind === 'root') && (
-              <MenuItem
-                icon={<FolderPlus size={11} />}
-                label="添加子目录"
-                onClick={async () => {
-                  setMenuOpen(false)
-                  await onCreateChildFolder(node.kind === 'root' ? null : node.id)
-                }}
-              />
-            )}
-            {node.kind === 'folder' && (
-              <MenuItem
-                icon={<Plus size={11} />}
-                label="新建知识"
-                onClick={async () => {
-                  setMenuOpen(false)
-                  await onCreateNote(node.kind === 'root' ? null : node.id)
-                }}
-              />
-            )}
-            {(node.kind === 'folder') && (
-              <MenuItem
-                icon={<Pencil size={11} />}
-                label="重命名"
-                onClick={() => {
-                  setMenuOpen(false)
-                  setRenameValue(node.name)
-                  setRenaming(true)
-                }}
-              />
-            )}
-            {(node.kind === 'note') && (
-              <MenuItem
-                icon={<Pencil size={11} />}
-                label="重命名"
-                onClick={() => {
-                  setMenuOpen(false)
-                  if (!node.note) return
-                  onRenameNotePrompt(node.note)
-                }}
-              />
-            )}
-            {/* 删除：folder（除 PROJECT_ROOT） 与 note 均可 */}
-            {(node.kind === 'folder' || node.kind === 'note') && (
-              <MenuItem
-                icon={<Trash2 size={11} />}
-                label="删除"
-                danger
-                onClick={() => {
-                  setMenuOpen(false)
-                  const t = node.kind === 'note' ? 'note' : 'folder'
-                  onAskDelete(t, node.id, node.name)
-                }}
-              />
-            )}
-            {/* ai 系统目录不可删 / 不可改名 · 不显示 */}
-            {/* root 虚拟根不可删 / 不可改名 · 不显示 */}
-          </div>
+        {menuPos && (
+          <FileContextMenu
+            x={menuPos.x}
+            y={menuPos.y}
+            items={items}
+            onClose={() => setMenuPos(null)}
+          />
         )}
       </div>
 
@@ -1388,44 +1496,6 @@ function TreeNodeRow({
         </div>
       )}
     </div>
-  )
-}
-
-function MenuItem({
-  icon,
-  label,
-  onClick,
-  danger,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-  danger?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        width: '100%',
-        padding: '6px 8px',
-        background: 'transparent',
-        border: 'none',
-        borderRadius: 3,
-        cursor: 'pointer',
-        color: danger ? '#dc2626' : 'var(--color-text)',
-        fontSize: 12,
-        textAlign: 'left',
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-subtle)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
   )
 }
 

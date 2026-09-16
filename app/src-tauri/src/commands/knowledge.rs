@@ -126,6 +126,48 @@ pub fn move_knowledge_note(
     repo::move_to_folder(&conn, id, folder_id).map_err(|e| e.to_string())
 }
 
+/// 复制知识到指定目录（右键「复制 → 粘贴」· 维护者 2026-09-16）
+/// folder_id: Some(目录 id) = 复制进该目录；None = 复制到知识空间顶层
+/// 复制 = 全新记录（内容/属性照搬 · 标题加「 - 副本」），返回新知识 id
+#[tauri::command]
+pub fn copy_knowledge_note(
+    state: State<'_, AppState>,
+    id: i64,
+    folder_id: Option<i64>,
+) -> Result<i64, String> {
+    if id <= 0 {
+        return Err("无效的知识 ID".to_string());
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let note = repo::get_by_id(&conn, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "知识不存在或已被删除".to_string())?;
+    if let Some(fid) = folder_id {
+        let folder = folder_repo::get_by_id(&conn, fid)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "目标目录不存在或已被删除".to_string())?;
+        if folder.space_id.is_some() && folder.space_id != Some(note.space_id) {
+            return Err("不能跨知识库复制知识".to_string());
+        }
+    }
+    let input = KnowledgeNoteInput {
+        id: None,
+        space_id: note.space_id,
+        space: note.space.clone(),
+        title: format!("{} - 副本", note.title),
+        content: note.content.clone(),
+        content_type: note.content_type.clone(),
+        content_md: note.content_md.clone(),
+        pinned: Some(note.pinned),
+        folder_id,
+        category: note.category.clone(),
+        source_type: Some(note.source_type.clone()),
+        created_by: note.created_by.clone(),
+    };
+    let created = repo::upsert(&conn, input).map_err(|e| e.to_string())?;
+    Ok(created.id)
+}
+
 /// 全文搜索：按知识空间 ID 筛选（别名）
 #[tauri::command]
 pub fn search_knowledge_notes(

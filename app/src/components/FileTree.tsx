@@ -167,8 +167,8 @@ export function FileTree({
   const canDrag = !!onMoveToDir
 
   // 维护者 2026-09-16：右键菜单 + 剪贴板 + 行内重命名
-  /** node = null 表示「树空白区」（等价于对根目录操作） */
-  const [menu, setMenu] = useState<{ x: number; y: number; node: FileNode | null } | null>(null)
+  /** 右键菜单只挂在节点行上（空白区不弹 —— 那里没有明确操作） */
+  const [menu, setMenu] = useState<{ x: number; y: number; node: FileNode } | null>(null)
   const [clipboard, setClipboard] = useState<Clipboard | null>(null)
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -279,49 +279,10 @@ export function FileTree({
     }
   }
 
-  /** 组装右键菜单项（target = null 表示树空白区） */
-  const menuItemsFor = (target: FileNode | null): ContextMenuItem[] => {
+  /** 组装右键菜单项 */
+  const menuItemsFor = (target: FileNode): ContextMenuItem[] => {
     const items: ContextMenuItem[] = []
-    const dirForPaste = target ?? root
-    const isRootRow = !!target && !!root && target.path === root.path
-
-    if (!target) {
-      // 空白区右键 = 对根目录的新建 / 粘贴 / 打开
-      if (onReveal && root) {
-        items.push({
-          key: 'reveal-root',
-          label: '在文件管理器中打开',
-          icon: <FolderOpen size={12} />,
-          onSelect: () => onReveal(root),
-        })
-      }
-      if (dirForPaste) {
-        items.push({
-          key: 'paste-root',
-          dividerBefore: items.length > 0,
-          label: '粘贴',
-          icon: <ClipboardPaste size={12} />,
-          disabled: !canPasteInto(dirForPaste),
-          onSelect: () => pasteInto(dirForPaste),
-        })
-      }
-      if (onRequestCreate && dirForPaste) {
-        items.push({
-          key: 'new-file-root',
-          dividerBefore: true,
-          label: '新建文件',
-          icon: <FilePlus size={12} />,
-          onSelect: () => onRequestCreate('file', dirForPaste),
-        })
-        items.push({
-          key: 'new-dir-root',
-          label: '新建文件夹',
-          icon: <FolderPlus size={12} />,
-          onSelect: () => onRequestCreate('dir', dirForPaste),
-        })
-      }
-      return items
-    }
+    const isRootRow = !!root && target.path === root.path
 
     // 打开（文件 → 系统默认程序；目录 → 在文件管理器中打开）
     if (!target.isDir && onOpenExternal) {
@@ -495,14 +456,8 @@ export function FileTree({
         }
         resetDrag()
       }}
-      // 维护者 2026-09-16：空白区右键 = 对根目录的操作（粘贴 / 新建）
-      onContextMenu={(e) => {
-        if (e.target !== containerRef.current) return
-        e.preventDefault()
-        // 没有任何可用操作时不弹空菜单
-        if (menuItemsFor(null).length === 0) return
-        setMenu({ x: e.clientX, y: e.clientY, node: null })
-      }}
+      // 维护者 2026-09-16：树空白区右键不弹菜单（那里没有明确操作 ·
+      // 要在根目录新建/粘贴 → 右键根目录行）
       style={{
         fontSize: 12,
         fontFamily: 'var(--font-mono)',

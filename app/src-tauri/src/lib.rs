@@ -219,6 +219,7 @@ pub fn run() {
             commands::knowledge::upsert_knowledge_note,
             commands::knowledge::delete_knowledge_note,
             commands::knowledge::move_knowledge_note,
+            commands::knowledge::copy_knowledge_note,
             commands::knowledge::search_knowledge_notes,
             commands::knowledge::search_knowledge_notes_by_space_type,
             // 知识目录 commands（维护者 2026-08-31 · Phase C 三栏布局）
