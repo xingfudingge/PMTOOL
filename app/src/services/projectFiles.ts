@@ -164,6 +164,15 @@ export async function copyPath(path: string): Promise<string> {
 }
 
 /**
+ * 维护者 2026-09-16：复制文件 / 目录到指定目标目录（右键菜单「复制 → 粘贴」）
+ * 与 copyPath 的区别：copyPath 是就地生成副本，本函数复制到别的目录。
+ * 目标同名时后端自动「 - 副本」消解；返回最终写入路径。
+ */
+export async function copyPathToDir(path: string, destDir: string): Promise<string> {
+  return await invoke<string>('copy_path_to_cmd', { path, destDir })
+}
+
+/**
  * 用 OS 默认程序打开文件（open crate）
  */
 export async function openFileExternal(path: string): Promise<string> {

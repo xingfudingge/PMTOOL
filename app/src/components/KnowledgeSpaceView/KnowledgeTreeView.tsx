@@ -110,6 +110,9 @@ const treePanelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
+  // 「松开：移动到顶层」落点用绝对定位常驻在面板底部（见下）——
+  // 拖拽期间不得改动 DOM 结构，否则 Chromium 会取消拖拽，详见该元素的注释
+  position: 'relative',
 }
 
 const editorPanelStyle: React.CSSProperties = {
@@ -770,36 +773,10 @@ export function KnowledgeTreeView({
             void moveNoteTo({ key: 'container', folderId: null, label: '顶层' })
           }}
         >
-          {/* 拖拽中显示「移到顶层」落点，避免密集树没有空白处可投 */}
-          {drag && !aggregate && (
-            <div
-              style={{
-                margin: '0 2px 6px',
-                padding: '5px 8px',
-                fontSize: 12,
-                color: 'var(--color-text-tertiary)',
-                border: '1px dashed var(--color-border)',
-                borderRadius: 'var(--radius)',
-                textAlign: 'center',
-                ...(dropKey === 'container'
-                  ? { borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'rgba(127, 127, 127, 0.08)' }
-                  : null),
-              }}
-              onDragOver={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                e.dataTransfer.dropEffect = 'move'
-                if (dropKey !== 'container') setDropKey('container')
-              }}
-              onDrop={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                void moveNoteTo({ key: 'container', folderId: null, label: '顶层' })
-              }}
-            >
-              松开：移动到顶层
-            </div>
-          )}
+          {/* 「松开：移动到顶层」落点已改为面板底部常驻浮层（见 </aside> 前的块）。
+              原因：它原先在拖拽开始时才插入列表，DOM 结构突变会让 Chromium 直接取消整个拖拽
+              （dragstart 后立即 dragend，dragenter/dragover/drop 全部不再触发）——
+              真机表现为「个人知识中心完全拖不动（连虚化都没有）」，而聚合模式没有这个节点所以正常。 */}
           {loading && folders.length === 0 ? (
             <div style={{ padding: 16, fontSize: 12, color: 'var(--color-text-tertiary)' }}>加载中…</div>
           ) : tree.length === 0 ? (
@@ -845,6 +822,48 @@ export function KnowledgeTreeView({
             ))
           )}
         </div>
+
+        {/* 「松开：移动到顶层」落点（非聚合：聚合视图顶层有多个库，无单一顶层语义）
+            ⚠️ 必须常驻 DOM，只切换样式显示/隐藏。
+            2026-09-16 真机根因：此前用 `{drag && (...)}` 在拖拽开始时才插入该节点，
+            Chromium 判定拖拽源所在树发生结构突变，直接取消整个原生拖拽
+            （事件序列只有 dragstart → dragend，后续 dragenter/dragover/drop 全无），
+            表现为个人知识中心「完全拖不动、连虚化都没有」，而聚合模式（无此节点）一切正常。
+            另：浮层不动布局，列表不会因拖拽开始而跳动。 */}
+        {!aggregate && (
+          <div
+            style={{
+              position: 'absolute',
+              left: 8,
+              right: 8,
+              bottom: 10,
+              zIndex: 20,
+              padding: '5px 8px',
+              fontSize: 12,
+              textAlign: 'center',
+              borderRadius: 'var(--radius)',
+              border: `1px dashed ${dropKey === 'container' ? 'var(--color-accent)' : 'var(--color-border)'}`,
+              color: dropKey === 'container' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              background: 'var(--color-bg)',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.12)',
+              visibility: drag ? 'visible' : 'hidden',
+              pointerEvents: drag ? 'auto' : 'none',
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              e.dataTransfer.dropEffect = 'move'
+              if (dropKey !== 'container') setDropKey('container')
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              void moveNoteTo({ key: 'container', folderId: null, label: '顶层' })
+            }}
+          >
+            松开：移动到顶层
+          </div>
+        )}
       </aside>
 
       <main style={editorPanelStyle}>
@@ -1132,6 +1151,17 @@ function TreeNodeRow({
     <div>
       <div
         style={rowContainerStyle}
+        // 维护者 2026-09-16 修复：拖拽源必须挂在 div 上，不能挂 <button>。
+        // Blink/WebView2（旧版本）对表单控件（button 等）无视 draggable="true"，
+        // dragstart 永远不触发 → 真机「完全拖不动」，而 jsdom 测试绕过原生门控全部通过。
+        // FileTree 的行本来就是 div，所以它没问题。详见 wpt 47a8c17（按钮 draggable 规范变更）。
+        draggable={isNote}
+        onDragStart={(e) => {
+          if (isNote && node.note) dnd.onNoteDragStart(node.note, e)
+        }}
+        onDragEnd={() => {
+          if (isNote) dnd.onDragEnd()
+        }}
         onDragOver={(e) => {
           if (!dnd.dragging) return
           // 行内吃掉事件，阻止冒泡到树容器（否则拖到知识/无效目标上会误触发「移到顶层」）
@@ -1181,13 +1211,6 @@ function TreeNodeRow({
                 ? { background: 'var(--color-bg-active)', boxShadow: 'inset 0 0 0 1.5px var(--color-accent)' }
                 : null),
               ...(draggingSelf ? { opacity: 0.45 } : null),
-            }}
-            draggable={isNote}
-            onDragStart={(e) => {
-              if (isNote && node.note) dnd.onNoteDragStart(node.note, e)
-            }}
-            onDragEnd={() => {
-              if (isNote) dnd.onDragEnd()
             }}
             onClick={() => {
               if (node.kind === 'note' && node.note) onOpenNote(node.note)

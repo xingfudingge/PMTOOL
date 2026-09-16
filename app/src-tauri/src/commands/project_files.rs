@@ -132,6 +132,15 @@ pub fn copy_path_cmd(path: String) -> Result<String, String> {
     file_browser::copy_path(&p).map(|pb| pb.to_string_lossy().to_string())
 }
 
+/// 复制文件 / 目录到指定目标目录（右键菜单「粘贴」· 维护者 2026-09-16）
+/// 同名冲突自动「- 副本」，返回最终写入路径（前端刷新文件树用）
+#[tauri::command]
+pub fn copy_path_to_cmd(path: String, dest_dir: String) -> Result<String, String> {
+    let p = PathBuf::from(&path);
+    let d = PathBuf::from(&dest_dir);
+    file_browser::copy_path_to_dir(&p, &d).map(|pb| pb.to_string_lossy().to_string())
+}
+
 /// 用 OS 默认程序打开文件（open crate）
 #[tauri::command]
 pub fn open_file_external(path: String) -> Result<String, String> {

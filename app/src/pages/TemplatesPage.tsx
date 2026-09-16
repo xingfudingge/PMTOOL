@@ -9,17 +9,22 @@ import {
   RefreshCw,
   ExternalLink,
  } from 'lucide-react'
-import { FileTree } from '@/components/FileTree'
+import { FileTree, parentOfPath, pathSepOf, stripSep } from '@/components/FileTree'
 import { FilePreview } from '@/components/FilePreview'
+import { toast } from '@/components/Toast'
 import {
   listProjectFiles,
   pickProjectDirectory,
   createFile,
   createDirectory,
   removePath,
+  renamePath,
+  copyPath,
+  copyPathToDir,
   openFileExternal,
   type FileNode,
  } from '@/services/projectFiles'
+import { revealPath } from '@/services/settings'
 import { getTemplateDirectory, setTemplateDirectory } from '@/services/templateDirectory'
 
 export function TemplatesPage() {
@@ -130,6 +135,104 @@ export function TemplatesPage() {
       await openFileExternal(selected.path)
     } catch (e) {
       setTreeError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // ── 维护者 2026-09-16：右键菜单能力（与项目文件管理对齐） ──
+  /** 在系统文件管理器中打开目录 / 定位文件 */
+  const handleRevealPath = async (path: string) => {
+    try {
+      await revealPath(path)
+    } catch (e) {
+      toast.error('打开失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+  const handleReveal = (node: FileNode) => handleRevealPath(node.path)
+
+  /** 右键「打开」：系统默认程序打开 */
+  const handleOpenNode = async (node: FileNode) => {
+    try {
+      await openFileExternal(node.path)
+    } catch (e) {
+      toast.error('打开失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** 行内重命名提交 */
+  const handleRename = async (node: FileNode, newName: string) => {
+    const newPath = parentOfPath(node.path) + pathSepOf(node.path) + newName
+    try {
+      await renamePath(node.path, newPath)
+      const srcPrefix = stripSep(node.path).toLowerCase()
+      setSelected((prev) => {
+        if (!prev) return null
+        const p = stripSep(prev.path).toLowerCase()
+        if (p === srcPrefix) return { ...prev, path: newPath, name: newName }
+        if (p.startsWith(srcPrefix + '\\') || p.startsWith(srcPrefix + '/')) return null
+        return prev
+      })
+      toast.success(`已重命名为「${newName}」`)
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error('重命名失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** 拖拽 / 剪切粘贴：移动到目标目录 */
+  const handleMoveToDir = async (node: FileNode, targetDir: FileNode) => {
+    if (!tree) return
+    const clash = targetDir.children.some(
+      (c) => c.name.toLowerCase() === node.name.toLowerCase(),
+    )
+    if (clash) {
+      toast.error(`「${targetDir.path === tree.path ? '根目录' : targetDir.name}」下已有「${node.name}」，移动已取消`)
+      return
+    }
+    const newPath = targetDir.path.replace(/[\\/]+$/, '') + pathSepOf(targetDir.path) + node.name
+    try {
+      await renamePath(node.path, newPath)
+      const where = targetDir.path === tree.path ? '根目录' : `「${targetDir.name}」`
+      toast.success(`已把「${node.name}」移动到${where}`)
+      const srcPrefix = stripSep(node.path).toLowerCase()
+      setSelected((prev) => {
+        if (!prev) return null
+        const p = stripSep(prev.path).toLowerCase()
+        return p === srcPrefix ||
+          p.startsWith(srcPrefix + '\\') ||
+          p.startsWith(srcPrefix + '/')
+          ? null
+          : prev
+      })
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error('移动失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** 右键「粘贴」· 复制模式 */
+  const handleCopyToDir = async (node: FileNode, targetDir: FileNode) => {
+    try {
+      const written = await copyPathToDir(node.path, targetDir.path)
+      const finalName = written.split(/[\\/]/).pop() ?? node.name
+      const where = tree && targetDir.path === tree.path ? '根目录' : `「${targetDir.name}」`
+      toast.success(
+        `已复制到${where}`,
+        finalName === node.name ? undefined : `命名为「${finalName}」`,
+      )
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error('复制失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** hover 复制按钮：就地创建副本 */
+  const handleDuplicate = async (node: FileNode) => {
+    try {
+      const written = await copyPath(node.path)
+      toast.success(`已创建副本「${written.split(/[\\/]/).pop() ?? node.name}」`)
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error('复制失败', e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -293,6 +396,17 @@ export function TemplatesPage() {
                 }}
               />
               刷新
+            </button>
+            <button
+              type="button"
+              style={toolbarBtn}
+              onClick={() => {
+                if (boundPath) void handleRevealPath(boundPath)
+              }}
+              title="在系统文件管理器中打开该目录"
+            >
+              <FolderOpen size={12} />
+              打开
             </button>
             <button
               type="button"
@@ -541,6 +655,15 @@ export function TemplatesPage() {
                   if (tree && node.path === tree.path) return
                   setSelected(node)
                 }}
+                // 维护者 2026-09-16：与项目文件管理对齐 —— 拖拽移动 + 右键菜单（复制/剪切/粘贴/重命名/删除/新建/打开）
+                onMoveToDir={handleMoveToDir}
+                onCopyToDir={handleCopyToDir}
+                onRename={handleRename}
+                onRequestCopy={handleDuplicate}
+                onRequestDelete={(node) => setPendingConfirm({ kind: 'delete', node })}
+                onRequestCreate={(mode, dir) => openCreate(mode, dir.path)}
+                onReveal={handleReveal}
+                onOpenExternal={handleOpenNode}
               />
             )}
           </div>

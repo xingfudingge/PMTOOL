@@ -105,7 +105,7 @@ import {
 } from '@/services/projectTasks'
 import { defaultHolidayProvider } from '@/services/holidayProvider'
 import { ProjectOverviewEditModal } from '@/components/ProjectOverviewEditModal'
-import { FileTree } from '@/components/FileTree'
+import { FileTree, parentOfPath, pathSepOf, stripSep } from '@/components/FileTree'
 import { FilePreview } from '@/components/FilePreview'
 import { ProjectKnowledgeCenter } from '@/components/KnowledgeSpaceView/ProjectKnowledgeCenter'
 import {
@@ -124,8 +124,12 @@ import {
   createFile,
   createDirectory,
   removePath,
+  renamePath,
+  copyPath,
+  copyPathToDir,
   type FileNode,
 } from '@/services/projectFiles'
+import { revealPath } from '@/services/settings'
 
 interface Props {
   projectId: number
@@ -7427,6 +7431,111 @@ function FilesTab({
     }
   }
 
+  /**
+   * 维护者 2026-09-16：拖拽移动文件/目录到目标目录（对齐知识中心拖拽交互）
+   * FileTree 已校验目标合法性（目录 / 非自身子树 / 非同目录），这里负责实际落盘：
+   *   rename = 移动到 targetDir/name → 成功后清掉失效选中 → 刷新树
+   */
+  const handleMoveToDir = async (node: FileNode, targetDir: FileNode) => {
+    if (!tree) return
+    // 同名碰撞：先查内存树（大小写不敏感 · Windows 语义），给出友好提示
+    const clash = targetDir.children.some(
+      (c) => c.name.toLowerCase() === node.name.toLowerCase(),
+    )
+    if (clash) {
+      toast.error(`「${targetDir.name === tree.name ? '根目录' : targetDir.name}」下已有「${node.name}」，移动已取消`)
+      return
+    }
+    const sep = targetDir.path.includes('\\') ? '\\' : '/'
+    const newPath = targetDir.path.replace(/[\\/]+$/, '') + sep + node.name
+    try {
+      await renamePath(node.path, newPath)
+      const isRootTarget = targetDir.path === tree.path
+      toast.success(`已把「${node.name}」移动到「${isRootTarget ? '根目录' : targetDir.name}」`)
+      // 被移动节点（或其子孙）正被预览 → 旧路径已失效，清空选中
+      const dragPrefix = node.path.replace(/[\\/]+$/, '').toLowerCase()
+      setSelected((prev) => {
+        if (!prev) return null
+        const p = prev.path.replace(/[\\/]+$/, '').toLowerCase()
+        return p === dragPrefix ||
+          p.startsWith(dragPrefix + '\\') ||
+          p.startsWith(dragPrefix + '/')
+          ? null
+          : prev
+      })
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error(`移动失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /** 维护者 2026-09-16：在系统文件管理器中打开目录 / 定位到文件（工具栏「打开」+ 右键） */
+  const handleRevealPath = async (path: string) => {
+    try {
+      await revealPath(path)
+    } catch (e) {
+      toast.error('打开失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+  const handleReveal = (node: FileNode) => handleRevealPath(node.path)
+
+  /** 右键「打开」：用系统默认程序打开文件（与预览区「本地编辑器打开」同一后端命令） */
+  const handleOpenNode = async (node: FileNode) => {
+    try {
+      await openFileExternal(node.path)
+    } catch (e) {
+      toast.error('打开失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** 行内重命名提交（FileTree 已过滤空名 / 未变 / 含分隔符） */
+  const handleRename = async (node: FileNode, newName: string) => {
+    const newPath = parentOfPath(node.path) + pathSepOf(node.path) + newName
+    try {
+      await renamePath(node.path, newPath)
+      // 改名节点（或其子孙）正被预览 → 同步新路径；子孙路径已失效 → 清空选中
+      const srcPrefix = stripSep(node.path).toLowerCase()
+      setSelected((prev) => {
+        if (!prev) return null
+        const p = stripSep(prev.path).toLowerCase()
+        if (p === srcPrefix) return { ...prev, path: newPath, name: newName }
+        if (p.startsWith(srcPrefix + '\\') || p.startsWith(srcPrefix + '/')) return null
+        return prev
+      })
+      toast.success(`已重命名为「${newName}」`)
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error('重命名失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** 右键「粘贴」· 复制模式：复制到目标目录（同名后端自动「- 副本」） */
+  const handleCopyToDir = async (node: FileNode, targetDir: FileNode) => {
+    try {
+      const written = await copyPathToDir(node.path, targetDir.path)
+      const finalName = written.split(/[\\/]/).pop() ?? node.name
+      const where = tree && targetDir.path === tree.path ? '根目录' : `「${targetDir.name}」`
+      toast.success(
+        `已复制到${where}`,
+        finalName === node.name ? undefined : `命名为「${finalName}」`,
+      )
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error('复制失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** hover 复制按钮：就地创建副本 */
+  const handleDuplicate = async (node: FileNode) => {
+    try {
+      const written = await copyPath(node.path)
+      toast.success(`已创建副本「${written.split(/[\\/]/).pop() ?? node.name}」`)
+      await loadTree(boundPath!)
+    } catch (e) {
+      toast.error('复制失败', e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // 工具栏按钮样式
   const toolbarBtn: React.CSSProperties = {
     display: 'inline-flex',
@@ -7532,6 +7641,17 @@ function FilesTab({
                 }}
               />
               刷新
+            </button>
+            <button
+              type="button"
+              style={toolbarBtn}
+              onClick={() => {
+                if (boundPath) void handleRevealPath(boundPath)
+              }}
+              title="在系统文件管理器中打开该目录"
+            >
+              <FolderOpen size={12} />
+              打开
             </button>
             <button
               type="button"
@@ -7780,6 +7900,16 @@ function FilesTab({
                   if (tree && node.path === tree.path) return
                   setSelected(node)
                 }}
+                // 维护者 2026-09-16：拖拽移动（对齐知识中心 · 落下 → renamePath 移动到目标目录）
+                onMoveToDir={handleMoveToDir}
+                // 维护者 2026-09-16：右键菜单 + 行内重命名 + 剪贴板（复制 / 剪切 / 粘贴）
+                onRename={handleRename}
+                onRequestCopy={handleDuplicate}
+                onRequestDelete={(node) => setPendingConfirm({ kind: 'delete', node })}
+                onRequestCreate={(mode, dir) => openCreate(mode, dir.path)}
+                onCopyToDir={handleCopyToDir}
+                onReveal={handleReveal}
+                onOpenExternal={handleOpenNode}
               />
             )}
           </div>

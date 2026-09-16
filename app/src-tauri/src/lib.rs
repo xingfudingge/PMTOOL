@@ -209,6 +209,7 @@ pub fn run() {
             commands::project_files::remove_path_cmd,
             commands::project_files::rename_path_cmd,
             commands::project_files::copy_path_cmd,
+            commands::project_files::copy_path_to_cmd,
             commands::project_files::open_file_external,
             commands::project_files::read_text_file_with_mtime,
             commands::project_files::save_export_file,

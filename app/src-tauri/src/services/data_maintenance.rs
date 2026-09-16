@@ -45,6 +45,18 @@ pub fn is_backup_root(dir: &Path) -> bool {
     dir.join("pmtool.db").exists()
 }
 
+/// 校验文件是否为真正的 SQLite 数据库（检查文件头magic "SQLite format 3\0"）
+/// 防止用户选错同名后缀文件（如改名的文档/损坏文件）导致还原出坏库
+pub fn is_sqlite_db(file: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut f) = fs::File::open(file) else { return false };
+    let mut buf = [0u8; 16];
+    match f.read_exact(&mut buf) {
+        Ok(()) => &buf[..15] == b"SQLite format 3",
+        Err(_) => false,
+    }
+}
+
 /// 返回目录下顶层条目（文件名, 是否为目录）供备份列表展示
 pub fn list_top_level(dir: &Path) -> Vec<(String, bool)> {
     let mut out = Vec::new();

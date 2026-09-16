@@ -408,6 +408,72 @@ pub fn copy_path(src: &Path) -> Result<PathBuf, String> {
     Ok(target)
 }
 
+/// 复制文件 / 目录到指定目标目录（右键菜单「复制 → 粘贴」用 · 维护者 2026-09-16）
+///
+/// 与 copy_path 的区别：copy_path 是「就地生成副本」，本函数是「复制到别的目录」。
+/// 目标同名时的消解策略与 Windows 资源管理器一致：`name - 副本` / `name - 副本 (2)` …
+/// 返回最终写入的路径（前端刷新树用）。
+pub fn copy_path_to_dir(src: &Path, dest_dir: &Path) -> Result<PathBuf, String> {
+    if !src.exists() {
+        return Err(format!("源路径不存在「{}」", src.display()));
+    }
+    if !dest_dir.is_dir() {
+        return Err(format!("目标不是目录「{}」", dest_dir.display()));
+    }
+    // 目录不能复制进自身或自己的子孙（会无限递归 / 数据损坏）
+    if src.is_dir() {
+        let s = std::fs::canonicalize(src)
+            .map_err(|e| format!("无法解析源路径「{}」：{}", src.display(), e))?;
+        let d = std::fs::canonicalize(dest_dir)
+            .map_err(|e| format!("无法解析目标路径「{}」：{}", dest_dir.display(), e))?;
+        if d == s || d.starts_with(&s) {
+            return Err(format!("不能把「{}」复制到它自己的子目录里", src.display()));
+        }
+    }
+
+    let name = src
+        .file_name()
+        .ok_or_else(|| format!("无法解析名称「{}」", src.display()))?;
+    let mut target = dest_dir.join(name);
+    if target.exists() {
+        // 同名冲突 → 依次尝试「- 副本」「- 副本 (2)」…
+        // 目录不拆扩展名（否则 "v1.2" 会变成 "v1 - 副本.2"）
+        let (stem, ext) = if src.is_dir() {
+            (
+                name.to_str()
+                    .ok_or_else(|| format!("无法解析名称「{}」", src.display()))?,
+                "",
+            )
+        } else {
+            (
+                src.file_stem()
+                    .and_then(|s| s.to_str())
+                    .ok_or_else(|| format!("无法解析文件名「{}」", src.display()))?,
+                src.extension().and_then(|s| s.to_str()).unwrap_or(""),
+            )
+        };
+        let mut n = 1usize;
+        loop {
+            target = build_copy_target(dest_dir, stem, ext, n);
+            if !target.exists() {
+                break;
+            }
+            n += 1;
+            if n > 999 {
+                return Err(format!("找不到可用名称「{}」", src.display()));
+            }
+        }
+    }
+
+    if src.is_dir() {
+        copy_dir_recursive(src, &target)?;
+    } else {
+        std::fs::copy(src, &target)
+            .map_err(|e| format!("复制文件失败「{}」→「{}」：{}", src.display(), target.display(), e))?;
+    }
+    Ok(target)
+}
+
 /// 生成第 n 个副本目标路径
 ///   n=1 → "stem - 副本.ext"（macOS Finder / Win 默认命名）
 ///   n≥2 → "stem - 副本 (n).ext"

@@ -45,9 +45,9 @@ export async function backupData(destDir: string): Promise<string> {
   return await invoke<string>('backup_data', { destDir })
 }
 
-/** 用备份目录还原（还原前自动备份当前；返回提示，需重启生效） */
-export async function restoreData(srcDir: string): Promise<string> {
-  return await invoke<string>('restore_data', { srcDir })
+/** 用备份还原（srcPath 可为备份目录或直接的 .db 文件；还原前自动备份当前；返回提示，需重启生效） */
+export async function restoreData(srcPath: string): Promise<string> {
+  return await invoke<string>('restore_data', { srcPath })
 }
 
 /** 删除指定备份目录 */

@@ -83,16 +83,43 @@ pub fn backup_data(state: State<'_, AppState>, dest_dir: String) -> Result<Strin
     Ok(backup_dir.to_string_lossy().to_string())
 }
 
-/// 用备份目录还原数据（缺 pmtool.db 视为无效；还原前先自动备份当前）
-#[tauri::command]
-pub fn restore_data(state: State<'_, AppState>, src_dir: String) -> Result<String, String> {
-    let src = PathBuf::from(&src_dir);
-    if !data_maintenance::is_backup_root(&src) {
-        return Err("不是有效的备份目录（缺少 pmtool.db）".to_string());
+/// 两条路径规范化后是否指向同一位置（Windows 下 canonicalize 可消除大小写/相对路径差异）
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
     }
+}
+
+/// 用备份还原数据（还原前先自动备份当前）
+/// 来源兼容两种：① 备份目录（含 pmtool.db）② 直接选中的 .db 文件
+/// （2026-09-16：导入备份改为文件选择器，用户直接指定要导入哪个库，避免目录里多个 db 时无法选择）
+#[tauri::command]
+pub fn restore_data(state: State<'_, AppState>, src_path: String) -> Result<String, String> {
+    let src = PathBuf::from(&src_path);
+    let (src_db, src_data) = if src.is_file() {
+        // 直接选中的数据库文件：校验是真正的 SQLite，附件目录取其同级的 PMToolData（可能没有）
+        if !data_maintenance::is_sqlite_db(&src) {
+            return Err("所选文件不是有效的数据库文件".to_string());
+        }
+        let data = src.parent().map(|p| p.join("PMToolData")).unwrap_or_default();
+        (src.clone(), data)
+    } else if data_maintenance::is_backup_root(&src) {
+        (src.join("pmtool.db"), src.join("PMToolData"))
+    } else {
+        return Err("不是有效的备份（缺少 pmtool.db）".to_string());
+    };
 
     let data_dir = current_data_dir(&state)?;
     let data_root = data_dir.join("PMToolData");
+    let cur_db = data_dir.join("pmtool.db");
+
+    // 防呆：来源就是当前正在使用的库时直接拒绝，否则会把当前库拷去"还原"自己
+    if same_path(&src_db, &cur_db) {
+        return Err("所选文件就是当前正在使用的数据库，无需导入".to_string());
+    }
+    // 来源附件目录就是当前附件目录时跳过附件还原，避免"删掉自己再从自己拷贝"
+    let restore_data_dir = src_data.exists() && !same_path(&src_data, &data_root);
 
     // 安全性：还原前把当前数据立即备份到 <数据目录>/_restore_backup/<时间戳>/
     let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
@@ -108,10 +135,8 @@ pub fn restore_data(state: State<'_, AppState>, src_dir: String) -> Result<Strin
     }
 
     // 覆盖当前 DB + 数据目录
-    std::fs::copy(src.join("pmtool.db"), data_dir.join("pmtool.db"))
-        .map_err(|e| format!("覆盖数据库失败：{}", e))?;
-    let src_data = src.join("PMToolData");
-    if src_data.exists() {
+    std::fs::copy(&src_db, &cur_db).map_err(|e| format!("覆盖数据库失败：{}", e))?;
+    if restore_data_dir {
         // 先清掉目标再拷贝，保证与备份一致
         if data_root.exists() {
             let _ = std::fs::remove_dir_all(&data_root);
