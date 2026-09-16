@@ -39,7 +39,6 @@ import {
   Folder,
   FolderKanban,
   FolderOpen,
-  FolderPlus,
   ListTodo,
   Maximize,
   Minimize,
@@ -7652,24 +7651,6 @@ function FilesTab({
             >
               <FolderOpen size={12} />
               打开
-            </button>
-            <button
-              type="button"
-              style={toolbarBtn}
-              onClick={() => openCreate('file')}
-              title="在项目根目录新建空文件"
-            >
-              <Plus size={12} />
-              新建文件
-            </button>
-            <button
-              type="button"
-              style={toolbarBtn}
-              onClick={() => openCreate('dir')}
-              title="在项目根目录新建子目录"
-            >
-              <FolderPlus size={12} />
-              新建文件夹
             </button>
             <button
               type="button"

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import {
   FolderOpen,
   Folder,
-  FolderPlus,
   Plus,
   Trash2,
   X,
@@ -407,24 +406,6 @@ export function TemplatesPage() {
             >
               <FolderOpen size={12} />
               打开
-            </button>
-            <button
-              type="button"
-              style={toolbarBtn}
-              onClick={() => openCreate('file')}
-              title="在模板根目录新建空文件"
-            >
-              <Plus size={12} />
-              新建文件
-            </button>
-            <button
-              type="button"
-              style={toolbarBtn}
-              onClick={() => openCreate('dir')}
-              title="在模板根目录新建子目录"
-            >
-              <FolderPlus size={12} />
-              新建文件夹
             </button>
             <button
               type="button"
