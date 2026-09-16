@@ -40,7 +40,8 @@ pub struct AppState {
     /// 文件存储 Provider（Phase 4 T4.9）
     pub file_storage: BoxedProvider,
     /// 应用数据目录 app_data_dir（设置中心「数据」分区用）
-    pub data_dir: std::path::PathBuf,
+    /// 用 Mutex 包裹以支持首启/迁移时热切到自选目录（避免「写入默认库、重启读自选库」丢数据）
+    pub data_dir: Mutex<std::path::PathBuf>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -56,8 +57,29 @@ pub fn run() {
 
             // 数据目录支持覆盖（设置中心「数据目录自定义」· 读 <默认目录>/data_root.override）
             let override_file = default_data_dir.join("data_root.override");
-            let data_dir = services::data_maintenance::read_data_root_override(&override_file)
-                .unwrap_or_else(|| default_data_dir.clone());
+            let override_data_dir = services::data_maintenance::read_data_root_override(&override_file);
+            let data_dir = override_data_dir.clone().unwrap_or_else(|| default_data_dir.clone());
+
+            // 2026-09-16 健康检查：
+            // 若用户自选过目录（data_root.override 存在），但自选目录里没有 pmtool.db，
+            // 而默认应用目录里却有 pmtool.db —— 说明旧版本曾把数据写进默认目录（当时切换未生效），
+            // 而新版本会去读自选目录（空），导致用户“数据丢失”。
+            // 处理：仅在自选目录无库时，把默认目录的库安全迁移到自选目录，绝不覆盖自选目录已有数据。
+            if let Some(target) = &override_data_dir {
+                let target_db = target.join("pmtool.db");
+                let default_db = default_data_dir.join("pmtool.db");
+                if !target_db.exists() && default_db.exists() {
+                    if let Some(parent) = target_db.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    std::fs::copy(&default_db, &target_db).map_err(|e| e.to_string()).ok();
+                    services::logging::log_line(&format!(
+                        "[WARN] 自选目录 {} 无库，检测到默认目录 {} 有数据，已自动迁移以防丢失",
+                        target.display(),
+                        default_db.display()
+                    ));
+                }
+            }
 
             // 日志：启动即落盘（panic + 后续错误都进 <数据目录>/pmtool.log）
             let log_path = services::logging::init(&data_dir);
@@ -81,7 +103,7 @@ pub fn run() {
             app.manage(AppState {
                 db: pool,
                 file_storage,
-                data_dir: data_dir.clone(),
+                data_dir: Mutex::new(data_dir.clone()),
             });
 
             Ok(())

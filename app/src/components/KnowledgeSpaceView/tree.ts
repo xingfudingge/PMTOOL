@@ -199,15 +199,18 @@ export function buildUnifiedTree(
     }
   }
 
+  // 根目录直接挂的知识（folderId=null），无论是否虚拟根都要展示，否则
+  // 项目根/知识库根「新建知识」后不显示（folderId=null 知识被丢弃）。
+  const rootNotes = notes.filter((n) => n.folderId == null)
+
   // 个人知识中心：不再包裹一层系统「目录」伪根，直接把真实文件夹/知识平铺在顶层。
   // 与项目知识库一致（项目每库一个真实根，目录直接挂它下面），避免出现「多出的根目录」。
   if (opts.withVirtualRoot) {
-    const rootNotes = notes.filter((n) => n.folderId == null)
     const visible = folderRoots.filter((n) => n.kind !== 'project-root')
     return [...visible, ...rootNotes.map((n) => toNoteNode(n))]
   }
 
-  return folderRoots
+  return [...folderRoots, ...rootNotes.map((n) => toNoteNode(n))]
 }
 
 /**

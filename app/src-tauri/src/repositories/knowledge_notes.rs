@@ -221,9 +221,10 @@ pub fn search_by_space(
     query: &str,
 ) -> rusqlite::Result<Vec<KnowledgeNote>> {
     let pattern = format!("%{}%", query);
+    // 正文三处都搜：content_md(旧富文本) / content(BlockNote JSON 正文)，否则 BlockNote 笔记正文匹配不到
     let sql = format!(
         "SELECT {} FROM knowledge_notes \
-         WHERE space_id = ?1 AND (title LIKE ?2 OR IFNULL(content_md, '') LIKE ?2) \
+         WHERE space_id = ?1 AND (title LIKE ?2 OR IFNULL(content_md, '') LIKE ?2 OR IFNULL(content, '') LIKE ?2) \
          ORDER BY pinned DESC, updated_at DESC",
         SELECT_COLS
     );
@@ -240,9 +241,10 @@ pub fn search_by_space_type(
     query: &str,
 ) -> rusqlite::Result<Vec<KnowledgeNote>> {
     let pattern = format!("%{}%", query);
+    // 正文三处都搜：content_md / content(BlockNote JSON 正文)，否则 BlockNote 笔记正文匹配不到
     let sql = format!(
         "SELECT {} FROM knowledge_notes \
-         WHERE space = ?1 AND (title LIKE ?2 OR IFNULL(content_md, '') LIKE ?2) \
+         WHERE space = ?1 AND (title LIKE ?2 OR IFNULL(content_md, '') LIKE ?2 OR IFNULL(content, '') LIKE ?2) \
          ORDER BY pinned DESC, updated_at DESC",
         SELECT_COLS
     );

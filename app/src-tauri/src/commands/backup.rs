@@ -2,7 +2,7 @@
  * PMTool · 数据维护 Commands（备份 / 还原 / 数据目录迁移）（维护者 2026-09-09）
  *
  * 复用 services::data_maintenance（纯 fs 拷贝 + SQLite 在线快照）。
- * 还原/迁移因需重建 DB 连接与文件 Provider，均为「拷贝后提示重启生效」。
+ * 还备 / 迁移需重建 DB 连接与文件 Provider，均为「拷贝后重启生效」。
  */
 
 use std::path::{Path, PathBuf};
@@ -26,11 +26,41 @@ fn ensure_parent(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+// 当前生效的数据目录（读 AppState.data_dir，Mutex 包裹）
+fn current_data_dir(state: &State<'_, AppState>) -> Result<PathBuf, String> {
+    state.data_dir.lock().map_err(|e| e.to_string()).map(|g| g.clone())
+}
+
+// 把 AppState 内的数据目录热切到新目录，并让 DB 连接改连目标 pmtool.db。
+// 2026-09-16 修复：此前首启/迁移只写 data_root.override（启动时生效），
+// 而当前会话的 state.db 仍指向默认目录 —— 导致「选目录后新增的数据写进默认库，
+// 真正重启后读到的是自选目录的空库」，用户以为数据丢失。
+fn hot_switch_root(
+    state: &State<'_, AppState>,
+    target: &Path,
+) -> Result<(), String> {
+    // 打开（或创建）目标库并跑幂等迁移
+    let new_conn = crate::db::open_and_migrate(&target.to_path_buf())
+        .map_err(|e| format!("打开目标数据库失败：{}", e))?;
+
+    // 替换当前连接（Mutex 串行，安全）
+    {
+        let mut guard = state.db.lock().map_err(|e| e.to_string())?;
+        *guard = new_conn;
+    }
+    // 更新当前数据目录
+    {
+        let mut guard = state.data_dir.lock().map_err(|e| e.to_string())?;
+        *guard = target.to_path_buf();
+    }
+    Ok(())
+}
+
 /// 立即备份到 dest_dir/<时间戳>/（含 pmtool.db 一致性快照 + PMToolData 目录）
 /// 返回生成的备份目录绝对路径
 #[tauri::command]
 pub fn backup_data(state: State<'_, AppState>, dest_dir: String) -> Result<String, String> {
-    let data_dir = state.data_dir.clone();
+    let data_dir = current_data_dir(&state)?;
     let data_root = data_dir.join("PMToolData");
     let dest = PathBuf::from(&dest_dir);
     let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
@@ -61,7 +91,7 @@ pub fn restore_data(state: State<'_, AppState>, src_dir: String) -> Result<Strin
         return Err("不是有效的备份目录（缺少 pmtool.db）".to_string());
     }
 
-    let data_dir = state.data_dir.clone();
+    let data_dir = current_data_dir(&state)?;
     let data_root = data_dir.join("PMToolData");
 
     // 安全性：还原前把当前数据立即备份到 <数据目录>/_restore_backup/<时间戳>/
@@ -70,7 +100,8 @@ pub fn restore_data(state: State<'_, AppState>, src_dir: String) -> Result<Strin
     std::fs::create_dir_all(&pre).map_err(|e| format!("创建还原前备份失败：{}", e))?;
     {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        data_maintenance::backup_db(&conn, &pre.join("pmtool.db")).map_err(|e| e.to_string())?;
+        data_maintenance::backup_db(&conn, &pre.join("pmtool.db"))
+            .map_err(|e| e.to_string())?;
     }
     if data_root.exists() {
         let _ = data_maintenance::copy_dir_recursive(&data_root, &pre.join("PMToolData"));
@@ -92,13 +123,14 @@ pub fn restore_data(state: State<'_, AppState>, src_dir: String) -> Result<Strin
     Ok("已还原，请重启应用生效".to_string())
 }
 
-/// 把当前数据目录切换到自选位置（拷贝到目标并写覆盖标记，需重启生效）
+/// 把当前数据目录切换到自选位置（拷贝到目标并写覆盖标记）
+/// 2026-09-16：切换后热切连接与 data_dir，无需等待重启，避免数据写入默认库
 #[tauri::command]
 pub fn set_data_root(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<String, String> {
     let target = PathBuf::from(&path);
     std::fs::create_dir_all(&target).map_err(|e| format!("目标目录不可写：{}", e))?;
 
-    let cur = state.data_dir.clone();
+    let cur = current_data_dir(&state)?;
     if cur != target {
         // 拷贝 db + PMToolData 到目标
         std::fs::copy(cur.join("pmtool.db"), target.join("pmtool.db"))
@@ -115,7 +147,10 @@ pub fn set_data_root(app: AppHandle, state: State<'_, AppState>, path: String) -
     data_maintenance::write_data_root_override(&override_file, path.trim())
         .map_err(|e| format!("写入数据目录标记失败：{}", e))?;
 
-    Ok("数据目录已迁移，请重启应用生效".to_string())
+    // 热切当前会话到目标目录
+    hot_switch_root(&state, &target)?;
+
+    Ok("数据目录已切换并生效".to_string())
 }
 
 /// 是否已由用户自选过数据目录（首启检测用；读 OS 默认应用目录下的覆盖标记）
@@ -126,8 +161,8 @@ pub fn is_data_root_set(app: AppHandle) -> Result<bool, String> {
     Ok(data_maintenance::read_data_root_override(&override_file).is_some())
 }
 
-/// 首启：弹出原生目录选择器，用户自选数据存放目录并写入覆盖标记（复用迁移逻辑，重启生效）
-/// 返回所选目录；取消返回 None
+/// 首启：弹出原生目录选择器，用户自选数据存放目录并写入覆盖标记
+/// 2026-09-16：选择后热切当前会话到目标目录，数据即刻写入自选库
 #[tauri::command]
 pub fn pick_data_root(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
     let picked = rfd::FileDialog::new()
@@ -141,7 +176,7 @@ pub fn pick_data_root(app: AppHandle, state: State<'_, AppState>) -> Result<Opti
     std::fs::create_dir_all(&target).map_err(|e| format!("目标目录不可写：{}", e))?;
 
     // 拷贝 db + PMToolData 到目标（首启时 db 为空，拷贝无副作用）
-    let cur = state.data_dir.clone();
+    let cur = current_data_dir(&state)?;
     if cur != target {
         let _ = std::fs::copy(cur.join("pmtool.db"), target.join("pmtool.db"));
         let pm_data = cur.join("PMToolData");
@@ -155,6 +190,9 @@ pub fn pick_data_root(app: AppHandle, state: State<'_, AppState>) -> Result<Opti
     let override_file = default_dir.join("data_root.override");
     data_maintenance::write_data_root_override(&override_file, target.to_string_lossy().as_ref())
         .map_err(|e| format!("写入数据目录标记失败：{}", e))?;
+
+    // 热切当前会话到目标目录（不再需要用户重启才发现数据“丢失”）
+    hot_switch_root(&state, &target)?;
 
     Ok(Some(target.to_string_lossy().to_string()))
 }

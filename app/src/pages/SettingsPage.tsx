@@ -278,6 +278,15 @@ function DataSection() {
     } catch (e) { setMsg('删除失败：' + String(e)) }
     finally { setBusy(false) }
   }
+  // 换电脑/迁移：直接选一个备份目录导入还原，无需先设备份目录/先备份
+  const importBackup = async () => {
+    const d = await pickProjectDirectory()
+    if (!d) return
+    setBusy(true); setMsg(null)
+    try { setMsg(await restoreData(d)) }
+    catch (e) { setMsg('导入失败：' + String(e)) }
+    finally { setBusy(false) }
+  }
   return (
     <>
       <SectionHeader title="数据" desc="存储位置 · 备份恢复" />
@@ -300,6 +309,7 @@ function DataSection() {
           <ReadonlyRow Icon={FolderOpen} value={backupDir ?? '未设置'} />
           <button type="button" className="pm-btn" onClick={pickBackupDir}>选择…</button>
           <button type="button" className="pm-btn" disabled={busy} onClick={doBackup}>立即备份</button>
+          <button type="button" className="pm-btn" disabled={busy} onClick={importBackup} title="选一个已有备份目录直接导入还原（换电脑/迁移数据用）">导入备份</button>
         </span>
       </Field>
       {msg && <div className={/重启|还原|迁移/.test(msg) ? 'pms-msg-warn' : 'pms-msg'}>{msg}</div>}

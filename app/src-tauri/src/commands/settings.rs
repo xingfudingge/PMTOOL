@@ -37,7 +37,7 @@ pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Re
 pub fn get_data_dir(
     state: State<'_, AppState>,
 ) -> Result<(String, String), String> {
-    let data_dir: PathBuf = state.data_dir.clone();
+    let data_dir: PathBuf = state.data_dir.lock().map_err(|e| e.to_string())?.clone();
     let db = data_dir.join("pmtool.db");
     Ok((data_dir.to_string_lossy().to_string(), db.to_string_lossy().to_string()))
 }

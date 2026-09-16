@@ -32,13 +32,13 @@ fn db_path(app_data_dir: &PathBuf) -> PathBuf {
     app_data_dir.join("pmtool.db")
 }
 
-/// 初始化数据库（应用启动时调用）
-/// - 创建数据库文件
-/// - 执行 schema migration
-/// - 返回包装后的 Connection（供 AppState 管理）
-pub fn init(app_data_dir: &PathBuf) -> Result<DbPool, rusqlite::Error> {
-    let path = db_path(&app_data_dir);
-    eprintln!("[DB] 初始化数据库: {:?}", path);
+/// 打开数据库连接并确保迁移（供启动 & 首启/迁移切换数据目录共用）
+/// - 打开（不存在则创建）指定目录下的 pmtool.db
+/// - 开启外键约束
+/// - 执行 schema migration（幂等）
+pub fn open_and_migrate(data_dir: &PathBuf) -> Result<Connection, rusqlite::Error> {
+    let path = db_path(data_dir);
+    eprintln!("[DB] 打开数据库: {:?}", path);
 
     // 确保数据目录存在
     if let Some(parent) = path.parent() {
@@ -55,6 +55,18 @@ pub fn init(app_data_dir: &PathBuf) -> Result<DbPool, rusqlite::Error> {
 
     // 执行 schema migration（drizzle-kit 格式）
     run_migrations(&conn)?;
+
+    Ok(conn)
+}
+
+/// 初始化数据库（应用启动时调用）
+/// - 创建数据库文件
+/// - 执行 schema migration
+/// - 返回包装后的 Connection（供 AppState 管理）
+pub fn init(app_data_dir: &PathBuf) -> Result<DbPool, rusqlite::Error> {
+    eprintln!("[DB] 初始化数据库: {:?}", db_path(&app_data_dir));
+
+    let conn = open_and_migrate(app_data_dir)?;
 
     // 维护者 2026-09-07 · 修正：不再启动时自动补建项目知识空间。
     // 知识空间只能从知识中心「添加项目」创建（前端 handleAdd 会先查后建，必要时自动创空间+绑定）。

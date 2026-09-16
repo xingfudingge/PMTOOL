@@ -55,7 +55,7 @@ export async function createProject(input: {
     project_code: input.projectCode,
     project_name: input.projectName,
     customer_name: input.customerName ?? null,
-    status: input.status ?? 'PLANNING',
+    status: input.status ?? 'START',
     priority: input.priority ?? 'NORMAL',
     owner: input.owner ?? null,
     start_date: input.startDate ?? null,

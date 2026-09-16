@@ -172,7 +172,7 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [primary, setPrimary] = useState<PrimaryTab>('planning')
-  const [planning, setPlanning] = useState<PlanningTab>('overall')
+  const [planning, setPlanning] = useState<PlanningTab>('overview')
   const [editOpen, setEditOpen] = useState(false)
 
   // 维护者 2026-08-26：项目周期自动从任务最早 start_date / 最晚 end_date 读取

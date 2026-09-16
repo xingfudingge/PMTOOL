@@ -105,7 +105,7 @@ describe('验收 T4.1 · 项目 CRUD', () => {
     expect(result).toBeNull()
   })
 
-  it('createProject 默认 status=PLANNING priority=NORMAL', async () => {
+  it('createProject 默认 status=START priority=NORMAL', async () => {
     vi.mocked(invoke).mockResolvedValueOnce(42)
     const id = await createProject({
       projectCode: 'PM-NEW',
@@ -117,7 +117,7 @@ describe('验收 T4.1 · 项目 CRUD', () => {
         project: expect.objectContaining({
           project_code: 'PM-NEW',
           project_name: '新建项目',
-          status: 'PLANNING',
+          status: 'START',
           priority: 'NORMAL',
         }),
       }),

@@ -22,7 +22,8 @@ export default function FirstRunSetup() {
     try {
       const dir = await pickDataRoot()
       if (dir) {
-        // 迁移后需重启生效，刷新即可让 setup 阶段重新按新目录建库
+        // 2026-09-16 修复：后端已由 pick_data_root 热切到自选目录，后续数据即写自选库。
+        // 此处仅刷新网页让覆盖层消失（isDataRootSet 现为 true），不再依赖重启。
         window.location.reload()
       }
     } catch (e) {

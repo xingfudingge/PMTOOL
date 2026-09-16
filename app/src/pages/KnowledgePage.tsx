@@ -7,7 +7,7 @@
  *               点击某个知识库后展示该库 KnowledgeTreeView（按 spaceId 进入）
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Search, ChevronLeft, Library } from 'lucide-react'
 import { PersonalKnowledgeCenter } from '@/components/KnowledgeSpaceView/PersonalKnowledgeCenter'
 import { useEditingMaximized } from '@/components/DocumentEditor/editingMaximized'
@@ -19,13 +19,32 @@ import type { KnowledgeSpace } from '@/services/knowledgeSpaces'
 export function KnowledgePage() {
   const editingMaximized = useEditingMaximized()
   const [space, setSpace] = useState<'personal' | 'project'>('personal')
+  // 输入框实时值（每字符更新，不触发搜索）
+  const [globalInput, setGlobalInput] = useState('')
+  // 真正触发搜索的值（≥2 字符 + 350ms 防抖后才更新）
   const [globalQuery, setGlobalQuery] = useState('')
   const [selectedSpace, setSelectedSpace] = useState<KnowledgeSpace | null>(null)
   const [showManager, setShowManager] = useState(false)
 
+  // 顶部全局搜索：<2 字符不搜（避免输一个字就触发，结果又宽又噪），≥2 字符后防抖再搜
+  useEffect(() => {
+    const q = globalInput.trim()
+    if (q.length < 2) {
+      setGlobalQuery('')
+      return
+    }
+    const t = setTimeout(() => setGlobalQuery(q), 350)
+    return () => clearTimeout(t)
+  }, [globalInput])
+
+  const clearSearch = () => {
+    setGlobalInput('')
+    setGlobalQuery('')
+  }
+
   // 全局搜索优先
   if (globalQuery.trim()) {
-    return <GlobalSearchResults query={globalQuery.trim()} onDeleted={() => setGlobalQuery('')} />
+    return <GlobalSearchResults query={globalQuery.trim()} onDeleted={clearSearch} />
   }
 
   return (
@@ -54,8 +73,8 @@ export function KnowledgePage() {
           <Search size={12} strokeWidth={1.75} color="var(--color-text-tertiary)" />
           <input
             type="search"
-            value={globalQuery}
-            onChange={(e) => setGlobalQuery(e.target.value)}
+            value={globalInput}
+            onChange={(e) => setGlobalInput(e.target.value)}
             placeholder="🔍 搜索全部知识…"
             style={{
               flex: 1,
@@ -66,10 +85,10 @@ export function KnowledgePage() {
               color: 'var(--color-text)',
             }}
           />
-          {globalQuery && (
+          {globalInput && (
             <button
               type="button"
-              onClick={() => setGlobalQuery('')}
+              onClick={() => setGlobalInput('')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',

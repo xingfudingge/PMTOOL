@@ -154,7 +154,7 @@ describe('KnowledgeTreeView 统一树（2026-09-04 重构 · 设计文档 §31�
       expect(tree[0].kind).toBe('project-root')
     })
 
-    it('无限层级：三层目录正确嵌套', () => {
+it('无限层级：三层目录正确嵌套', () => {
       const folders = [
         mkFolder(1, null, 'L1'),
         mkFolder(2, 1, 'L2'),
@@ -164,6 +164,14 @@ describe('KnowledgeTreeView 统一树（2026-09-04 重构 · 设计文档 §31�
       expect(tree[0].id).toBe(1)
       expect(tree[0].children[0].id).toBe(2)
       expect(tree[0].children[0].children[0].id).toBe(3)
+    })
+
+    it('项目根下直接新建的知识（folderId=null）必须展示，不被丢弃', () => {
+      const folders = [mkFolder(7, null, '项目A', 'PROJECT_ROOT')]
+      const notes = [mkNote(100, { folderId: null })] // 项目根新建 → folderId=null
+      const tree = buildUnifiedTree(folders, notes) // withVirtualRoot 默认 false
+      const noteNode = tree.find((n) => n.kind === 'note' && n.id === 100)
+      expect(noteNode).toBeDefined()
     })
   })
 })
