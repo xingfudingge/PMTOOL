@@ -1,0 +1,8 @@
+# 依赖构建脚本审批（pnpm 10.26+/11+/12 的 allowBuilds）
+# - esbuild: 必须 true，postinstall 负责落平台二进制
+# - puppeteer: 源码未直接 import，postinstall 下载 Chrome 不需要（与 pnpm 10 时期行为一致）
+# - canvas: 可选传递依赖，不需要
+allowBuilds:
+  canvas: false
+  esbuild: true
+  puppeteer: false
