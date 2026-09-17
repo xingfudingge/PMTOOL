@@ -23,8 +23,8 @@ use crate::services::auth::secure_storage::KeyringStorage;
 use crate::AppState;
 
 /// 授权状态视图（前端展示用）
+/// 注意：字段输出为 snake_case（与项目其余命令返回值一致，Tauri invoke 返回值不做字段名转换）
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AuthorizationStateView {
     pub state: String, // "licensed" | "trial" | "not_authorized"
     pub licensed: bool,
