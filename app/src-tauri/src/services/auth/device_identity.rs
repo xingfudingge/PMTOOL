@@ -22,6 +22,24 @@
 
 use std::process::Command;
 
+/// 以静默方式启动子进程（2026-09-17 修复：Windows 启动时弹多次 cmd 黑窗）
+/// Windows 上使用 CREATE_NO_WINDOW 隐藏子进程控制台（reg/wmic/getmac/powershell 等
+/// 本身有 conhost，GUI 应用调用时若不隐藏会闪现黑色命令窗口，观感像木马）。
+#[cfg(target_os = "windows")]
+fn silent_cmd(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+    let mut c = Command::new(program);
+    // CREATE_NO_WINDOW = 0x08000000
+    c.creation_flags(0x0800_0000);
+    c
+}
+
+/// 非 Windows 平台无需隐藏控制台
+#[cfg(not(target_os = "windows"))]
+fn silent_cmd(program: &str) -> Command {
+    Command::new(program)
+}
+
 /// 设备身份
 #[derive(Debug, Clone)]
 pub struct DeviceIdentity {
@@ -46,7 +64,7 @@ pub fn get_primary_hardware_id() -> Option<String> {
     // macOS：ioreg 取 IOPlatformUUID（系统级硬件 UUID，EFI 烧录）
     #[cfg(target_os = "macos")]
     {
-        if let Ok(output) = Command::new("ioreg")
+        if let Ok(output) = silent_cmd("ioreg")
             .args(["-rd1", "-c", "IOPlatformExpertDevice"])
             .output()
         {
@@ -87,7 +105,7 @@ pub fn get_primary_hardware_id() -> Option<String> {
     // Windows：注册表 MachineGuid（系统安装时生成）
     #[cfg(target_os = "windows")]
     {
-        if let Ok(output) = Command::new("reg")
+        if let Ok(output) = silent_cmd("reg")
             .args(["query", r"HKLM\SOFTWARE\Microsoft\Cryptography", "/v", "MachineGuid"])
             .output()
         {
@@ -121,7 +139,7 @@ fn collect_aux_features() -> Vec<String> {
     // macOS：IOPlatformSerialNumber + 网卡 MAC
     #[cfg(target_os = "macos")]
     {
-        if let Ok(output) = Command::new("ioreg")
+        if let Ok(output) = silent_cmd("ioreg")
             .args(["-rd1", "-c", "IOPlatformExpertDevice"])
             .output()
         {
@@ -175,7 +193,7 @@ fn collect_aux_features() -> Vec<String> {
             ["wmic", "csproduct", "get", "uuid"],
             ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"],
         ] {
-            if let Ok(output) = Command::new(cmd[0]).args(&cmd[1..]).output() {
+            if let Ok(output) = silent_cmd(cmd[0]).args(&cmd[1..]).output() {
                 if let Ok(txt) = String::from_utf8(output.stdout) {
                     for line in txt.lines() {
                         let v = line.trim().to_lowercase();
@@ -210,7 +228,7 @@ fn collect_mac_addresses() -> Option<String> {
 
     #[cfg(target_os = "macos")]
     {
-        if let Ok(o) = Command::new("ifconfig").arg("-a").output() {
+        if let Ok(o) = silent_cmd("ifconfig").arg("-a").output() {
             if let Ok(t) = String::from_utf8(o.stdout) {
                 for line in t.lines() {
                     let l = line.trim();
@@ -246,7 +264,7 @@ fn collect_mac_addresses() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         for cmd in [["getmac", "/fo", "csv", "/nh"], ["getmac", "/fo", "list", "/v"]] {
-            if let Ok(o) = Command::new(cmd[0]).args(&cmd[1..]).output() {
+            if let Ok(o) = silent_cmd(cmd[0]).args(&cmd[1..]).output() {
                 if let Ok(t) = String::from_utf8(o.stdout) {
                     for m in t.split_whitespace() {
                         if is_mac_like(m) {

@@ -1086,6 +1086,8 @@ function GanttTab({
   const scrollRef = useRef<HTMLDivElement | null>(null)
   // Excel 冻结窗格 · 手动 onScroll 同步表头 translateY（sticky top 在 max-content flex 里不可靠）
   const [scrollPos, setScrollPos] = useState({ left: 0, top: 0 })
+  // 全屏模式：滚动容器可用高度（ResizeObserver 实测）· 用于把网格拉伸铺满视口
+  const [fullScrollH, setFullScrollH] = useState(0)
 
   // 模式列宽映射（按 mode 切换 · 不挤）
   const cellW = GANTT_CELL_W[mode]
@@ -1332,6 +1334,21 @@ function GanttTab({
     return undefined
   }
 
+  // 全屏：实测滚动容器可用高度 → 网格往下拉伸铺满视口；还原时复位（嵌入态按内容高度）
+  useEffect(() => {
+    if (!maximized) {
+      setFullScrollH(0)
+      return
+    }
+    const el = scrollRef.current
+    if (!el) return
+    const measure = () => setFullScrollH(el.clientHeight)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [maximized, visibleRows.length])
+
   // ----- 事件处理 -----
   const toggleExpand = (id: number) => {
     setExpanded((prev) => {
@@ -1445,6 +1462,23 @@ function GanttTab({
 
   const totalW = columns.length * cellW
   const totalH = Math.max(visibleRows.length, 1) * GANTT_ROW_H
+  // 全屏：容器比内容高时，网格往下拉伸铺满（SVG 高度 = 容器高 - 表头高）
+  const svgH =
+    maximized && fullScrollH > 0
+      ? Math.max(totalH, fullScrollH - GANTT_HEADER_H)
+      : totalH
+  // 填充行：最后一行任务之后到容器底部的空行（延续斑马/行线/周末底色 · 仅全屏且有余量时）
+  const fillerRows: Array<{ idx: number; y: number; h: number }> = []
+  if (svgH > totalH) {
+    let y = totalH
+    let idx = visibleRows.length
+    while (y < svgH) {
+      const h = Math.min(GANTT_ROW_H, svgH - y)
+      fillerRows.push({ idx, y, h })
+      y += h
+      idx++
+    }
+  }
   const today = todayLocal()
   const todayColIdx = dateToColIndex(today)
 
@@ -1454,6 +1488,7 @@ function GanttTab({
       title="项目甘特图"
       icon={ListTodo}
       accent="var(--color-accent)"
+      fill={maximized}
       rightSlot={
         <div
           style={{
@@ -1530,6 +1565,7 @@ function GanttTab({
             background: 'rgba(239,68,68,0.08)',
             color: 'var(--color-status-danger)',
             fontSize: 12,
+            flexShrink: 0,
           }}
         >
           {error}
@@ -1552,15 +1588,24 @@ function GanttTab({
             border: '1px solid var(--color-border-thin)',
             borderRadius: 'var(--radius)',
             background: 'var(--color-surface)',
-            // 唯一滚动容器：双轴滚动（maxHeight 纵滚 + max-content 横滚）
-            // 240→340：为上方页面头/指标卡/tab/标题 + 底部图例预留空间，避免图例被挤出视口裁掉
-            maxHeight: 'calc(100vh - 340px)',
+            // 嵌入态：maxHeight 为上方页面头/指标卡/tab/标题 + 底部图例预留空间
+            // 全屏态：flex:1 撑满剩余视口高度（由浮窗 flex 列决定），网格往下铺满
+            ...(maximized
+              ? { flex: 1, minHeight: 0 }
+              : { maxHeight: 'calc(100vh - 340px)' }),
             overflow: 'auto',
           }}
         >
           {/* 主体：左 200px label（sticky left）/ 中 timeline / 右 130px stats
-              gantt-tab 唯一双轴滚动 · 三列平铺 flex · 各 sticky → Excel 冻结窗格 */}
-          <div style={{ display: 'flex', width: 'max-content' }}>
+              gantt-tab 唯一双轴滚动 · 三列平铺 flex · 各 sticky → Excel 冻结窗格
+              全屏时 height 撑满容器（实测 px），行不足时三列与 SVG 一起往下铺 */}
+          <div
+            style={{
+              display: 'flex',
+              width: 'max-content',
+              height: maximized && fullScrollH > 0 ? fullScrollH : undefined,
+            }}
+          >
             {/* === 左：标签列（200px · sticky left 双冻结 + 横向冻结） === */}
             <div
               style={{
@@ -1723,6 +1768,20 @@ function GanttTab({
                   </div>
                 )
               })}
+              {/* 全屏填充行：延续斑马 + 行线，标签列铺到容器底部 */}
+              {fillerRows.map((f) => (
+                <div
+                  key={`filllbl-${f.idx}`}
+                  style={{
+                    height: f.h,
+                    borderBottom: '1px solid var(--color-border-thin)',
+                    background:
+                      f.idx % 2 === 0
+                        ? 'var(--color-surface)'
+                        : 'var(--color-surface-muted, rgba(0,0,0,0.025))',
+                  }}
+                />
+              ))}
             </div>
 
             {/* === 中：时间轴（横向滚动由父容器承担） === */}
@@ -1840,10 +1899,10 @@ function GanttTab({
                 )}
               </div>
 
-              {/* 任务条区（SVG · y 从 0 开始 · 不含表头） */}
+              {/* 任务条区（SVG · y 从 0 开始 · 不含表头 · 全屏时拉伸铺满容器） */}
               <svg
                 width={totalW}
-                height={totalH}
+                height={svgH}
                 style={{ display: 'block' }}
               >
                 {/* 数据行（SVG 不再含表头 · y 从 0 开始） */}
@@ -1926,13 +1985,58 @@ function GanttTab({
                   )
                 })}
 
+                {/* 全屏填充区：最后一行任务之后延续斑马/行线/周末节假日底色，网格铺满容器
+                    分层顺序与任务行一致：斑马 → 周末节假日底色 → 行线 */}
+                {fillerRows.length > 0 && (
+                  <g>
+                    {fillerRows.map((f) =>
+                      f.idx % 2 === 1 ? (
+                        <rect
+                          key={`fillz-${f.idx}`}
+                          x={0}
+                          y={f.y}
+                          width={totalW}
+                          height={f.h}
+                          fill="rgba(0,0,0,0.015)"
+                        />
+                      ) : null
+                    )}
+                    {columns.map((col, i) => {
+                      const bgCol = getDayBgColor(col.date)
+                      if (!bgCol) return null
+                      return (
+                        <rect
+                          key={`fillbg-${col.date}`}
+                          x={i * cellW}
+                          y={totalH}
+                          width={cellW}
+                          height={svgH - totalH}
+                          fill={bgCol}
+                          opacity={0.85}
+                        />
+                      )
+                    })}
+                    {fillerRows.map((f) => (
+                      <line
+                        key={`fillln-${f.idx}`}
+                        x1={0}
+                        y1={f.y + f.h}
+                        x2={totalW}
+                        y2={f.y + f.h}
+                        stroke="var(--color-border-thin)"
+                        strokeWidth={0.5}
+                      />
+                    ))}
+                  </g>
+                )}
+
                 {/* 今天竖线（蓝色虚线 · 仅 day 模式且今天落在范围内 · SVG 已不含表头）*/}
                 {mode === 'day' && todayColIdx >= 0 && todayColIdx < columns.length && (
                   <line
                     x1={todayColIdx * cellW + cellW / 2}
                     y1={0}
                     x2={todayColIdx * cellW + cellW / 2}
-                    y2={totalH}
+                    y2={svgH}
                     stroke="#3B82F6"
                     strokeWidth={1}
                     strokeDasharray="4 2"
@@ -2027,6 +2131,31 @@ function GanttTab({
                   </div>
                 )
               })}
+              {/* 全屏填充行：延续斑马 + 行线，统计列铺到容器底部（空行不填数字） */}
+              {fillerRows.map((f) => (
+                <div
+                  key={`fillst-${f.idx}`}
+                  style={{
+                    height: f.h,
+                    display: 'flex',
+                    alignItems: 'center',
+                    borderBottom: '1px solid var(--color-border-thin)',
+                    fontSize: 11.5,
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--color-text-secondary)',
+                    background:
+                      f.idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: GANTT_STATS_W / 2,
+                      borderRight: '1px solid var(--color-border-thin)',
+                    }}
+                  />
+                  <div style={{ width: GANTT_STATS_W / 2 }} />
+                </div>
+              ))}
             </div>
           </div>
 
@@ -2047,6 +2176,7 @@ function GanttTab({
           fontSize: 10.5,
           color: 'var(--color-text-tertiary)',
           flexWrap: 'wrap',
+          flexShrink: 0,
           position: maximized ? 'sticky' : undefined,
           bottom: 0,
           zIndex: maximized ? 40 : undefined,
@@ -8815,12 +8945,15 @@ function Section({
   accent,
   rightSlot,
   children,
+  fill,
 }: {
   title: string
   icon: LucideIcon
   accent: string
   rightSlot?: React.ReactNode
   children: React.ReactNode
+  /** 全屏最大化：flex 列填满父容器，内容区（如甘特图）可拉伸铺满视口 */
+  fill?: boolean
 }) {
   return (
     <div
@@ -8829,6 +8962,9 @@ function Section({
         border: '1px solid var(--color-border-thin)',
         borderRadius: 'var(--radius-md)',
         padding: '16px 18px',
+        ...(fill
+          ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
+          : {}),
       }}
     >
       <div

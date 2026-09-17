@@ -138,6 +138,29 @@ function buildProjectReport(
 }
 
 /**
+ * 项目日报 · 从该项目自己的待办生成（不依赖个人日报）
+ * 维护者 2026-09-17：报告中心点「生成日报（项目）」时，若该日没有个人日报，
+ *   则直接从该项目当天/次日的待办生成，不再强制先建个人日报。
+ *  - 今日工作内容 = todayItems（该项目当天的待办）
+ *  - 下个工作日计划 = planItems（该项目次工作日的待办）
+ *  - 两段标题必须有 · 空内容落「（暂无）」· 与 buildProjectReport 输出格式一致
+ */
+export function buildProjectReportFromItems(
+  type: ReportType,
+  todayItems: string[],
+  planItems: string[],
+): string {
+  const { section1, section2 } = TITLES[type]
+  const lines: string[] = []
+  lines.push(`${section1}：`)
+  lines.push(todayItems.length > 0 ? renumber(todayItems).join('\n') : '（暂无）')
+  lines.push('')
+  lines.push(`${section2}：`)
+  lines.push(planItems.length > 0 ? renumber(planItems).join('\n') : '（暂无）')
+  return lines.join('\n')
+}
+
+/**
  * 从 personal content 中抽取含指定项目 @ 的编号项
  *  - 匹配「1、xxx@项目名」或「1、@项目名 xxx」或「1、xxx @项目名 xxx」
  *  - 剥掉 @项目名 段保留其余作为 item 内容

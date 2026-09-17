@@ -30,6 +30,7 @@ import {
   generateDailyReport,
   generateReport,
   deriveProjectReportsFromPersonal,
+  buildProjectReportFromItems,
 } from './reportBuilder'
 import { computeNextWorkday } from '@/services/datetime'
 import { defaultHolidayProvider } from '@/services/holidayProvider'
@@ -253,15 +254,49 @@ export async function prepareToWrite(params: GeneratorParams): Promise<ToWrite> 
     const personalReport = allDaily.find(
       (rep) => rep.projectId === null && rep.period === params.period,
     )
-    if (!personalReport) {
-      throw new Error(`${params.period} 的个人日报未生成 · 请先在主页生成个人日报`)
+    // 有个人日报 → 从个人日报推导（保持原行为 · 用户手写 @项目名 内容照旧进项目日报）
+    if (personalReport) {
+      const personalContent = personalReport.content ?? ''
+      const projects2 = deriveProjectReportsFromPersonal(
+        personalContent,
+        projects,
+        params.period,
+      )
+      return { personal: undefined, projects: projects2 }
     }
-    const personalContent = personalReport.content ?? ''
-    const projects2 = deriveProjectReportsFromPersonal(
-      personalContent,
-      projects,
-      params.period,
+    // 维护者 2026-09-17：没有个人日报 → 直接从该项目自己的待办生成，不再强制先建个人日报
+    //   今日工作内容 = 该项目当天的待办 · 下个工作日计划 = 该项目次工作日的待办
+    const nextWd = computeNextWorkday(
+      new Date(params.period + 'T00:00:00'),
+      (d) => defaultHolidayProvider.isHoliday(d),
     )
+    const { items } = await loadTodoCenterItems()
+    const projects2 = projects.map((p) => {
+      const todayItems = items
+        .filter(
+          (t) =>
+            t.project_id === p.id &&
+            itemInDay(t, params.period) &&
+            t.status !== 'DELAYED',
+        )
+        .map((t) => t.title)
+        .sort((a, b) => a.localeCompare(b, 'zh'))
+      const planItems = items
+        .filter(
+          (t) =>
+            t.project_id === p.id &&
+            itemInDay(t, nextWd) &&
+            t.status !== 'COMPLETED' &&
+            t.status !== 'DELAYED',
+        )
+        .map((t) => t.title)
+        .sort((a, b) => a.localeCompare(b, 'zh'))
+      return {
+        project: p,
+        period: params.period,
+        content: buildProjectReportFromItems(params.type, todayItems, planItems),
+      }
+    })
     return { personal: undefined, projects: projects2 }
   }
 

@@ -15,8 +15,8 @@ import type { Report, ReportType, ReportGenerateType } from '@/database/api'
 
 /**
  * 列出报告（按 type / projectId 过滤 · 不带 period）
- *  - projectId === undefined：全部
- *  - projectId === null：仅个人报告
+ * 注意：projectId === undefined 或 null 都会被序列化成后端 None → 不过滤 → 返回全部报告（个人 + 所有项目）。
+ * 本 service 没有"仅个人报告"的入参 · 需要时调用方自行 .filter(r => r.projectId === null)。
  *  - projectId === number：仅该项目报告
  */
 export async function listReports(filter?: {

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="shadow">
+      <stop offset="0" stop-color="#0E1A5C" stop-opacity="0.22"/>
+      <stop offset="0.65" stop-color="#0E1A5C" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#0E1A5C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="key" gradientUnits="userSpaceOnUse" x1="330" y1="300" x2="700" y2="730">
+      <stop offset="0" stop-color="#3E5CE9"/>
+      <stop offset="0.55" stop-color="#6D4DF0"/>
+      <stop offset="1" stop-color="#8A55FA"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="512" cy="806" rx="300" ry="56" fill="url(#shadow)"/>
+<g transform="translate(512.0 512.0) rotate(-45) scale(1.08) translate(-25 0)">
+<path d="M 28.00 0.00 a 162.00 162.00 0 1 0 324.00 0 a 162.00 162.00 0 1 0 -324.00 0 Z M 104.00 0.00 a 86.00 86.00 0 1 0 172.00 0 a 86.00 86.00 0 1 0 -172.00 0 Z" fill-rule="evenodd" fill="url(#key)"/>
+<path d="M -244.00 -46.00 h 318.00 a 46.00 46.00 0 0 1 46.00 46.00 v 0.00 a 46.00 46.00 0 0 1 -46.00 46.00 h -318.00 a 46.00 46.00 0 0 1 -46.00 -46.00 v -0.00 a 46.00 46.00 0 0 1 46.00 -46.00 Z" fill="url(#key)"/>
+<path d="M -270.00 30.00 h 52.00 a 18.00 18.00 0 0 1 18.00 18.00 v 124.00 a 18.00 18.00 0 0 1 -18.00 18.00 h -52.00 a 18.00 18.00 0 0 1 -18.00 -18.00 v -124.00 a 18.00 18.00 0 0 1 18.00 -18.00 Z" fill="url(#key)"/>
+<path d="M -173.00 30.00 h 40.00 a 15.00 15.00 0 0 1 15.00 15.00 v 100.00 a 15.00 15.00 0 0 1 -15.00 15.00 h -40.00 a 15.00 15.00 0 0 1 -15.00 -15.00 v -100.00 a 15.00 15.00 0 0 1 15.00 -15.00 Z" fill="url(#key)"/>
+</g>
+<g transform="translate(512 512) rotate(-45) scale(1.08) translate(-25 0)"><path d="M 46.23 -52.33 A 153.00 153.00 0 0 1 333.77 -52.33" fill="none" stroke="#FFFFFF" stroke-opacity="0.38" stroke-width="10" stroke-linecap="round"/></g>
+  <path d="M 272.00 210.00 C 279.39 236.71 312.15 265.95 334.00 272.00 C 307.29 279.39 278.05 312.15 272.00 334.00 C 264.61 307.29 231.85 278.05 210.00 272.00 C 236.71 264.61 265.95 231.85 272.00 210.00 Z" fill="#8A5CFA" fill-opacity="0.95"/>
+</svg>
