@@ -45,9 +45,9 @@ import {
 } from '@/services/projectFiles'
 import {
   resolveInitialBlocks,
-  blocksToMarkdownString,
   useBlockNoteSetup,
 } from './useBlockNoteSetup'
+import { blocksToMarkdownString } from './blocksToMarkdownString'
 import { EditorToolbar } from './EditorToolbar'
 import type {
   ConflictResolution,
@@ -92,6 +92,7 @@ export function DocumentEditor(props: DocumentEditorProps) {
     onClose,
     onExported,
     onStatusChange,
+    onSaveReady,
   } = props
 
   // ---------- 标题 ----------
@@ -156,8 +157,33 @@ export function DocumentEditor(props: DocumentEditorProps) {
         content: blocks.length > 0 ? blocks : [{ type: 'paragraph' }],
       })
       setLastSavedSnapshot(JSON.stringify(blocks))
+      // 注入后把快照对齐到 editor.document 的真实序列化（BlockNote 可能规范化出不同结构），
+      // 并重置为 clean：避免把「加载注入」误判成「用户编辑」而弹出未保存。
+      setTimeout(() => {
+        const docJson = JSON.stringify(editor.document)
+        if (docJson) {
+          setLastSavedSnapshot(docJson)
+          setStatus((s) => (s === 'dirty' ? 'clean' : s))
+        }
+      }, 0)
     }
   }, [source.kind, initialMarkdown, editor.pmSchema])
+
+  // 编辑 → dirty（可靠触发）：项目文件富文本内容由 setContent 注入，BlockNote 的 onChange
+  // 有时不触发；改监听 tiptap editor 的 'update' 事务事件，与纯文本 textarea onChange 等效。
+  // 2026-10-10 修复「富文本编辑不弹保存」。
+  useEffect(() => {
+    if (source.kind !== 'project-file') return
+    const tiptap = (editor as any)?._tiptapEditor
+    if (!tiptap?.on) return
+    const h = () => {
+      setStatus((s) => (s === 'clean' ? 'dirty' : s))
+    }
+    tiptap.on('update', h)
+    return () => {
+      tiptap?.off?.('update', h)
+    }
+  }, [editor, source.kind])
 
   // 2026-09-09 · 知识模式不再用 setContent 二次注入。
   // BlockNote 内容由 useCreateBlockNote(initialContent) 在 mount 时读取，且外层 key 用内容指纹
@@ -278,7 +304,7 @@ export function DocumentEditor(props: DocumentEditorProps) {
 
       const blocks = editor.document
       const json = JSON.stringify(blocks)
-      const md = blocksToMarkdownString(editor, blocks)
+      const md = blocksToMarkdownString(blocks)
 
       if (source.kind === 'knowledge') {
         if (source.noteId == null) {
@@ -328,6 +354,14 @@ export function DocumentEditor(props: DocumentEditorProps) {
       return false
     }
   }, [status, editor, source, noteMeta, title, loadedMtime, txtContent])
+
+  // 把当前 save 函数推给外层（PreviewToolbar 保存按钮 / 导出前保存 / 自动保存都依赖它）。
+  // 2026-10-10 修复：此前 onSaveReady 从未被解构调用 → saveRef 恒为 null → 点保存无反应。
+  // 无依赖数组：每次 render 后推最新 save，外层 saveRef.current 始终指向最新函数（闭包安全）。
+  useEffect(() => {
+    onSaveReady?.(save)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
 
   // ==================== 外部修改 → 静默 reload 内容 ====================
   // project-txt 走纯文本路径 · 反向：本地编辑器改了之后 webview 必须重读
@@ -447,7 +481,7 @@ export function DocumentEditor(props: DocumentEditorProps) {
 
   const handleExport = useCallback(async () => {
     if (source.kind !== 'knowledge') return
-    const md = blocksToMarkdownString(editor, editor.document)
+    const md = blocksToMarkdownString(editor.document)
     try {
       const path = await saveDialog({
         title: '导出 Markdown',
