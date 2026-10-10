@@ -12,8 +12,6 @@
  *   - drizzle-kit migration 生成（按列定义 → SQL）
  *
  * 严格遵守：
- *   - ❌ 不新增表（PM A1：16 张表为正式基线）
- *   - ❌ 不修改 schema.sql
  *   - ✅ schema.sql 是字段权威来源 · 此文件仅做 TypeScript 类型映射
  */
 
@@ -253,28 +251,7 @@ export const knowledgeNoteTags = sqliteTable('knowledge_note_tags', {
 })
 
 // ============================================================
-// 6. 模板表
 // ============================================================
-
-export const templates = sqliteTable('templates', {
-  id: integer('id').primaryKey(),
-  name: text('name').notNull(),
-  type: text('type').notNull().default('BASE'), // BASE
-  category: text('category').notNull(), // DAILY_REPORT/WEEKLY_REPORT/MONTHLY_REPORT/PROJECT_DOC
-  content: text('content').notNull(),
-  isSystem: integer('is_system').notNull().default(0),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-})
-
-export const templateVariables = sqliteTable('template_variables', {
-  id: integer('id').primaryKey(),
-  templateId: integer('template_id').notNull(),
-  variableKey: text('variable_key').notNull(), // {{project_name}}
-  variableName: text('variable_name').notNull(), // 项目名称
-  required: integer('required').notNull().default(1),
-  defaultValue: text('default_value'),
-})
 
 // ============================================================
 // 8. 日历和节假日
@@ -365,6 +342,106 @@ export const projectMembers = sqliteTable('project_members', {
   participation: text('participation'),
   impact: text('impact'),
   sortOrder: integer('sort_order').default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+// ============================================================
+// 安全约定：API Key 绝不落库，只存 credential_reference（安全存储用户名）
+// ============================================================
+
+/** AI Provider（供应商配置 · 非机密部分） */
+/** AI Conversation（对话会话） */
+/** AI Message（对话消息） */
+/** AI Execution Log（工具调用/任务执行日志） */
+/** AI 变更单（Change Set 确认机制 · L2/L3 操作必须经用户确认） */
+/** AI 变更项（每一项操作） */
+/** AI 工作流定义 */
+/** AI 工作流节点 */
+/** AI 工作流执行记录 */
+/** AI 产物（与业务数据隔离） */
+/** Document 元数据（一条 = 一个逻辑文档） */
+export const documents = sqliteTable('documents', {
+  id: integer('id').primaryKey(),
+  docId: text('doc_id').notNull().unique(), // doc_xxx
+  type: text('type').notNull(), // TEXT/MARKDOWN/RICHTEXT/DOCX
+  title: text('title').notNull(),
+  spaceType: text('space_type'), // KNOWLEDGE/REPORT/PROJECT_FILE/TEMPLATE
+  refId: integer('ref_id'),
+  currentVersion: integer('current_version').notNull().default(1),
+  storagePath: text('storage_path'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (t) => ({ idxSpace: index('idx_doc_space').on(t.spaceType, t.refId) }))
+
+/** Document 版本（生成默认建新版不覆盖） */
+export const documentVersions = sqliteTable('document_versions', {
+  id: integer('id').primaryKey(),
+  documentId: integer('document_id').notNull().references(() => documents.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  content: text('content'),
+  contentType: text('content_type').notNull(), // TEXT/MARKDOWN/BLOCKNOTE_JSON/PROTO
+  contentMd: text('content_md'),
+  createdBy: text('created_by').notNull().default('USER'), // USER/AI/AUTO
+  createdAt: text('created_at').notNull(),
+}, (t) => ({ idxVersion: index('idx_docver_document').on(t.documentId) }))
+
+// ============================================================
+// 27. 消息与通知中心（2026-09-18· V1 精简闭环）
+//    设计依据：docs/notification-center-rfc-2026-09-18.md §5
+// ============================================================
+
+/** 通知渠道（一条 = 一种「可发送出口」· V1 本地：IN_APP/WINDOWS/MACOS） */
+export const notificationChannels = sqliteTable('notification_channel', {
+  id: integer('id').primaryKey(),
+  channelType: text('channel_type').notNull().unique(), // IN_APP/WINDOWS/MACOS/EMAIL/FEISHU/DINGTALK/WECOM
+  name: text('name').notNull(),
+  enabled: integer('enabled').notNull().default(1),
+  config: text('config'), // JSON：渠道级配置（外部渠道用）+ credential_ref 指 keyring
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+/** 通知消息（一条 = 一条逻辑消息，不绑定渠道） */
+export const notificationMessages = sqliteTable('notification_message', {
+  id: integer('id').primaryKey(),
+  messageId: text('message_id').notNull().unique(), // msg_xxxx
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  eventType: text('event_type').notNull(), // TASK_DUE_SOON/TASK_OVERDUE/...
+  sourceType: text('source_type').notNull(), // PROJECT/TASK/REPORT/ISSUE/BACKUP/AI/SYSTEM
+  sourceId: integer('source_id'),
+  projectId: integer('project_id'),
+  priority: text('priority').notNull().default('NORMAL'), // LOW/NORMAL/HIGH/CRITICAL
+  dedupKey: text('dedup_key').notNull(),
+  status: text('status').notNull().default('UNREAD'), // UNREAD/READ
+  createdAt: text('created_at').notNull(),
+  readAt: text('read_at'),
+}, (t) => ({ idxStatus: index('idx_notif_msg_status').on(t.status, t.createdAt), idxSource: index('idx_notif_msg_source').on(t.sourceType, t.sourceId) }))
+
+/** 通知派发（一条消息 -> 一个渠道 -> 一次发送记录） */
+export const notificationDeliveries = sqliteTable('notification_delivery', {
+  id: integer('id').primaryKey(),
+  messageId: integer('message_id').notNull().references(() => notificationMessages.id, { onDelete: 'cascade' }),
+  channelType: text('channel_type').notNull(), // 对 notification_channel.channel_type
+  recipient: text('recipient'), // 外部渠道接收人/群（本地可空）
+  status: text('status').notNull().default('PENDING'), // PENDING/SENT/FAILED/CANCELLED
+  attempt: integer('attempt').notNull().default(0),
+  lastError: text('last_error'),
+  scheduledAt: text('scheduled_at'),
+  sentAt: text('sent_at'),
+  createdAt: text('created_at').notNull(),
+}, (t) => ({ idxStatus: index('idx_notif_deliv_status').on(t.status, t.createdAt) }))
+
+/** 通知规则（V1 = 系统内置事件类别的启停/渠道/优先级） */
+export const notificationRules = sqliteTable('notification_rule', {
+  id: integer('id').primaryKey(),
+  eventType: text('event_type').notNull().unique(), // 每个事件类别一条
+  name: text('name').notNull(),
+  enabled: integer('enabled').notNull().default(1),
+  channelIds: text('channel_ids').notNull(), // JSON 数组字符串
+  priority: text('priority').notNull().default('NORMAL'),
+  builtin: integer('builtin').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })

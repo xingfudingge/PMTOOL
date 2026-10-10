@@ -20,14 +20,18 @@ import {
   BookOpen,
   LayoutTemplate,
   Settings as SettingsIcon,
+  Bot,
+  Bell,
   ChevronsLeft,
   ChevronsRight,
   Sun,
   Moon,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { PageId } from '../App'
 import { PMToolLogo } from './PMToolLogo'
 import { useSettings } from '@/state/SettingsProvider'
+import { unreadCount } from '@/services/notification'
 
 interface SidebarProps {
   currentPage: PageId
@@ -100,6 +104,25 @@ function NavButton({ item, active, collapsed, onClick }: NavButtonProps) {
 export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }: SidebarProps) {
   const { resolvedTheme, save } = useSettings()
   const width = collapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)'
+  // 2026-09-18：消息中心未读角标（顶栏🔔 · 每 30s 轮询 + 消息页失焦再进刷新）
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    let disposed = false
+    const poll = () => {
+      unreadCount()
+        .then((n) => { if (!disposed) setUnread(n) })
+        .catch(() => {})
+    }
+    poll()
+    const t = window.setInterval(poll, 30000)
+    const onVisible = () => { if (document.visibilityState === 'visible') poll() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      disposed = true
+      window.clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
   return (
     <aside
       style={{
@@ -214,10 +237,52 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse }
         )}
       </nav>
 
+      {/* 2026-09-18：消息中心入口 + 未读角标（系统级操作，贴侧栏最底部） */}
+      <div
+        style={{
+          position: 'relative',
+          marginTop: 'auto',
+          padding: collapsed ? '4px 6px' : '6px 30px',
+          borderTop: '1px solid var(--color-border-thin)',
+        }}
+      >
+        <NavButton
+          item={{
+            id: 'messages',
+            label: '消息中心',
+            Icon: Bell,
+          }}
+          active={currentPage === 'messages'}
+          collapsed={collapsed}
+          onClick={() => onNavigate('messages')}
+        />
+        {unread > 0 && (
+          <span
+            style={{
+              position: 'absolute',
+              top: collapsed ? '6px' : '8px',
+              right: collapsed ? '8px' : '32px',
+              minWidth: '16px',
+              height: '16px',
+              padding: '0 4px',
+              borderRadius: '999px',
+              background: 'var(--accent, #2563eb)',
+              color: '#fff',
+              fontSize: '10px',
+              fontWeight: 700,
+              lineHeight: '16px',
+              textAlign: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </div>
+
       {/* 2026-09-14：主题切换从原顶栏移入侧栏底部（顶栏已精简掉） */}
       <div
         style={{
-          marginTop: 'auto',
           padding: collapsed ? '8px 6px' : '10px 30px',
           borderTop: '1px solid var(--color-border-thin)',
         }}

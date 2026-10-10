@@ -35,3 +35,5 @@ pub mod template_directory;
 pub mod settings;
 pub mod backup;
 pub mod diagnostics;
+pub mod document;  // Document Engine（2026-09-18）
+pub mod notification;  // 消息与通知中心（2026-09-18 · V1 精简闭环）

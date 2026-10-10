@@ -22,6 +22,7 @@
 pub mod commands;
 pub mod crypto_ed25519;  // Ed25519 签名验签工具
 pub mod db;
+pub mod document;    // Document Engine（2026-09-18 · 统一文档基础设施）
 pub mod repositories;
 pub mod services;
 
@@ -46,6 +47,8 @@ pub struct AppState {
     pub authorization: Mutex<crate::services::auth::authorization::AuthorizationContext>,
     /// 当前设备绑定值（启动时计算，运行时只读）
     pub device_id: String,
+    /// Document Engine 产物存储（2026-09-18 · PMToolData/doc/{doc_id}/）
+    pub doc_storage: crate::document::storage::DocumentStorage,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -147,6 +150,7 @@ pub fn run() {
             })?;
             services::logging::log_line("[OK] DB init done");
 
+
             // 初始化文件存储 Provider（Phase 4 T4.9）
             let file_storage: BoxedProvider =
                 Arc::new(services::file_storage_local::LocalFileStorageProvider::new(
@@ -160,7 +164,82 @@ pub fn run() {
                 data_dir: Mutex::new(data_dir.clone()),
                 authorization: Mutex::new(authorization_ctx),
                 device_id,
+                doc_storage: crate::document::storage::DocumentStorage::new(data_dir.join("PMToolData")),
             });
+
+            // ===== 消息与通知中心：种子修复 + 启动扫描 + 后台派发线程（2026-09-18）=====
+            // 0. 种子修复：迁移删除已移除渠道后，这里保证 IN_APP/EMAIL 存在，
+            //    并把存量规则 channel_ids 里残留的 windows/macos/feishu/dingtalk/wecom 剔除。
+            {
+                let state = app.state::<AppState>();
+                let guard = state.db.lock();
+                if let Ok(pool) = guard {
+                    let _ = services::notification::service::ensure_seed(&pool);
+                }
+            }
+            // 1. 启动扫描：把「已到期 / 即将到期」的未完成任务补成通知（幂等，同任务同日只发一次）
+            {
+                let state = app.state::<AppState>();
+                let guard = state.db.lock();
+                if let Ok(pool) = guard {
+                    match services::notification::service::scan_due_tasks(&pool) {
+                        Ok(n) => {
+                            if n > 0 {
+                                services::logging::log_line(&format!(
+                                    "[OK] 通知中心启动扫描：新增 {} 条到期/逾期提醒",
+                                    n
+                                ));
+                            }
+                        }
+                        Err(e) => services::logging::log_line(&format!(
+                            "[WARN] 通知中心启动扫描失败: {}",
+                            e
+                        )),
+                    }
+                }
+            }
+
+            // 2. 后台派发线程：每 5s 扫一次 PENDING / 可重试派发，
+            //    在 **DB 锁外** 执行外部渠道网络 I/O（SMTP/Webhook），再锁内写回结果。
+            //    红线 3：外部发送必须异步，绝不能在持锁下做网络请求。
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    let state = handle.state::<AppState>();
+                    // 锁内只读收集（无网络 I/O）
+                    let jobs = {
+                        let Ok(pool) = state.db.lock() else { continue };
+                        match services::notification::worker::collect_all_pending(&pool) {
+                            Ok(j) => j,
+                            Err(e) => {
+                                services::logging::log_line(&format!(
+                                    "[WARN] 通知派发收集失败: {}",
+                                    e
+                                ));
+                                continue;
+                            }
+                        }
+                    };
+                    if jobs.is_empty() {
+                        continue;
+                    }
+                    // 锁外执行真实网络发送
+                    let outcomes =
+                        services::notification::worker::run_jobs(jobs);
+                    // 锁内写回结果
+                    let guard = state.db.lock();
+                    if let Ok(pool) = guard {
+                        for (delivery_id, outcome) in outcomes {
+                            let _ = services::notification::worker::apply_outcome(
+                                &pool,
+                                delivery_id,
+                                &outcome,
+                            );
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -296,6 +375,7 @@ pub fn run() {
             // 模板中心 commands（维护者 2026-09-09 · 全局模板目录绑定）
             commands::template_directory::get_template_directory,
             commands::template_directory::set_template_directory,
+            // AI 模板中心 commands（2026-09-29 · templates 表 CRUD · type=AI）
             // 设置中心 commands（维护者 2026-09-09 · 应用设置持久化 + 数据目录）
             commands::settings::get_all_settings,
             commands::settings::get_setting,
@@ -315,6 +395,43 @@ pub fn run() {
             // 工作日同步（维护者 2026-09-09 · 节假日源同步）
             commands::holidays::sync_holidays,
             commands::holidays::clear_holidays,
+            // Document Engine commands（2026-09-18 · 统一文档基础设施）
+            commands::document::document_create,
+            commands::document::document_get,
+            commands::document::document_update,
+            commands::document::document_list,
+            commands::document::document_version_list,
+            commands::document::document_delete,
+            commands::document::document_export_docx,
+            commands::document::document_convert,
+            commands::document::document_import,
+            commands::document::write_binary_file,
+            commands::document::document_generate,
+            commands::document::document_generate_inline,
+            // 消息与通知中心 commands（2026-09-18 · V1 精简闭环 · docs/notification-center-rfc-2026-09-18.md §8）
+            commands::notification::notification_list,
+            commands::notification::notification_get,
+            commands::notification::notification_mark_read,
+            commands::notification::notification_mark_all_read,
+            commands::notification::notification_unread_count,
+            commands::notification::notification_delete,
+            commands::notification::notification_clear_read,
+            commands::notification::notification_clear_all,
+            commands::notification::notification_rule_list,
+            commands::notification::notification_rule_set,
+            commands::notification::notification_event_catalog,
+            commands::notification::notification_channel_list,
+            commands::notification::notification_channel_set,
+            commands::notification::notification_channel_save,
+            commands::notification::notification_channel_has_secret,
+            commands::notification::notification_channel_clear_secret,
+            commands::notification::notification_channel_test,
+            commands::notification::notification_delivery_list,
+            commands::notification::notification_delivery_retry,
+            commands::notification::notification_test,
+            commands::notification::notification_send,
+            commands::notification::notification_deep_link,
+            commands::notification::notification_event_name,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

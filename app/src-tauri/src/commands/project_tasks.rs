@@ -94,7 +94,36 @@ pub fn update_project_task(
         }
     }
 
-    tasks_repo::update(&pool, id, &task).map_err(|e| e.to_string())
+    // 通知快照：更新前状态（用于判定「首次变为完成」）
+    let before_status = tasks_repo::get_by_id(&pool, id)
+        .map_err(|e| e.to_string())?
+        .map(|t| t.status);
+
+    let ok = tasks_repo::update(&pool, id, &task).map_err(|e| e.to_string())?;
+
+    // 通知：任务首次被标记为完成（红线 11：规则停用则不发）
+    if ok {
+        let was_done = before_status
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("COMPLETED"))
+            .unwrap_or(false);
+        let now_done = task.status.eq_ignore_ascii_case("COMPLETED");
+        if !was_done && now_done {
+            let ev = crate::services::notification::NotificationEvent {
+                event_type: "TASK_COMPLETED".to_string(),
+                source_type: "TASK".to_string(),
+                source_id: id,
+                project_id: Some(task.project_id),
+                title: format!("任务完成：{}", task.task_name),
+                content: format!("「{}」已标记为完成。", task.task_name),
+                dedup_key: format!("task:{}:completed", id),
+                payload: None,
+            };
+            crate::services::notification::service::emit_business_event(&pool, &ev);
+        }
+    }
+
+    Ok(ok)
 }
 
 /// 删除任务（级联删除子任务）

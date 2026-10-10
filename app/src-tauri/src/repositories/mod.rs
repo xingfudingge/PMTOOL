@@ -25,6 +25,9 @@ pub mod knowledge_spaces;
 pub mod project_knowledge_bindings;
 pub mod template_config;
 pub mod app_settings;
+pub mod document;
+pub mod document_versions;
+pub mod notification;  // 消息与通知中心（2026-09-18 · V1 精简闭环）
 
 // re-export 常用 struct · service / command 层直接 use repositories::ProjectMember
 pub use project_members::ProjectMember;

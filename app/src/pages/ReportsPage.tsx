@@ -40,6 +40,7 @@ import {
 } from 'lucide-react'
 import { listReports, updateReport, deleteReport } from '@/services/reports'
 import { useReportGen } from '@/services/reportGenerator'
+import { exportDocFromMarkdown } from '@/components/DocumentEngine/DocumentExport'
 import type { Report } from '@/database/api'
 
 type ReportTypeKey = 'daily' | 'weekly' | 'monthly'
@@ -303,7 +304,6 @@ export function ReportsPage() {
       data-testid="reports-page"
       style={{
         padding: '24px 32px 32px',
-        maxWidth: '1440px',
         height: '100%',
         overflowY: 'auto',
       }}
@@ -971,6 +971,7 @@ function ReportContentModal({
   const [title, setTitle] = useState(report.title)
   const [content, setContent] = useState(report.content ?? '')
   const [saving, setSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
@@ -1234,6 +1235,105 @@ function ReportContentModal({
             </>
           ) : (
             <>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (exporting) return
+                  setExporting(true)
+                  try {
+                    // 走 Rust 内联生成：与同排 PPT/PDF 一致，不在 documents 表留下导出记录
+                    await exportDocFromMarkdown({
+                      title: report.title,
+                      markdown: report.content ?? '',
+                      format: 'docx',
+                    })
+                  } catch (err) {
+                    console.error('导出 Word 失败', err)
+                    alert('导出 Word 失败：' + (err instanceof Error ? err.message : String(err)))
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+                data-testid="report-export-word-btn"
+                style={{
+                  padding: '6px 14px',
+                  background: 'var(--color-bg-subtle)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border-thin)',
+                  borderRadius: 6,
+                  fontSize: '12.5px',
+                  cursor: exporting ? 'wait' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {exporting ? '导出中…' : '导出 Word'}
+              </button>
+              <button
+                type="button"
+                data-testid="report-export-ppt-btn"
+                onClick={async () => {
+                  if (exporting) return
+                  setExporting(true)
+                  try {
+                    await exportDocFromMarkdown({
+                      title: report.title,
+                      markdown: report.content ?? '',
+                      format: 'pptx',
+                    })
+                  } catch (err) {
+                    console.error('导出 PPT 失败', err)
+                    alert('导出 PPT 失败：' + (err instanceof Error ? err.message : String(err)))
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+                title="按标题分页导出为 PPT"
+                style={{
+                  padding: '6px 14px',
+                  background: 'var(--color-bg-subtle)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border-thin)',
+                  borderRadius: 6,
+                  fontSize: '12.5px',
+                  cursor: 'pointer',
+                }}
+              >
+                导出 PPT
+              </button>
+              <button
+                type="button"
+                data-testid="report-export-pdf-btn"
+                onClick={async () => {
+                  if (exporting) return
+                  setExporting(true)
+                  try {
+                    await exportDocFromMarkdown({
+                      title: report.title,
+                      markdown: report.content ?? '',
+                      format: 'pdf',
+                    })
+                  } catch (err) {
+                    console.error('导出 PDF 失败', err)
+                    alert('导出 PDF 失败：' + (err instanceof Error ? err.message : String(err)))
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+                title="导出为 PDF 文件"
+                style={{
+                  padding: '6px 14px',
+                  background: 'var(--color-bg-subtle)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border-thin)',
+                  borderRadius: 6,
+                  fontSize: '12.5px',
+                  cursor: 'pointer',
+                }}
+              >
+                导出 PDF
+              </button>
               <button
                 type="button"
                 onClick={async () => {

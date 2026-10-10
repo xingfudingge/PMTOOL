@@ -29,8 +29,7 @@ const PptxPreview = lazy(() => import('./PptxPreview').then((m) => ({ default: m
 
 import { XlsxPreview } from './XlsxPreview'
 import { ImagePreview } from './ImagePreview'
-import { MarkdownPreview } from './MarkdownPreview'
-import { MarkdownEditor } from './MarkdownEditor'
+import { MarkdownFileView } from './MarkdownFileView'
 import { TxtEditor } from './TxtEditor'
 import { TextPreview } from './TextPreview'
 import { HtmlPreview } from './HtmlPreview'
@@ -135,7 +134,8 @@ export function FilePreview(props: FilePreviewProps) {
     return wrap(<ImagePreview {...props} />)
   }
   if (ext === 'md' || ext === 'markdown') {
-    return wrap(<MarkdownPreview {...props} />)
+    // 2026-09-19：可编辑，且支持「富文本 / 纯文本」两种编辑器切换
+    return wrap(<MarkdownFileView {...props} />)
   }
   if (ext === 'txt') {
     return wrap(<TxtEditor {...props} />)

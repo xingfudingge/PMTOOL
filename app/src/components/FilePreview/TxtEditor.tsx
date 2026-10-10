@@ -18,15 +18,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { DocumentEditor } from '@/components/DocumentEditor'
 import { PreviewToolbar } from './PreviewToolbar'
+import { ExportMenu } from './ExportMenu'
 import { readTextFileWithMtime } from '@/services/projectFiles'
 import type { SaveStatus } from '@/components/DocumentEditor/types'
 import type { FilePreviewProps } from './types'
+import type { ReactNode } from 'react'
 
 export function TxtEditor({
   path,
   fileName,
   onOpenExternally,
-}: FilePreviewProps) {
+  toolbarExtra,
+}: FilePreviewProps & { toolbarExtra?: ReactNode }) {
   const [initialContent, setInitialContent] = useState<string | null>(null)
   const [initialMtime, setInitialMtime] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -64,19 +67,10 @@ export function TxtEditor({
         lastSavedAt={lastSavedAt}
         saveRef={saveRef}
         extra={
-          <span
-            style={{
-              fontSize: 11,
-              color: 'var(--color-text-tertiary)',
-              padding: '2px 8px',
-              background: 'var(--color-bg-subtle)',
-              border: '1px solid var(--color-border-thin)',
-              borderRadius: 10,
-            }}
-            title="项目文件管理 · 共用编辑器（纯文本分支 · 不走 BlockNote）"
-          >
-            📄 纯文本
-          </span>
+          <>
+            <ExportMenu path={path} fileName={fileName} saveRef={saveRef} />
+            {toolbarExtra}
+          </>
         }
       />
       <div style={{ flex: 1, minHeight: 0 }}>

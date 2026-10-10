@@ -24,6 +24,7 @@ import { ReportsPage } from './pages/ReportsPage'
 import { KnowledgePage } from './pages/KnowledgePage'
 import { TemplatesPage } from './pages/TemplatesPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { MessageCenterPage } from './pages/MessageCenterPage'
 import { SettingsProvider } from './state/SettingsProvider'
 import { AutomationProvider } from './state/AutomationProvider'
 import FirstRunSetup from './components/FirstRunSetup'
@@ -37,6 +38,7 @@ export type PageId =
   | 'reports'
   | 'knowledge'
   | 'templates'
+  | 'messages'
   | 'settings'
 
 /**
@@ -51,15 +53,26 @@ export type PageId =
  *   - "#/projects/3"     → { page: 'projectDetail', param: 3 }
  *   - "#/" or ""         → { page: 'home' }
  */
-function parseHash(): { page: PageId; param?: number } {
-  const h = window.location.hash.replace(/^#\/?/, '')
-  const parts = h.split('/').filter(Boolean)
+function parseHash(): { page: PageId; param?: number; query: Record<string, string> } {
+  const raw = window.location.hash.replace(/^#\/?/, '')
+  // 支持 query：#/projectDetail/5?tab=planning&focusTask=123（消息中心深链用）
+  const [pathPart, queryPart] = raw.split('?')
+  const parts = pathPart.split('/').filter(Boolean)
   const page = parts[0] || 'home'
   const param = parts[1] ? Number(parts[1]) : undefined
-  if (page === 'projects' && param && !Number.isNaN(param)) {
-    return { page: 'projectDetail', param }
+  const query: Record<string, string> = {}
+  if (queryPart) {
+    for (const kv of queryPart.split('&')) {
+      const eq = kv.indexOf('=')
+      if (eq > 0) {
+        query[decodeURIComponent(kv.slice(0, eq))] = decodeURIComponent(kv.slice(eq + 1))
+      }
+    }
   }
-  return { page: page as PageId, param }
+  if ((page === 'projects' || page === 'projectDetail') && param && !Number.isNaN(param)) {
+    return { page: 'projectDetail', param, query }
+  }
+  return { page: page as PageId, param, query }
 }
 
 function App() {
@@ -79,8 +92,13 @@ function App() {
       .catch(() => setDataRootReady(true))
   }, [])
 
-  const navigate = (page: PageId, param?: number) => {
-    const hash = param ? `#/${page}/${param}` : `#/${page}`
+  const navigate = (page: PageId, param?: number, query?: Record<string, string>) => {
+    const queryStr = query && Object.keys(query).length > 0
+      ? '?' + Object.entries(query)
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+          .join('&')
+      : ''
+    const hash = param ? `#/${page}/${param}${queryStr}` : `#/${page}${queryStr}`
     window.location.hash = hash
   }
 
@@ -99,8 +117,10 @@ function App() {
       case 'projectDetail':
         return hashState.param ? (
           <ProjectDetailPage
+            key={`${hashState.param}-${JSON.stringify(hashState.query)}`}
             projectId={hashState.param}
             onBack={() => navigate('projects')}
+            deepLink={hashState.query}
           />
         ) : (
           <ProjectsPage
@@ -113,6 +133,8 @@ function App() {
         return <KnowledgePage />
       case 'templates':
         return <TemplatesPage />
+      case 'messages':
+        return <MessageCenterPage />
       case 'settings':
         return <SettingsPage />
       default:

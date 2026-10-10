@@ -47,7 +47,13 @@ fn fresh_db_full_migration_applies_and_drops_auth_tables() {
     }
 
     // 关键业务表应存在
-    for t in ["knowledge_notes", "knowledge_folders", "projects", "system_config", "migrations"] {
+    for t in [
+        "knowledge_notes", "knowledge_folders", "projects", "system_config", "migrations",
+        // 2026-09-18 新增域（Document Engine / 通知中心）也应被全链迁移创建
+        // 2026-10-10：智能助手子系统已移除，不再创建 ai_* 表
+        "documents", "document_versions",
+        "notification_channel", "notification_message", "notification_delivery", "notification_rule",
+    ] {
         assert!(table_exists(&conn, t), "全新库应存在业务表: {}", t);
     }
 

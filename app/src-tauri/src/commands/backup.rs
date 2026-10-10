@@ -12,6 +12,40 @@ use serde::Serialize;
 use crate::AppState;
 use crate::repositories::app_settings as app_settings_repo;
 use crate::services::data_maintenance;
+use crate::services::notification::{service as notif_service, NotificationEvent};
+
+/// 发备份相关通知（成功/失败）。通知异常绝不影响备份命令返回（红线 2）。
+fn notify_backup(conn: &rusqlite::Connection, ok: bool, detail: &str) {
+    let (event_type, title, content) = if ok {
+        (
+            "BACKUP_COMPLETED",
+            "备份完成".to_string(),
+            format!("数据已成功备份到：{}", detail),
+        )
+    } else {
+        (
+            "BACKUP_FAILED",
+            "备份失败".to_string(),
+            format!("备份未完成：{}", detail),
+        )
+    };
+    let ev = NotificationEvent {
+        event_type: event_type.to_string(),
+        source_type: "BACKUP".to_string(),
+        source_id: 0,
+        project_id: None,
+        title,
+        content,
+        // 幂等键含时间戳：每次备份都是一次新的事实
+        dedup_key: format!(
+            "backup:{}:{}",
+            if ok { "ok" } else { "fail" },
+            chrono::Local::now().format("%Y%m%d%H%M%S")
+        ),
+        payload: None,
+    };
+    notif_service::emit_business_event(conn, &ev);
+}
 
 #[derive(Serialize)]
 pub struct BackupItem {
@@ -60,9 +94,22 @@ fn hot_switch_root(
 /// 返回生成的备份目录绝对路径
 #[tauri::command]
 pub fn backup_data(state: State<'_, AppState>, dest_dir: String) -> Result<String, String> {
-    let data_dir = current_data_dir(&state)?;
+    let result = do_backup(&state, &dest_dir);
+    // 备份结果通知（成功/失败）——通知本身失败只记日志，绝不改变备份命令的返回（红线 2）
+    if let Ok(pool) = state.db.lock() {
+        match &result {
+            Ok(path) => notify_backup(&pool, true, path),
+            Err(e) => notify_backup(&pool, false, e),
+        }
+    }
+    result
+}
+
+/// 备份本体（通知包装在 backup_data）
+fn do_backup(state: &State<'_, AppState>, dest_dir: &str) -> Result<String, String> {
+    let data_dir = current_data_dir(state)?;
     let data_root = data_dir.join("PMToolData");
-    let dest = PathBuf::from(&dest_dir);
+    let dest = PathBuf::from(dest_dir);
     let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
     let backup_dir = dest.join(&stamp);
     std::fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败：{}", e))?;
@@ -272,10 +319,59 @@ pub fn delete_backup(dir: String, name: String) -> Result<bool, String> {
     Ok(true)
 }
 
-/// 在系统文件管理器中打开一个路径（Finder / 资源管理器）
+/// 在系统资源管理器中定位并显示文件（「打开位置」语义），而非用默认程序打开文件。
+///
+/// 修复的 bug（2026-09-29·用户实测「打开位置也是打开文件」）：
+///   此前用 `open::that(&p)` —— 对文件会用系统默认程序打开它，与「本地打开」行为撞车，
+///   用户点「打开位置」想看到资源管理器里的文件，结果却弹出文件本身。
+/// 跨平台：
+///   - Windows：`explorer /select,<路径>`（打开资源管理器并选中该文件；对目录直接打开该目录）
+///   - macOS ：`open -R <路径>`（在 Finder 中定位）
+///   - Linux  ：打开父目录
 #[tauri::command]
 pub fn reveal_path(path: String) -> Result<bool, String> {
     let p = PathBuf::from(&path);
-    open::that(&p).map_err(|e| format!("打开失败：{}", e))?;
+    if !p.exists() {
+        return Err(format!("路径不存在：{}", p.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // explorer 的 /select,"<文件>" 参数**不能**交给 Command::arg()（它会重新转义内嵌引号，
+        // 导致 explorer 解析失败回退到「此电脑」）。必须用 raw_arg 原样传给命令行。
+        // 2026-09-30 用户实测：纯 .arg 弹出「此电脑」而非文件所在目录。
+        // 用 spawn 而非 output：explorer 常驻，output 会阻塞等待它退出。
+        let line = if p.is_dir() {
+            // 目录：直接打开该目录窗口（用 cd 前缀避免 explorer 误解析为文件）
+            format!("\"{}\"", p.to_string_lossy())
+        } else {
+            format!("/select,\"{}\"", p.to_string_lossy())
+        };
+        std::process::Command::new("explorer")
+            .raw_arg(line)
+            .spawn()
+            .map_err(|e| format!("打开资源管理器失败：{}", e))?;
+        return Ok(true);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // 文件：open -R 在 Finder 定位并选中；目录：直接 open 打开该 Finder 窗口
+        let args: Vec<&str> = if p.is_dir() {
+            vec![p.to_str().unwrap_or("")]
+        } else {
+            vec!["-R", p.to_str().unwrap_or("")]
+        };
+        std::process::Command::new("open")
+            .args(&args)
+            .spawn()
+            .map_err(|e| format!("在 Finder 中定位失败：{}", e))?;
+        return Ok(true);
+    }
+
+    // Linux 等：打开父目录（xdg-open）
+    let parent = p.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| p.clone());
+    open::that(&parent).map_err(|e| format!("打开位置失败：{}", e))?;
     Ok(true)
 }

@@ -160,32 +160,9 @@ CREATE TABLE IF NOT EXISTS knowledge_note_tags (
 );
 
 -- ============================================================
--- 6. 模板表
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS templates (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT NOT NULL,
-    type       TEXT NOT NULL DEFAULT 'BASE',              -- BASE
-    category   TEXT NOT NULL,                              -- DAILY_REPORT/WEEKLY_REPORT/MONTHLY_REPORT/PROJECT_DOC
-    content    TEXT NOT NULL,
-    is_system  INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 -- 模板变量
-CREATE TABLE IF NOT EXISTS template_variables (
-    id             INTEGER PRIMARY KEY,
-    template_id    INTEGER NOT NULL,
-    variable_key    TEXT NOT NULL,                          -- {{project_name}}
-    variable_name   TEXT NOT NULL,                          -- 项目名称
-    required        INTEGER NOT NULL DEFAULT 1,
-    default_value   TEXT,
-    FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE,
-    UNIQUE(template_id, variable_key)
-);
-
 -- ============================================================
 -- 7. 日历和节假日
 -- ============================================================
@@ -412,3 +389,106 @@ CREATE TABLE IF NOT EXISTS project_todo_items (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_todoitem_project ON project_todo_items(project_id);
+
+-- ============================================================
+-- 26. Document Engine 文档表（2026-09-18· 统一文档基础设施）
+-- 设计依据：docs/document-engine-rfc-2026-09-18.md
+-- ============================================================
+
+-- 文档元数据（一条 = 一个逻辑文档）
+CREATE TABLE IF NOT EXISTS documents (
+    id              INTEGER PRIMARY KEY,
+    doc_id          TEXT NOT NULL UNIQUE,           -- 'doc_xxx'（业务弱引用）
+    type            TEXT NOT NULL,                  -- TEXT/MARKDOWN/RICHTEXT/DOCX
+    title           TEXT NOT NULL,
+    space_type      TEXT,                           -- KNOWLEDGE/REPORT/PROJECT_FILE/TEMPLATE（NULL=独立文档）
+    ref_id          INTEGER,                        -- 对应业务实体 id
+    current_version INTEGER NOT NULL DEFAULT 1,
+    storage_path    TEXT,                           -- 相对 PMToolData/doc/{doc_id}/ 的产物路径
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_doc_space ON documents(space_type, ref_id);
+
+-- 文档版本（一个文档多版本· 生成默认建新版不覆盖）
+CREATE TABLE IF NOT EXISTS document_versions (
+    id           INTEGER PRIMARY KEY,
+    document_id  INTEGER NOT NULL,
+    version      INTEGER NOT NULL,
+    content      TEXT,                              -- 序列化内容（Text/Markdown/RichText JSON）
+    content_type TEXT NOT NULL,                     -- TEXT/MARKDOWN/BLOCKNOTE_JSON/PROTO
+    content_md   TEXT,                              -- Markdown 快照（搜索用）
+    created_by   TEXT NOT NULL DEFAULT 'USER',      -- USER/AI/AUTO
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+    UNIQUE(document_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_docver_document ON document_versions(document_id);
+
+-- ============================================================
+-- 27. 消息与通知中心（2026-09-18· V1 精简闭环）
+-- 设计依据：docs/notification-center-rfc-2026-09-18.md §5
+--   消息 ≠ 派发 ≠ 渠道；规则 = 事件类别 + 启停 + 渠道 + 优先级
+--   外部渠道凭证绝不落库（走 keyring）；dedup_key 唯一 ⇒ 幂等
+-- ============================================================
+
+-- 通知渠道（一条 = 一种「可发送出口」· V1 本地：IN_APP/WINDOWS/MACOS）
+CREATE TABLE IF NOT EXISTS notification_channel (
+    id            INTEGER PRIMARY KEY,
+    channel_type  TEXT NOT NULL UNIQUE,            -- IN_APP / WINDOWS / MACOS / EMAIL / FEISHU / DINGTALK / WECOM
+    name          TEXT NOT NULL,                   -- 显示名
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    config        TEXT,                            -- JSON：渠道级配置（外部渠道用）+ credential_ref 指 keyring
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 通知消息（一条 = 一条逻辑消息，不绑定渠道）
+CREATE TABLE IF NOT EXISTS notification_message (
+    id            INTEGER PRIMARY KEY,
+    message_id    TEXT NOT NULL UNIQUE,            -- 'msg_xxxx'
+    title         TEXT NOT NULL,
+    content       TEXT NOT NULL,
+    event_type    TEXT NOT NULL,                   -- TASK_DUE_SOON / TASK_OVERDUE / ...（event_catalog）
+    source_type   TEXT NOT NULL,                   -- PROJECT / TASK / REPORT / ISSUE / BACKUP / AI / SYSTEM
+    source_id     INTEGER,                         -- 对应业务实体 id
+    project_id    INTEGER,                         -- 快捷深链定位（可空）
+    priority      TEXT NOT NULL DEFAULT 'NORMAL',  -- LOW / NORMAL / HIGH / CRITICAL
+    dedup_key     TEXT NOT NULL,                   -- 幂等键（唯一）
+    status        TEXT NOT NULL DEFAULT 'UNREAD',  -- UNREAD / READ
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    read_at       DATETIME,
+    UNIQUE(dedup_key)
+);
+CREATE INDEX IF NOT EXISTS idx_notif_msg_status ON notification_message(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_notif_msg_source ON notification_message(source_type, source_id);
+
+-- 通知派发（一条消息 -> 一个渠道 -> 一次发送记录）
+CREATE TABLE IF NOT EXISTS notification_delivery (
+    id            INTEGER PRIMARY KEY,
+    message_id    INTEGER NOT NULL,
+    channel_type  TEXT NOT NULL,                   -- 对 notification_channel.channel_type
+    recipient     TEXT,                            -- 外部渠道接收人/群（本地可空）
+    status        TEXT NOT NULL DEFAULT 'PENDING', -- PENDING / SENT / FAILED / CANCELLED
+    attempt       INTEGER NOT NULL DEFAULT 0,
+    last_error    TEXT,
+    scheduled_at  DATETIME,
+    sent_at       DATETIME,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (message_id) REFERENCES notification_message(id) ON DELETE CASCADE,
+    UNIQUE(message_id, channel_type)
+);
+CREATE INDEX IF NOT EXISTS idx_notif_deliv_status ON notification_delivery(status, created_at);
+
+-- 通知规则（V1 = 系统内置事件类别的启停/渠道/优先级，兼当「默认通知」）
+CREATE TABLE IF NOT EXISTS notification_rule (
+    id            INTEGER PRIMARY KEY,
+    event_type    TEXT NOT NULL UNIQUE,            -- 每个事件类别一条
+    name          TEXT NOT NULL,                   -- '任务逾期提醒'
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    channel_ids   TEXT NOT NULL,                   -- JSON 数组字符串，如 '["in_app","windows","macos"]'
+    priority      TEXT NOT NULL DEFAULT 'NORMAL',  -- 覆盖事件默认优先级
+    builtin       INTEGER NOT NULL DEFAULT 1,      -- 内置规则（可改可停不可删）/ 用户自建（Phase 4）
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

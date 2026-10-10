@@ -168,3 +168,12 @@ pub fn delete(conn: &rusqlite::Connection, id: i64) -> rusqlite::Result<bool> {
     tx.commit()?;
     Ok(n > 0)
 }
+
+/// 设置项目状态（AI 受控操作辅助 · 2026-09-18 · 仅供 Change Set 确认后执行）
+pub fn update_status(conn: &rusqlite::Connection, id: i64, status: &str) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        "UPDATE projects SET status = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        params![status, id],
+    )?;
+    Ok(n > 0)
+}

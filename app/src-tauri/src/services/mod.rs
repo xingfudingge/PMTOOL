@@ -15,4 +15,5 @@ pub mod file_storage;
 pub mod file_storage_local;
 pub mod data_maintenance;
 pub mod logging;
+pub mod notification;  // 消息与通知中心（2026-09-18 · V1 精简闭环）
 // 注：trial.rs 已迁移到 services/auth 模块（试用期改为安全存储存储，与 DB 隔离）

@@ -143,11 +143,18 @@ export function DocumentEditor(props: DocumentEditorProps) {
     if (convertedBlocks) return // 已经转换过，跳过
 
     const blocks = resolveInitialBlocks('MARKDOWN', '', initialMarkdown, editor.pmSchema)
-    console.log('[DocumentEditor] converted blocks:', blocks)
     setConvertedBlocks(blocks)
     if (blocks) {
-      // 设置 editor.document 来注入内容
-      ;(editor as any).document = blocks
+      // 注入内容：必须走 tiptap 的 setContent。
+      // 2026-09-20 修复：此前写的是 `(editor as any).document = blocks`，
+      // 但 BlockNote 的 document 是**只读 getter**，赋值抛
+      // "Cannot set property document of #<t> which has only a getter"，
+      // 被 FilePreview 的错误边界接住 → .md 降级成「此文件类型暂不支持在线预览」。
+      // 该分支因 .md 长期未接线而从未被执行，属埋了很久的雷。
+      ;(editor as any)._tiptapEditor?.commands?.setContent?.({
+        type: 'doc',
+        content: blocks.length > 0 ? blocks : [{ type: 'paragraph' }],
+      })
       setLastSavedSnapshot(JSON.stringify(blocks))
     }
   }, [source.kind, initialMarkdown, editor.pmSchema])

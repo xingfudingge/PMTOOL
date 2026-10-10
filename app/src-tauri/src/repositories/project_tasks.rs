@@ -65,6 +65,18 @@ pub fn list_by_project(conn: &Connection, project_id: i64) -> rusqlite::Result<V
     rows.collect()
 }
 
+/// 列出**全部**任务（跨项目）
+///
+/// 供只读 Tool `task.list` 在未指定 project_id 时使用：
+/// 「项目延期检查器」这类模板要跨项目看风险，不该被某个固定 project_id 卡住。
+pub fn list_all(conn: &Connection) -> rusqlite::Result<Vec<ProjectTask>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, project_id, parent_id, task_name, owner, start_date, end_date, work_days, natural_days, progress, status, remark, sort_order, created_at, updated_at FROM project_tasks ORDER BY project_id, sort_order, id",
+    )?;
+    let rows = stmt.query_map([], row_to_task)?;
+    rows.collect()
+}
+
 /// 列出项目的叶子任务（无子任务，用于项目进度加权平均）
 pub fn list_leaf_by_project(conn: &Connection, project_id: i64) -> rusqlite::Result<Vec<ProjectTask>> {
     let mut stmt = conn.prepare(
@@ -157,6 +169,47 @@ pub fn delete_with_children(conn: &Connection, id: i64) -> rusqlite::Result<bool
     Ok(ids.len() > 0)
 }
 
+// ============================================================
+// AI 受控操作辅助（2026-09-18 · V3.0 文档 §21/§22）
+// 仅供 AI Action 的 Change Set 确认后执行；禁止 AI 直接调用。
+// ============================================================
+
+/// 顺延任务：结束日期顺延 N 个自然日（end_date 为空则从今天起算）
+pub fn delay_days(conn: &Connection, id: i64, days: i64) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        "UPDATE project_tasks SET end_date = date(COALESCE(end_date, date('now')), '+' || ?1 || ' days'), updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        params![days, id],
+    )?;
+    Ok(n > 0)
+}
+
+/// 调整任务结束日期
+pub fn reschedule(conn: &Connection, id: i64, end_date: &str) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        "UPDATE project_tasks SET end_date = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        params![end_date, id],
+    )?;
+    Ok(n > 0)
+}
+
+/// 设置任务状态
+pub fn set_status(conn: &Connection, id: i64, status: &str) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        "UPDATE project_tasks SET status = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        params![status, id],
+    )?;
+    Ok(n > 0)
+}
+
+/// 完成任务（状态 COMPLETED + 进度 100）
+pub fn complete(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        "UPDATE project_tasks SET status = 'COMPLETED', progress = 100, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+        [id],
+    )?;
+    Ok(n > 0)
+}
+
 /// 检查父任务循环（RFC-02 §2：禁止循环）
 pub fn would_create_cycle(conn: &Connection, task_id: i64, new_parent_id: i64) -> rusqlite::Result<bool> {
     eprintln!("[TRACE] would_create_cycle task_id={} new_parent_id={}", task_id, new_parent_id);
@@ -233,4 +286,37 @@ pub fn import_bulk(
 
     tx.commit()?;
     Ok(real_ids)
+}
+
+/// 到期扫描用：未完成任务 + 其计划结束日期
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DueTask {
+    pub id: i64,
+    pub project_id: i64,
+    pub task_name: String,
+    /// 'YYYY-MM-DD'
+    pub end_date: String,
+    pub owner: Option<String>,
+    /// PENDING / IN_PROGRESS / DELAYED（已排除 COMPLETED）
+    pub status: String,
+}
+
+/// 列出所有「有结束日期且未完成」的任务（供通知中心做到期/逾期扫描）
+pub fn list_incomplete_with_due(conn: &Connection) -> rusqlite::Result<Vec<DueTask>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, project_id, task_name, end_date, owner, status FROM project_tasks \
+         WHERE end_date IS NOT NULL AND TRIM(end_date) != '' AND UPPER(status) != 'COMPLETED'",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(DueTask {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            task_name: row.get(2)?,
+            end_date: row.get(3)?,
+            owner: row.get(4)?,
+            status: row.get(5)?,
+        })
+    })?;
+    rows.collect()
 }

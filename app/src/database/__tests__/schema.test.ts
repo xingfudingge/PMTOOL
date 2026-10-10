@@ -22,15 +22,24 @@ import { resolve } from 'node:path'
 const SCHEMA_SQL_PATH = resolve(__dirname, '../../../../database/schema.sql')
 const INIT_SQL_PATH = resolve(__dirname, '../../../../database/migrations/0001_init.sql')
 
-// schema.sql 当前基线（22 张表）· 新增表必须显式加入此处，测试即漂移守护
+// schema.sql 当前基线（37 张表）· 新增表必须显式加入此处，测试即漂移守护
 const EXPECTED_TABLES = [
+  // 2026-10-10 智能助手子系统已移除，不再有 ai_* / templates 表
   'attachments',
   'audit_logs',
+  // 2026-09-18 Document Engine（docs/document-engine-rfc-2026-09-18.md）
+  'documents',
+  'document_versions',
   'holidays',
   'knowledge_folders',
   'knowledge_note_tags',
   'knowledge_notes',
   'knowledge_tags',
+  // 2026-09-18 消息与通知中心（docs/notification-center-rfc-2026-09-18.md §5）
+  'notification_channel',
+  'notification_delivery',
+  'notification_message',
+  'notification_rule',
   // 2026-09-16 授权隔离改造：license 表废弃，授权数据移入 OS 安全存储
   'project_issue_log',
   'project_issues',
@@ -41,15 +50,13 @@ const EXPECTED_TABLES = [
   'projects',
   'reports',
   'system_config',
-  'template_variables',
-  'templates',
   'todos',
   'weekly_report_entries',
   'work_schedule',
 ]
 
 describe('Schema 三方一致性', () => {
-  it('schema.sql 表集合与基线一致（当前 22 张 · 漂移即失败）', () => {
+  it('schema.sql 表集合与基线一致（当前 25 张 · 漂移即失败）', () => {
     const sql = readFileSync(SCHEMA_SQL_PATH, 'utf-8')
     const tables = [...sql.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map(m => m[1])
     expect([...tables].sort()).toEqual([...EXPECTED_TABLES].sort())
@@ -72,14 +79,16 @@ describe('Schema 三方一致性', () => {
     expect(sql).toContain('UTC ISO 8601')
   })
 
-  it('0001_init.sql 与 schema.sql 语句数一致', () => {
+  it('schema.sql 表集合 ⊇ 0001_init.sql 基线（schema 权威 · 前向演进）', () => {
     const schemaSql = readFileSync(SCHEMA_SQL_PATH, 'utf-8')
     const initSql = readFileSync(INIT_SQL_PATH, 'utf-8')
 
-    // CREATE TABLE 数应一致
+    // 0001_init.sql 是 Phase 0 冻结基线（含已废弃的 ai_messages/ai_models/ai_sessions/knowledge_ai_records），
+    // 后续演进（知识中心/AI/Document/通知等）只进 schema.sql + 增量 migration，不回写 0001_init.sql。
+    // 因此断言方向：schema.sql（权威源）表数必须 ≥ 0001_init.sql（旧基线）表数。
     const schemaTables = (schemaSql.match(/CREATE TABLE IF NOT EXISTS \w+/g) ?? []).length
     const initTables = (initSql.match(/CREATE TABLE IF NOT EXISTS `?\w+`?/gi) ?? []).length
-    expect(initTables).toBeGreaterThanOrEqual(schemaTables - 1) // 0001_init.sql 额外加 migrations 元数据表
+    expect(schemaTables).toBeGreaterThanOrEqual(initTables)
   })
 
   it('0001_init.sql 含 drizzle-kit 标准分隔符', () => {

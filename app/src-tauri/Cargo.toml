@@ -50,8 +50,28 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 # 剪贴板写入（复制设备唯一值）
 arboard = "3.4"
 
+# Document Engine · Markdown → DOCX（纯 Rust · 无 Office/LibreOffice 依赖 · 2026-09-18）
+docx-rs = "0.4"
+# Document Engine · PPTX 生成（纯 Rust · 无 Office 依赖 · 2026-09-20）
+#   成熟库：9.3 万下载 / 今日仍在更新。
+#   关闭 default 的 pdf-native：pdfrs 的 to_pdf_bytes 是桩函数（把结构体 debug 文本
+#   写进 PDF 页面 + 只用 Base-14 西文字体，中文全乱），PDF 已改走 printpdf（2026-09-23 实测打回）。
+ppt-rs = { version = "0.2", features = ["cli"] }
+# 注：想关掉它的 default pdf-native（pdfrs）关不掉——0.2.27 的 export/slide_render.rs
+# 无条件 use pdfrs，feature 门控有 bug，default-features=false 直接编译失败。
+# pdfrs 会编进来但**绝不调用**它的 to_pdf_bytes（桩函数，见下），PDF 走 printpdf。
+# Markdown AST 解析（docx 引擎真样式 / docx 导入解析）
+pulldown-cmark = "0.11"
+zip = "2"
+quick-xml = "0.31"
+
 # 工作日同步（节假日 API 拉取）
+
+# 通知中心 · 外部渠道（2026-09-18；只保留邮件 SMTP，飞书/钉钉/企微已移除）
 ureq = { version = "2", features = ["json"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "rustls-tls", "pool"] }
+# Document Engine · Markdown → PDF（HTML→PDF · azul text3 引擎：UAX#14/CJK 断行 + 系统字体嵌入 · 2026-09-23）
+printpdf = "0.11.1"
 
 [features]
 # 默认 features

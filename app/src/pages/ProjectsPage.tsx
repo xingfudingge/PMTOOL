@@ -142,7 +142,6 @@ export function ProjectsPage({ onOpenProject }: Props = {}) {
         padding: '24px 32px',
         height: '100%',
         overflow: 'auto',
-        maxWidth: '1400px',
       }}
     >
       {/* 顶部 */}

@@ -106,6 +106,7 @@ import { defaultHolidayProvider } from '@/services/holidayProvider'
 import { ProjectOverviewEditModal } from '@/components/ProjectOverviewEditModal'
 import { FileTree, parentOfPath, pathSepOf, stripSep } from '@/components/FileTree'
 import { FilePreview } from '@/components/FilePreview'
+import { useEditingMaximized } from '@/components/DocumentEditor/editingMaximized'
 import { ProjectKnowledgeCenter } from '@/components/KnowledgeSpaceView/ProjectKnowledgeCenter'
 import {
   listProjectBindings,
@@ -133,6 +134,12 @@ import { revealPath } from '@/services/settings'
 interface Props {
   projectId: number
   onBack: () => void
+  /**
+   * 消息中心深链参数（hash query）
+   *   tab=planning&focusTask=123 → 计划管理 → 整体计划 → 定位任务行
+   *   tab=registers&focusIssue=88 → 登记册 → 定位风险行
+   */
+  deepLink?: Record<string, string>
 }
 
 type PrimaryTab =
@@ -170,13 +177,32 @@ const PLANNING_TABS: PlanningTabDef[] = [
   { key: 'gantt', label: '甘特图' },
 ]
 
-export function ProjectDetailPage({ projectId, onBack }: Props) {
+export function ProjectDetailPage({ projectId, onBack, deepLink }: Props) {
   const [data, setData] = useState<ProjectDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [primary, setPrimary] = useState<PrimaryTab>('planning')
-  const [planning, setPlanning] = useState<PlanningTab>('overview')
+  const [primary, setPrimary] = useState<PrimaryTab>(() => {
+    // 消息深链：进入时直接落在目标 tab（非法值回落到 计划管理）
+    const t = deepLink?.tab
+    return (t && PRIMARY_TABS.some((x) => x.key === t) ? t : 'planning') as PrimaryTab
+  })
+  const [planning, setPlanning] = useState<PlanningTab>(() =>
+    deepLink?.focusTask ? 'overall' : 'overview',
+  )
   const [editOpen, setEditOpen] = useState(false)
+
+  // 维护者 2026-08-31 拍板：编辑区最大化 = 编辑区占满整个可见区域（折叠所有 chrome）。
+  // 知识中心（KnowledgePage / KnowledgeTreeView）已接线，项目文件管理此前漏接
+  // → 点最大化只有 Layout 收了主侧栏，页面头/KPI/一级 tab/文件树全在 → 「就这么点」。
+  const editingMaximized = useEditingMaximized()
+  /**
+   * 页面级 chrome（页面头 / KPI / 一级 tab）收起范围：
+   *   files     —— 项目文件管理（预览工具栏 ⛶）
+   *   knowledge —— 项目知识中心（笔记编辑器 ⛶）
+   * 其它 tab 没有编辑区最大化入口，保持原布局不受影响。
+   */
+  const chromeMax =
+    editingMaximized && (primary === 'files' || primary === 'knowledge')
 
   // 维护者 2026-08-26：项目周期自动从任务最早 start_date / 最晚 end_date 读取
   const projectPeriodStart = useMemo(
@@ -196,6 +222,33 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
         .reverse()[0] || data?.project.end_date || null,
     [data],
   )
+
+  const focusTask = deepLink?.focusTask
+  const focusIssue = deepLink?.focusIssue
+
+  // 消息深链：数据加载完成后滚动定位 + 高亮目标行（任务 / 风险）
+  useEffect(() => {
+    if (loading || !data) return
+    if (!focusTask && !focusIssue) return
+    const selector = focusIssue
+      ? `[data-testid="issue-row-${focusIssue}"]`
+      : `[data-testid="child-task-row-${focusTask}"],[data-testid="parent-task-row-${focusTask}"]`
+    // 等一帧让目标 tab 的列表渲染完成
+    const timer = window.setTimeout(() => {
+      const el = document.querySelector(selector) as HTMLElement | null
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const prevOutline = el.style.outline
+      const prevOffset = el.style.outlineOffset
+      el.style.outline = '2px solid var(--color-accent)'
+      el.style.outlineOffset = '-2px'
+      window.setTimeout(() => {
+        el.style.outline = prevOutline
+        el.style.outlineOffset = prevOffset
+      }, 3000)
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [loading, data, focusTask, focusIssue])
 
   const refresh = async () => {
     setLoading(true)
@@ -291,6 +344,9 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
         background: 'var(--color-bg)',
       }}
     >
+      {/* 编辑区最大化（files / knowledge tab）：头部 / KPI / 一级 tab 整块收起，内容区铺满视口 */}
+      {!chromeMax && (
+        <>
       <Header
         data={data}
         onBack={onBack}
@@ -298,7 +354,7 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
         onExportWholeProject={() => void handleExportProject()}
       />
 
-      {/* 关键指标卡区（4 张横排 · 始终可见） */}
+      {/* 关键指标卡区（4 张横排 · 始终可见；最大化编辑时随 chrome 一起收起） */}
       <MetricsRow data={data} />
 
       {/* 一级 Tab */}
@@ -343,6 +399,8 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
           </button>
         ))}
       </div>
+        </>
+      )}
 
       {/* 二级 Tab（仅在计划管理下）*/}
       {primary === 'planning' && (
@@ -388,13 +446,27 @@ export function ProjectDetailPage({ projectId, onBack }: Props) {
         data-testid="primary-content"
         style={{
           flex: 1,
-          padding: '20px 32px 32px',
-          // 甘特图 tab 激活时主容器不滚动（甘特图自带内部滚动，避免双滚动条）
-          // 底部图例若被挤出可视区时兜底滚动（防止 hidden 裁剪图例导致看不到）
-          overflowY:
-            primary === 'planning' && planning === 'gantt' ? 'auto' : 'auto',
-          maxWidth: '1440px',
           width: '100%',
+          // 编辑区最大化：去掉内边距 / 宽度上限 / 页面滚动，变 flex 列让内容区 flex:1 铺满视口
+          ...(chromeMax
+            ? {
+                padding: 0,
+                maxWidth: 'none',
+                overflow: 'hidden',
+                // minHeight:0 → 作为 flex 项可被压缩到视口高，内部各栏自己滚（防内容撑破被裁切）
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column' as const,
+              }
+            : {
+                padding: '20px 32px 32px',
+                // 甘特图 tab 激活时主容器不滚动（甘特图自带内部滚动，避免双滚动条）
+                // 底部图例若被挤出可视区时兜底滚动（防止 hidden 裁剪图例导致看不到）
+                overflowY:
+                  primary === 'planning' && planning === 'gantt'
+                    ? 'auto'
+                    : 'auto',
+              }),
         }}
       >
         {/* 规划区顶部：项目概况（横排 · 单独组件 · 由 PlanningSection 在 planning === 'overall' 下渲染） */}
@@ -7004,6 +7076,8 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [binding, setBinding] = useState(false)
   const [confirmUnbind, setConfirmUnbind] = useState(false)
+  // 编辑区最大化（笔记编辑器 ⛶）：收起本 tab 顶部工具栏，笔记区铺满（对齐知识中心）
+  const editingMax = useEditingMaximized()
 
   const reload = useCallback(async () => {
     // 该项目通过绑定关系可访问的所有知识库（M:N · 不依赖 space.project_id）
@@ -7069,8 +7143,18 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
   const unboundSpaces = allSpaces.filter((sp) => !spaces.some((b) => b.id === sp.id))
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 480 }}>
-      {/* 顶部工具栏（参考项目文件管理布局） */}
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        // 编辑区最大化：父内容区已是 flex 列 → flex:1 铺满视口；嵌入态保持 minHeight 480
+        ...(editingMax ? { flex: 1, minHeight: 0 } : { minHeight: 480 }),
+      }}
+    >
+      {/* 顶部工具栏（参考项目文件管理布局 · 编辑区最大化时收起） */}
+      {!editingMax && (
+        <>
       <div
         style={{
           display: 'flex',
@@ -7128,6 +7212,8 @@ function KnowledgeTab({ data }: { data: ProjectDetailData }) {
           </button>
         )}
       </div>
+        </>
+      )}
 
       {/* 主体 */}
       <div style={{ flex: 1, minHeight: 0 }}>
@@ -7419,6 +7505,9 @@ function FilesTab({
     | { kind: 'clear' }
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
 
+  // 编辑区最大化（⛶ 预览工具栏触发）：收起 FilesTab 工具栏 + 左侧文件树，预览铺满视口
+  const editingMaximized = useEditingMaximized()
+
   // 防御：data 或 data.project 缺失时不崩溃（迁移期 / 加载期）
   if (!data || !data.project) {
     return (
@@ -7706,11 +7795,18 @@ function FilesTab({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        // 高度跟随父容器 · 父级是项目详情主区域
-        minHeight: 480,
+        // 高度占满内容区（primary-content 高度确定 · border-box）→ 树 / 预览各自内部滚动，
+        // 不再被页面滚动条带着一起滚（两个独立版块 · 对齐模板中心）
+        height: '100%',
+        // 编辑区最大化：主内容区已变 flex 列 → flex:1 铺满剩余视口；嵌入态 minHeight 480 兜底
+        ...(editingMaximized
+          ? { flex: 1, minHeight: 0 }
+          : { minHeight: 480 }),
       }}
     >
-      {/* 顶部工具栏 */}
+      {/* 顶部工具栏（编辑区最大化时收起 · 还原入口 = 预览工具栏的 ⛶ / Esc） */}
+      {!editingMaximized && (
+        <>
       <div
         style={{
           display: 'flex',
@@ -7823,6 +7919,8 @@ function FilesTab({
           </button>
         )}
       </div>
+        </>
+      )}
 
       {treeError && (
         <div
@@ -7976,16 +8074,21 @@ function FilesTab({
           style={{
             flex: 1,
             display: 'grid',
-            gridTemplateColumns: '260px 1fr',
+            // 编辑区最大化：文件树收起，预览独占一列（对齐知识中心左右栏折叠）
+            gridTemplateColumns: editingMaximized ? '1fr' : '260px 1fr',
+            // 行高封顶 = 容器高（克隆模板中心时漏了这条）→ 两列不被内容撑高 → 各自内部滚动
+            gridTemplateRows: '1fr',
             minHeight: 0,
           }}
         >
-          {/* 左侧：文件树 */}
+          {/* 左侧：文件树（最大化时隐藏） */}
+          {!editingMaximized && (
           <div
             style={{
               borderRight: '1px solid var(--color-border)',
               background: 'var(--color-bg)',
               minHeight: 0,
+              overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
             }}
@@ -8024,9 +8127,18 @@ function FilesTab({
               />
             )}
           </div>
+          )}
 
-          {/* 右侧：预览 */}
-          <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {/* 右侧：预览（overflow auto 兜底：自带内部滚动的编辑器走内部滚，
+              高图片/长表格这类无内部滚动的预览由本列滚动 · 都不再拖着页面一起滚） */}
+          <div
+            style={{
+              minHeight: 0,
+              overflow: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             {selected && !selected.isDir ? (
               <FilePreview
                 key={selected.path}
@@ -8060,7 +8172,7 @@ function FilesTab({
                       color: 'var(--color-text-tertiary)',
                     }}
                   >
-                    md/txt 当前为只读预览 · 编辑时点「本地编辑器打开」
+                    .md 支持「富文本 / 纯文本」切换编辑 · .txt 直接编辑
                   </div>
                 </div>
               </div>

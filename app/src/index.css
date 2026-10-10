@@ -297,3 +297,11 @@ body {
   from { transform: scale(1) translateY(0); opacity: 1; }
   to { transform: scale(0.94) translateY(10px); opacity: 0; }
 }
+
+/* 加载中图标旋转（AI 设置测试连接 / AI 对话发送 / 工作流运行 共用） */
+@keyframes pmSpin {
+  to { transform: rotate(360deg); }
+}
+.is-spinning {
+  animation: pmSpin 0.9s linear infinite;
+}

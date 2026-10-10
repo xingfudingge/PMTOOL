@@ -14,15 +14,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { DocumentEditor } from '@/components/DocumentEditor'
 import { PreviewToolbar } from './PreviewToolbar'
+import { ExportMenu } from './ExportMenu'
 import { readTextFileWithMtime } from '@/services/projectFiles'
 import type { SaveStatus } from '@/components/DocumentEditor/types'
 import type { FilePreviewProps } from './types'
+import type { ReactNode } from 'react'
 
 export function MarkdownEditor({
   path,
   fileName,
   onOpenExternally,
-}: FilePreviewProps) {
+  toolbarExtra,
+}: FilePreviewProps & { toolbarExtra?: ReactNode }) {
   // 维护者 2026-08-31：保存回调 + 状态由 DocumentEditor 推到外层
   const saveRef = useRef<(() => Promise<boolean>) | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('loading')
@@ -66,19 +69,10 @@ export function MarkdownEditor({
         lastSavedAt={lastSavedAt}
         saveRef={saveRef}
         extra={
-          <span
-            style={{
-              fontSize: 11,
-              color: 'var(--color-text-tertiary)',
-              padding: '2px 8px',
-              background: 'var(--color-bg-subtle)',
-              border: '1px solid var(--color-border-thin)',
-              borderRadius: 10,
-            }}
-            title="项目文件管理 · 共用 BlockNote 编辑器"
-          >
-            ✏️ BlockNote 编辑
-          </span>
+          <>
+            <ExportMenu path={path} fileName={fileName} saveRef={saveRef} />
+            {toolbarExtra}
+          </>
         }
       />
       <div style={{ flex: 1, minHeight: 0 }}>

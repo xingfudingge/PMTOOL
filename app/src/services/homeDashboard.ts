@@ -331,20 +331,6 @@ export async function loadHomeDashboard(): Promise<HomeDashboard> {
       color: 'var(--color-status-warning)',
     },
     {
-      id: 'gen-weekly',
-      label: '生成周报',
-      icon: 'FileText',
-      href: '/ai',
-      color: 'var(--color-accent)',
-    },
-    {
-      id: 'ask-ai',
-      label: 'AI 工作台',
-      icon: 'Sparkles',
-      href: '/ai',
-      color: 'var(--color-accent)',
-    },
-    {
       id: 'kb-search',
       label: '知识检索',
       icon: 'BookOpen',

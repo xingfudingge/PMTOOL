@@ -188,7 +188,6 @@ export function HomePage() {
       data-testid="home-page"
       style={{
         padding: '14px 24px 14px',
-        maxWidth: '1440px',
         background: 'var(--color-bg)',
         // fit viewport · 整页无滚动
         height: '100%',

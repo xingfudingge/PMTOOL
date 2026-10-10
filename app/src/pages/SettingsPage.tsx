@@ -5,7 +5,7 @@
  * 设计依据：维护者 2026-08-22 反馈
  *   - 设置从 sidebar 一级菜单移走（由头像菜单进入）
  *   - 进入后是面板视图（左分类 + 主区表单）
- *   - 7 个分类：个人 / 外观 / 数据 / AI 配置 / 快捷键 / 授权 / 关于
+ *   - 8 个分类：个人 / 外观 / 通知 / 自动化 / 节假日 / 数据 / 授权 / 关于
  *   - 不用 emoji · 统一 Lucide
  */
 
@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   Shield,
   CalendarDays,
+  Bell,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AuthorizationStateView, ActivateLicenseResult } from '@/types/license'
@@ -30,6 +31,7 @@ import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, se
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { pickProjectDirectory } from '@/services/projectFiles'
 import { TimePicker } from '@/components/TimePicker'
+import { NotificationSettingsPanel } from '@/components/NotificationSettingsPanel'
 
 interface SettingsSection {
   id: string
@@ -45,12 +47,19 @@ function formatLocalDateTime(iso: string | null | undefined): string {
   return d.toLocaleString('zh-CN', { hour12: false })
 }
 
+/**
+ * 分类顺序：个人化（我是谁 / 长什么样 / 怎么提醒）
+ *        → 能力配置（自动化 / 节假日规则）
+ *        → 系统（数据 / 授权）→ 尾部信息（关于）
+ * 命名统一为 2 字（「自动化」「节假日」为固定词，保持 3 字），避免长短不齐。
+ */
 const SECTIONS: SettingsSection[] = [
   { id: 'profile', label: '个人', Icon: User },
   { id: 'appearance', label: '外观', Icon: Palette },
-  { id: 'data', label: '数据', Icon: Database },
+  { id: 'notification', label: '通知', Icon: Bell },
   { id: 'automation', label: '自动化', Icon: Sparkles },
-  { id: 'workday', label: '法定节假日', Icon: CalendarDays },
+  { id: 'workday', label: '节假日', Icon: CalendarDays },
+  { id: 'data', label: '数据', Icon: Database },
   { id: 'license', label: '授权', Icon: Shield },
   { id: 'about', label: '关于', Icon: Info },
 ]
@@ -124,13 +133,14 @@ export function SettingsPage() {
         ))}
       </aside>
 
-      {/* 主区 */}
+      {/* 主区 · 随窗口宽度铺满（不设宽度上限：否则最大化后右侧留白，
+          且滚动条落在 220+720 的位置 → 看起来「停在屏幕中间」） */}
       <main
         style={{
           flex: 1,
+          minWidth: 0,
           padding: '40px 48px',
           overflowY: 'auto',
-          maxWidth: '720px',
         }}
       >
         {active === 'profile' && <ProfileSection />}
@@ -138,6 +148,7 @@ export function SettingsPage() {
         {active === 'data' && <DataSection />}
         {active === 'automation' && <AutomationSection />}
         {active === 'workday' && <WorkdaySection />}
+        {active === 'notification' && <NotificationSettingsPanel />}
         {active === 'license' && <LicenseSection />}
         {active === 'about' && <AboutSection />}
       </main>
@@ -724,7 +735,7 @@ function WorkdaySection() {
   }
   return (
     <>
-      <SectionHeader title="法定节假日" desc="法定节假日同步源 · 自动同步周期 · 手动同步" />
+      <SectionHeader title="节假日" desc="法定节假日同步源 · 自动同步周期 · 手动同步" />
       <Field label="同步源">
         <div>
           {sources.map((src, i) => (

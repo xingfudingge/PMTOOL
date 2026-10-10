@@ -49,7 +49,7 @@ pub fn create_report(
     report: ReportInput,
 ) -> Result<i64, String> {
     let pool = state.db.lock().map_err(|e| e.to_string())?;
-    reports_repo::upsert(
+    let id = reports_repo::upsert(
         &pool,
         &report.report_type,
         report.project_id,
@@ -58,7 +58,27 @@ pub fn create_report(
         report.generate_type.as_deref().unwrap_or("MANUAL"),
         &report.period,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    // 通知：报告已生成（同一周期报告覆盖时不重复提醒 —— dedup 含 period）
+    let ev = crate::services::notification::NotificationEvent {
+        event_type: "REPORT_GENERATED".to_string(),
+        source_type: "REPORT".to_string(),
+        source_id: id,
+        project_id: report.project_id,
+        title: format!("报告已生成：{}", report.title),
+        content: format!("「{}」已生成，可在报告中心查看。", report.title),
+        dedup_key: format!(
+            "report:{}:{}:{}",
+            report.report_type.to_uppercase(),
+            report.project_id.map(|p| p.to_string()).unwrap_or_else(|| "personal".into()),
+            report.period
+        ),
+        payload: None,
+    };
+    crate::services::notification::service::emit_business_event(&pool, &ev);
+
+    Ok(id)
 }
 
 /// 更新报告（编辑时用）
