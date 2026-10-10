@@ -492,3 +492,13 @@ CREATE TABLE IF NOT EXISTS notification_rule (
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 通知扫描提醒锚点（2026-10-10 · 「清空已读后又冒出一堆」修复）
+-- 与 notification_message 分离：消息可删，提醒锚点保留，扫描不重复生成。
+CREATE TABLE IF NOT EXISTS notification_reminder (
+    id          INTEGER PRIMARY KEY,
+    dedup_key   TEXT NOT NULL UNIQUE,       -- 扫描类提醒幂等锚点，如 task:12:overdue:2026-09-30
+    event_type  TEXT NOT NULL,              -- TASK_OVERDUE / TASK_DUE_SOON / ...
+    source_id   INTEGER,                    -- 任务 id
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

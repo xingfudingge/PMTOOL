@@ -22,7 +22,7 @@ import { resolve } from 'node:path'
 const SCHEMA_SQL_PATH = resolve(__dirname, '../../../../database/schema.sql')
 const INIT_SQL_PATH = resolve(__dirname, '../../../../database/migrations/0001_init.sql')
 
-// schema.sql 当前基线（37 张表）· 新增表必须显式加入此处，测试即漂移守护
+// schema.sql 当前基线（26 张表）· 新增表必须显式加入此处，测试即漂移守护
 const EXPECTED_TABLES = [
   // 2026-10-10 智能助手子系统已移除，不再有 ai_* / templates 表
   'attachments',
@@ -39,6 +39,7 @@ const EXPECTED_TABLES = [
   'notification_channel',
   'notification_delivery',
   'notification_message',
+  'notification_reminder',
   'notification_rule',
   // 2026-09-16 授权隔离改造：license 表废弃，授权数据移入 OS 安全存储
   'project_issue_log',

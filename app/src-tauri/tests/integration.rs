@@ -376,6 +376,43 @@ fn test_scan_due_tasks_creates_overdue_and_due_soon() {
 }
 
 #[test]
+fn test_scan_does_not_recreate_after_clear_read() {
+    // 根因验证：用户「标记已读 → 清空已读（删消息）」后再次扫描，不应重新生成同一批。
+    // 此前用 message.dedup_key 判重，删消息即丢锚点 ⇒ 重启扫描重生成（清掉又冒出）。
+    let conn = setup_notification_db();
+    conn.execute(
+        "INSERT INTO projects (id, project_code, project_name) VALUES (1, 'P1', 'Proj1')",
+        [],
+    )
+    .ok();
+    let overdue = (chrono::Local::now().date_naive() - chrono::Duration::days(3))
+        .format("%Y-%m-%d")
+        .to_string();
+    conn.execute(
+        "INSERT INTO project_tasks (id, project_id, task_name, end_date, status) VALUES (50, 1, '逾期任务', ?1, 'IN_PROGRESS')",
+        rusqlite::params![overdue],
+    )
+    .unwrap();
+
+    // 首次扫描生成 1 条 TASK_OVERDUE
+    assert_eq!(notif_svc::service::scan_due_tasks(&conn).unwrap(), 1);
+    assert_eq!(notif_repo::unread_count(&conn).unwrap(), 1);
+
+    // 用户标记已读 + 清空已读（删掉消息）
+    notif_repo::mark_all_read(&conn).unwrap();
+    notif_repo::clear_read(&conn).unwrap();
+    assert_eq!(notif_repo::unread_count(&conn).unwrap(), 0);
+
+    // 再次扫描：锚点仍在 notification_reminder，不应重新生成
+    assert_eq!(
+        notif_svc::service::scan_due_tasks(&conn).unwrap(),
+        0,
+        "清空已读后不应再生成同一批逾期消息"
+    );
+    assert_eq!(notif_repo::unread_count(&conn).unwrap(), 0, "消息仍为空");
+}
+
+#[test]
 fn test_scan_skips_completed_tasks() {
     let conn = setup_notification_db();
     conn.execute(

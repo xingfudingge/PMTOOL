@@ -338,6 +338,41 @@ pub fn clear_all(conn: &rusqlite::Connection) -> rusqlite::Result<usize> {
 }
 
 // ============================================================
+// 扫描提醒锚点（notification_reminder · 与消息分离）
+// 消息可被删除/清空，但锚点保留 ⇒ 启动扫描不重复生成（清空已读后不再冒出一堆）。
+// ============================================================
+
+/// 提醒锚点是否已存在（扫描判重用，不依赖消息是否还在）
+pub fn reminder_exists(
+    conn: &rusqlite::Connection,
+    dedup_key: &str,
+) -> rusqlite::Result<bool> {
+    use rusqlite::OptionalExtension;
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM notification_reminder WHERE dedup_key = ?1",
+            [dedup_key],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// 登记一条扫描提醒锚点（幂等：OR IGNORE）
+pub fn insert_reminder(
+    conn: &rusqlite::Connection,
+    dedup_key: &str,
+    event_type: &str,
+    source_id: Option<i64>,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO notification_reminder (dedup_key, event_type, source_id) VALUES (?1, ?2, ?3)",
+        rusqlite::params![dedup_key, event_type, source_id],
+    )?;
+    Ok(())
+}
+
+// ============================================================
 // 派发
 // ============================================================
 

@@ -445,3 +445,12 @@ export const notificationRules = sqliteTable('notification_rule', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 })
+
+/** 通知扫描提醒锚点（消息可删，锚点保留，扫描不重复生成） */
+export const notificationReminders = sqliteTable('notification_reminder', {
+  id: integer('id').primaryKey(),
+  dedupKey: text('dedup_key').notNull().unique(), // 扫描类提醒幂等锚点
+  eventType: text('event_type').notNull(),
+  sourceId: integer('source_id'),
+  createdAt: text('created_at').notNull(),
+})

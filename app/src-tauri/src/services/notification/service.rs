@@ -131,9 +131,10 @@ pub fn scan_due_tasks(conn: &rusqlite::Connection) -> Result<usize, Notification
         };
 
         let dedup_key = format!("task:{}:{}:{}", t.id, event_type.to_lowercase(), t.end_date);
-        // 幂等：本轮已提醒过则跳过。注意 emit_event 命中 dedup 时会返回「已存在的 id」，
-        // 不能拿 is_some() 当「新建」判据，否则重复扫描会被误计为新增。
-        if crate::repositories::notification::exists_dedup_key(conn, &dedup_key)? {
+        // 幂等：用独立提醒锚点表（notification_reminder）判重。
+        // 不用 message.dedup_key —— 用户「清空已读」删消息会连带删掉锚点，
+        // 导致下次启动扫描重新生成同一批（这是此前「清掉又冒出」的根因）。
+        if crate::repositories::notification::reminder_exists(conn, &dedup_key)? {
             continue;
         }
         let ev = NotificationEvent {
@@ -143,10 +144,17 @@ pub fn scan_due_tasks(conn: &rusqlite::Connection) -> Result<usize, Notification
             project_id: Some(t.project_id),
             title,
             content,
-            dedup_key,
+            dedup_key: dedup_key.clone(),
             payload: None,
         };
         if emit_event(conn, &ev)?.is_some() {
+            // 生成了新消息，登记提醒锚点（消息删了锚点仍在，防止重复）
+            crate::repositories::notification::insert_reminder(
+                conn,
+                &dedup_key,
+                event_type,
+                Some(t.id),
+            )?;
             created += 1;
         }
     }
