@@ -146,16 +146,17 @@ export function DocumentEditor(props: DocumentEditorProps) {
     const blocks = resolveInitialBlocks('MARKDOWN', '', initialMarkdown, editor.pmSchema)
     setConvertedBlocks(blocks)
     if (blocks) {
-      // 注入内容：必须走 tiptap 的 setContent。
-      // 2026-09-20 修复：此前写的是 `(editor as any).document = blocks`，
-      // 但 BlockNote 的 document 是**只读 getter**，赋值抛
-      // "Cannot set property document of #<t> which has only a getter"，
-      // 被 FilePreview 的错误边界接住 → .md 降级成「此文件类型暂不支持在线预览」。
-      // 该分支因 .md 长期未接线而从未被执行，属埋了很久的雷。
-      ;(editor as any)._tiptapEditor?.commands?.setContent?.({
-        type: 'doc',
-        content: blocks.length > 0 ? blocks : [{ type: 'paragraph' }],
-      })
+      // 注入内容：必须用 BlockNote 官方的 replaceBlocks，不能用 tiptap 的 setContent。
+      // 2026-10-11 修复「部分 md 富文本打开空白」：此前用
+      //   _tiptapEditor.commands.setContent({ type: 'doc', content: blocks })
+      // 在 tiptap 3.x 里对 BlockNote 的 block 格式抛
+      //   RangeError: Invalid input for Fragment.fromJSON
+      // → 注入静默失败 → editor 保持空文档 → 富文本空白（纯文本照常显示）。
+      // BlockNote blocks（含 {type:'tableContent'...}、props、children 等专有结构）
+      // 不是 tiptap 的 ProseMirror node JSON，必须走 editor.replaceBlocks 这条
+      // BlockNote 自己的注入通道（BlockNote 内部 version 恢复用的正是
+      // replaceBlocks(editor.document, blocks)）。
+      ;(editor as any).replaceBlocks?.(editor.document, blocks)
       setLastSavedSnapshot(JSON.stringify(blocks))
       // 注入后把快照对齐到 editor.document 的真实序列化（BlockNote 可能规范化出不同结构），
       // 并重置为 clean：避免把「加载注入」误判成「用户编辑」而弹出未保存。
@@ -377,10 +378,9 @@ export function DocumentEditor(props: DocumentEditorProps) {
         setLastSavedSnapshot(content)
       } else {
         const blocks = resolveInitialBlocks('MARKDOWN', '', content, editor.pmSchema)
-        ;(editor as any)._tiptapEditor?.commands?.setContent?.({
-          type: 'doc',
-          content: blocks && blocks.length > 0 ? blocks : [{ type: 'paragraph' }],
-        })
+        // 与注入 effect 相同：必须走 BlockNote 官方 replaceBlocks，不能走 tiptap setContent
+        //（tiptap 3.x 对 BlockNote block 格式抛 RangeError: Invalid input for Fragment.fromJSON）。
+        ;(editor as any).replaceBlocks?.(editor.document, blocks ?? [])
         setLastSavedSnapshot(JSON.stringify(blocks ?? []))
       }
       setLoadedMtime(modifiedAt)

@@ -305,3 +305,17 @@ body {
 .is-spinning {
   animation: pmSpin 0.9s linear infinite;
 }
+
+/* BlockNote 富文本代码块 · 产品浅色主题下须浅底深字（维护者 2026-10-11 反馈代码块黑底看不清） */
+.bn-editor [data-content-type='codeBlock'] {
+  background: #f5f6f8 !important;
+  border: 1px solid var(--color-border-thin, #e5e7eb);
+  border-radius: 6px;
+}
+.bn-editor [data-content-type='codeBlock'] pre {
+  background: transparent !important;
+  color: #1f2328 !important;
+}
+.bn-editor [data-content-type='codeBlock'] * {
+  color: #1f2328 !important;
+}
