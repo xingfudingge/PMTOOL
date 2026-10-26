@@ -156,7 +156,7 @@ pub fn activate_license_simple(
         AuthorizationDecision::Licensed { payload } => Ok(ActivateLicenseResult {
             success: true,
             reason: None,
-            product: Some("PMTool".to_string()),
+            product: Some(crate::crypto_ed25519::PRODUCT_CODE.to_string()),
             license_type: Some(payload.license_type.clone()),
             expire_time: if payload.expire_time.is_empty() {
                 None

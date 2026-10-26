@@ -202,7 +202,7 @@ mod tests {
 
         // 构造 License 字符串
         let payload = crate::crypto_ed25519::LicensePayload {
-            product: "PMTool".to_string(),
+            product: crate::crypto_ed25519::PRODUCT_CODE.to_string(),
             license_id: "auth-test-001".to_string(),
             device_id: device_id.to_string(),
             license_type: "DAYS_365".to_string(),
@@ -216,7 +216,7 @@ mod tests {
         let signature = signing_key.sign(encoded.as_bytes());
         let sig_hex = hex::encode(signature.to_bytes());
         let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig_hex);
-        let license = format!("PMT1{}{}", sig_b64, encoded);
+        let license = format!("{}{}{}", crate::crypto_ed25519::LICENSE_PREFIX, sig_b64, encoded);
         (validator, license)
     }
 

@@ -23,6 +23,17 @@ use std::fs;
 /// 签名段固定长度：base64url_no_pad(hex(64 字节签名)) = base64url_no_pad(128 字节) = 171 字符
 const SIG_B64_LEN: usize = 171;
 
+/// 本软件的产品码 —— 必须与授权管理平台里创建的产品码一致。
+/// 授权码签名里带 product 字段，校验时做第二道比对：
+/// 即使别的软件的私钥泄露、被拿来给本软件的授权码签名，产品码不符也会被拒绝。
+pub const PRODUCT_CODE: &str = "PMTOOL";
+
+/// 授权码前缀（授权管理平台 v1 协议：LC1 = License Center 1）
+pub const LICENSE_PREFIX: &str = "LC1";
+
+/// 旧前缀（原 PMTool License Generator 签发，已停用；仅用于兼容解析/错误提示）
+pub const LEGACY_PREFIX: &str = "PMT1";
+
 /// 授权协议版本
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProtocolVersion {
@@ -32,13 +43,13 @@ pub enum ProtocolVersion {
 impl ProtocolVersion {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "PMT1" => Some(Self::V1),
+            LICENSE_PREFIX | LEGACY_PREFIX => Some(Self::V1),
             _ => None,
         }
     }
 
     pub fn to_str(self) -> &'static str {
-        "PMT1"
+        LICENSE_PREFIX
     }
 }
 
@@ -166,10 +177,13 @@ impl LicenseVerifier {
         }
 
         // 10. 验证产品
-        if payload.product != "PMTool" {
+        if payload.product != PRODUCT_CODE {
             return LicenseVerification {
                 valid: false,
-                reason: Some(format!("授权不适用于 PMTool，适用于：{}", payload.product)),
+                reason: Some(format!(
+                    "授权不适用于本软件（当前软件 {PRODUCT_CODE}，授权产品 {}）",
+                    payload.product
+                )),
                 payload: Some(payload),
             };
         }
@@ -208,13 +222,14 @@ pub fn parse_license_string(
     // 1. 移除分隔符
     let license_clean = license_b64.replace("-", "").replace(" ", "");
 
-    // 2. 检查 PMT1 前缀
-    if !license_clean.starts_with("PMT1") {
-        return Err("授权码格式错误，需要以 PMT1 开头".to_string());
-    }
-
-    // 3. 提取授权数据部分 (PMT1 后面的所有字符)
-    let data_part = &license_clean[4..];
+    // 2. 检查前缀（LC1 = 授权管理平台；PMT1 = 旧生成器，仅兼容解析）
+    let data_part = if let Some(rest) = license_clean.strip_prefix(LICENSE_PREFIX) {
+        rest
+    } else if let Some(rest) = license_clean.strip_prefix(LEGACY_PREFIX) {
+        rest
+    } else {
+        return Err(format!("授权码格式错误，需要以 {LICENSE_PREFIX} 开头"));
+    };
 
     // 4. 结构：sig_b64(固定171) + encoded(不定长)
     if data_part.len() < SIG_B64_LEN {
@@ -288,7 +303,7 @@ impl LicensePayloadWithSignature {
     pub fn to_license_string(&self) -> String {
         let payload_json = serde_json::to_string(&self.payload).unwrap();
         let b64 = base64::engine::general_purpose::STANDARD.encode(payload_json);
-        format!("PMT1{}", b64)
+        format!("{LICENSE_PREFIX}{b64}")
     }
 
     pub fn to_formatted_string(&self) -> String {
@@ -330,7 +345,7 @@ mod tests {
         let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig_hex);
         let license_data = format!("{}{}", sig_b64, encoded);
 
-        let mut result = String::from("PMT1");
+        let mut result = String::from(LICENSE_PREFIX);
         for (i, c) in license_data.chars().enumerate() {
             if i > 0 && i % 5 == 0 {
                 result.push('-');
@@ -358,14 +373,15 @@ mod tests {
 
     #[test]
     fn test_protocol_version_parsing() {
+        assert_eq!(ProtocolVersion::from_str(LICENSE_PREFIX), Some(ProtocolVersion::V1));
         assert_eq!(ProtocolVersion::from_str("PMT1"), Some(ProtocolVersion::V1));
-        assert_eq!(ProtocolVersion::from_str("PMT2"), None);
+        assert_eq!(ProtocolVersion::from_str("LC2"), None);
     }
 
     #[test]
     fn test_license_payload_serialization() {
         let payload = LicensePayload {
-            product: "PMTool".to_string(),
+            product: PRODUCT_CODE.to_string(),
             license_id: "test-001".to_string(),
             device_id: "device-001".to_string(),
             license_type: "YEAR".to_string(),
@@ -421,7 +437,7 @@ mod tests {
         let expire = now + Duration::days(365);
 
         let payload = LicensePayload {
-            product: "PMTool".to_string(),
+            product: PRODUCT_CODE.to_string(),
             license_id: "test-001".to_string(),
             device_id: "device-001".to_string(),
             license_type: "YEAR".to_string(),
@@ -450,7 +466,7 @@ mod tests {
         let expire = now + Duration::days(365);
 
         let payload = LicensePayload {
-            product: "PMTool".to_string(),
+            product: PRODUCT_CODE.to_string(),
             license_id: "test-002".to_string(),
             device_id: "device-001".to_string(),
             license_type: "YEAR".to_string(),

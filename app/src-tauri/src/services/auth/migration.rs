@@ -82,8 +82,11 @@ pub fn migrate_legacy_auth(
             },
         ) {
             let (license_key, _status, _db_device_id) = row;
-            // 仅处理 Ed25519 格式（PMT1 前缀）
-            if license_key.trim_start().starts_with("PMT1") {
+            // 仅处理 Ed25519 格式（LC1 = 授权管理平台，PMT1 = 旧生成器）
+            let trimmed = license_key.trim_start();
+            if trimmed.starts_with(crate::crypto_ed25519::LICENSE_PREFIX)
+                || trimmed.starts_with(crate::crypto_ed25519::LEGACY_PREFIX)
+            {
                 let validation = validator.validate(&license_key, device_id);
                 if validation.valid {
                     storage
@@ -175,7 +178,7 @@ mod tests {
         use ed25519_dalek::Signer as _;
         let signing_key = SigningKey::from_bytes(&[seed; 32]);
         let payload = crate::crypto_ed25519::LicensePayload {
-            product: "PMTool".to_string(),
+            product: crate::crypto_ed25519::PRODUCT_CODE.to_string(),
             license_id: "mig-001".to_string(),
             device_id: device_id.to_string(),
             license_type: "DAYS_365".to_string(),
@@ -187,7 +190,7 @@ mod tests {
         let signature = signing_key.sign(encoded.as_bytes());
         let sig_hex = hex::encode(signature.to_bytes());
         let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig_hex);
-        format!("PMT1{}{}", sig_b64, encoded)
+        format!("{}{}{}", crate::crypto_ed25519::LICENSE_PREFIX, sig_b64, encoded)
     }
 
     /// Test 07 关联：恢复旧数据库不能恢复授权状态

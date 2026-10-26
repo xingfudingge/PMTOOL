@@ -12,7 +12,7 @@
  *   SECURE_STORAGE_ERROR / DEVICE_ID_GENERATION_ERROR
  */
 
-use crate::crypto_ed25519::{self, LicensePayload, LicenseVerifier};
+use crate::crypto_ed25519::{self, LicensePayload, LicenseVerifier, PRODUCT_CODE};
 
 /// 授权判定原因码（机器可读 · 稳定不可改）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,7 +182,7 @@ impl LicenseValidator {
 
 /// 3. Claims 验证器（产品 / License ID 完整性）
 fn claims_valid(payload: &LicensePayload) -> Result<(), AuthReasonCode> {
-    if payload.product != "PMTool" {
+    if payload.product != PRODUCT_CODE {
         return Err(AuthReasonCode::LicenseClaimsInvalid);
     }
     if payload.license_id.is_empty() {
@@ -286,7 +286,7 @@ mod tests {
         let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig_hex);
         let license_data = format!("{sig_b64}{encoded}");
 
-        let mut result = String::from("PMT1");
+        let mut result = String::from(crypto_ed25519::LICENSE_PREFIX);
         for (i, c) in license_data.chars().enumerate() {
             if i > 0 && i % 5 == 0 {
                 result.push('-');
@@ -311,7 +311,7 @@ mod tests {
 
     fn base_payload(device_id: &str) -> LicensePayload {
         LicensePayload {
-            product: "PMTool".to_string(),
+            product: PRODUCT_CODE.to_string(),
             license_id: "test-lic-001".to_string(),
             device_id: device_id.to_string(),
             license_type: "DAYS_365".to_string(),
@@ -373,7 +373,7 @@ mod tests {
         tampered.expire_time = "2098-01-01T00:00:00+00:00".to_string();
         let t_json = serde_json::to_string(&tampered).unwrap();
         let t_encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(t_json.as_bytes());
-        let license = format!("PMT1{}{}", sig_b64, t_encoded);
+        let license = format!("{}{}{}", crypto_ed25519::LICENSE_PREFIX, sig_b64, t_encoded);
 
         let v = validator_with_signing_key(&signing_key);
         let result = v.validate(&license, "DEVICE-A");
