@@ -1,0 +1,19 @@
+name: Guard Release Keys
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Key guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check release keys
+        run: bash scripts/check-release-keys.sh

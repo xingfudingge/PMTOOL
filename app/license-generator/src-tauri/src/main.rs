@@ -12,10 +12,9 @@ use uuid::Uuid;
 mod auth_backup;
 mod workdir;
 
-// ============== Key Management (方案 A：官方密钥固化，与工作目录解耦) ==============
-// 官方私钥由 build.rs 在编译期从 GitHub Actions 的 LG_PRIVATE_KEY 注入并
-// include_bytes! 嵌入二进制：随安装包固化，不随工作目录/首启/重装/换机变化，
-// 绝不自动"新造一套"。
+// ============== Key Management (旧生成器已停用) ==============
+// 旧生成器已停用（见 DEPRECATED.md），不再从 CI 环境变量注入私钥：
+// build.rs 只写入空占位，签发入口会直接报错，绝不会静默生成新密钥。
 
 // 编译期嵌入的官方私钥 PEM（由 build.rs 写入 OUT_DIR）。
 static OFFICIAL_PRIVATE_KEY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/official_private_key.pem"));
@@ -43,9 +42,9 @@ pub fn create_pmtool_dir() -> std::result::Result<(), String> {
 pub fn load_embedded_signing_key() -> std::result::Result<ed25519_dalek::SigningKey, String> {
     let pem_str = std::str::from_utf8(OFFICIAL_PRIVATE_KEY)
         .map_err(|e| format!("官方私钥编码错误: {}", e))?;
-    // 若未注入（dev 编译下 LG_PRIVATE_KEY 为空），给出明确提示而非静默新造。
+    // 旧生成器已停用：构建不再注入私钥，空占位会走到这里。
     if pem_str.trim().is_empty() {
-        return Err("未嵌入官方私钥：构建时需从 LG_PRIVATE_KEY 注入官方密钥".to_string());
+        return Err("旧 License Generator 已停用：不再接受编译期私钥注入（见 DEPRECATED.md）".to_string());
     }
     let hex_body = pem_str
         .lines()

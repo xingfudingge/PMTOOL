@@ -8,15 +8,13 @@
  * - 密钥目录（key_dir）：存放官方 Ed25519 签发密钥对，是稳定、永久、全局唯一的授权资产。
  *   不随工作目录/首次启动/重装/换机而变化，绝不自动“新造一套”。
  *
- * 官方密钥来源（方案 A）：GitHub Actions 构建时从 secret LG_PRIVATE_KEY 注入，备一次后永久固化。
- * 若固定密钥目录缺失且环境变量 LG_PRIVATE_KEY 有值，则首次落地并固化；
- * 之后一律沿用，绝不覆盖、绝不静默重新生成。
+ * 官方密钥注入路径已随旧生成器下线（见 DEPRECATED.md）：
+ * 不再从 CI 环境变量落地私钥；本模块仅保留工作目录/密钥目录路径工具。
  */
 
 use std::path::PathBuf;
 
 const OVERRIDE_FILE: &str = "workdir.override";
-const PRIVATE_KEY_ENV: &str = "LG_PRIVATE_KEY";
 
 /// 工作目录覆盖标记位置（固定 OS 数据目录，不随用户选择的工作目录变化）
 pub fn override_marker_path() -> PathBuf {
@@ -91,30 +89,6 @@ pub fn ensure_key_dir() -> std::io::Result<()> {
 /// 官方密钥是否已就位（私钥公钥都存在且非空）
 pub fn official_key_ready() -> bool {
     private_key_path().exists() && public_key_path().exists()
-}
-
-/// 首次（且仅首次）从环境变量 LG_PRIVATE_KEY 落地官方私钥并固化。
-/// 已经存在则忽略，绝不覆盖、绝不重新生成一套新的。
-/// 返回是否发生了首次落地。
-pub fn bootstrap_private_key_from_env() -> bool {
-    // 已有密钥 → 直接忽略，绝不覆盖
-    if official_key_ready() {
-        return false;
-    }
-    let Ok(env_value) = std::env::var(PRIVATE_KEY_ENV) else {
-        return false; // 无注入源，不做任何静默生成
-    };
-    let env_value = env_value.trim();
-    if env_value.is_empty() {
-        return false;
-    }
-    let _ = ensure_key_dir();
-    // 只写私钥；公钥由构建时一并写入（见 bootstrap_public_key）
-    if std::fs::write(private_key_path(), env_value).is_ok() {
-        true
-    } else {
-        false
-    }
 }
 
 /// 首次从环境变量 LG_PUBLIC_KEY 落地官方公钥并固化（与私钥配对，供本地校验/参考）。

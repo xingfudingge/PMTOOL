@@ -8,7 +8,7 @@
  *
  * 原因码（§24 日志只记码，不记完整 License / 设备敏感信息）：
  *   LICENSE_NOT_FOUND / LICENSE_FORMAT_INVALID / LICENSE_SIGNATURE_INVALID
- *   LICENSE_CLAIMS_INVALID / LICENSE_EXPIRED / LICENSE_DEVICE_MISMATCH
+ *   LICENSE_KEY_UNKNOWN / LICENSE_CLAIMS_INVALID / LICENSE_EXPIRED / LICENSE_DEVICE_MISMATCH
  *   SECURE_STORAGE_ERROR / DEVICE_ID_GENERATION_ERROR
  */
 
@@ -22,6 +22,8 @@ pub enum AuthReasonCode {
     LicenseNotFound,
     LicenseFormatInvalid,
     LicenseSignatureInvalid,
+    /// 授权码 claims.kid 不在内置公钥清单中（未知签发密钥/未轮换）
+    LicenseKeyUnknown,
     LicenseClaimsInvalid,
     LicenseExpired,
     LicenseDeviceMismatch,
@@ -38,6 +40,7 @@ impl AuthReasonCode {
             AuthReasonCode::LicenseNotFound => "LICENSE_NOT_FOUND",
             AuthReasonCode::LicenseFormatInvalid => "LICENSE_FORMAT_INVALID",
             AuthReasonCode::LicenseSignatureInvalid => "LICENSE_SIGNATURE_INVALID",
+            AuthReasonCode::LicenseKeyUnknown => "LICENSE_KEY_UNKNOWN",
             AuthReasonCode::LicenseClaimsInvalid => "LICENSE_CLAIMS_INVALID",
             AuthReasonCode::LicenseExpired => "LICENSE_EXPIRED",
             AuthReasonCode::LicenseDeviceMismatch => "LICENSE_DEVICE_MISMATCH",
@@ -55,6 +58,9 @@ impl AuthReasonCode {
             AuthReasonCode::LicenseFormatInvalid => "授权码格式错误，请检查后重试".to_string(),
             AuthReasonCode::LicenseSignatureInvalid => {
                 "授权码无效（签名验证失败，可能被篡改或密钥错误）".to_string()
+            }
+            AuthReasonCode::LicenseKeyUnknown => {
+                "授权码使用了未知密钥（可能由其他产品或已下线的签发端生成）".to_string()
             }
             AuthReasonCode::LicenseClaimsInvalid => "授权码内容不符合 PMTool 授权规范".to_string(),
             AuthReasonCode::LicenseExpired => "授权已过期，请联系授权管理员续期".to_string(),
@@ -107,39 +113,67 @@ pub struct LicenseValidator {
 }
 
 impl LicenseValidator {
-    /// 使用内嵌公钥初始化
+    /// 使用内嵌的产品公钥清单初始化
+    ///
+    /// 公钥清单（kid → public_hex）随仓库入库，私钥只在授权平台本机。
+    /// 轮换时新旧公钥并存，按授权码 claims.kid 选公钥。
     pub fn new() -> Result<Self, String> {
-        const PUBLIC_KEY_PEM: &str = include_str!("../../../keys/generator_public.pem");
-        let verifier = LicenseVerifier::from_public_pem(PUBLIC_KEY_PEM)
+        const PUBLIC_KEYS_JSON: &str = include_str!("../../../keys/product_keys.json");
+        let verifier = LicenseVerifier::from_keys_json(PUBLIC_KEYS_JSON)
             .map_err(|e| format!("授权验证器初始化失败：{}", e))?;
         Ok(Self { verifier })
     }
 
     /// 启动/激活共用：完整验证流水线（§14）
     pub fn validate(&self, license_b64: &str, current_binding_id: &str) -> LicenseValidation {
-        // 1. 格式校验 + 解析
-        let (encoded, signature_bytes, payload) =
-            match crypto_ed25519::parse_license_string(license_b64) {
-                Ok(p) => p,
-                Err(e) => {
-                    return LicenseValidation {
-                        valid: false,
-                        reason_code: Some(AuthReasonCode::LicenseFormatInvalid),
-                        reason: Some(e),
-                        payload: None,
-                    };
-                }
-            };
+        // 1. 格式校验 + 解析（含 claims.kid）
+        let parsed = match crypto_ed25519::parse_license_with_kid(license_b64) {
+            Ok(p) => p,
+            Err(e) => {
+                return LicenseValidation {
+                    valid: false,
+                    reason_code: Some(AuthReasonCode::LicenseFormatInvalid),
+                    reason: Some(e),
+                    payload: None,
+                };
+            }
+        };
 
-        // 2. 签名验证（对 encoded 字节验签 · 与生成端 sign(encoded.as_bytes()) 一致）
-        if !self.verifier.verify_signature_bytes(&encoded, &signature_bytes) {
-            return LicenseValidation {
-                valid: false,
-                reason_code: Some(AuthReasonCode::LicenseSignatureInvalid),
-                reason: Some(AuthReasonCode::LicenseSignatureInvalid.message()),
-                payload: Some(payload),
-            };
+        // 2. 按 claims.kid 选公钥验签（未知 kid 与签名错误分开回报）
+        match self.verifier.verify_signature_bytes_by_kid(
+            &parsed.kid,
+            &parsed.encoded,
+            &parsed.signature_bytes,
+        ) {
+            None => {
+                let kid = if parsed.kid.is_empty() {
+                    "<缺失>".to_string()
+                } else {
+                    parsed.kid.clone()
+                };
+                return LicenseValidation {
+                    valid: false,
+                    reason_code: Some(AuthReasonCode::LicenseKeyUnknown),
+                    reason: Some(format!(
+                        "{}（kid={}）",
+                        AuthReasonCode::LicenseKeyUnknown.message(),
+                        kid
+                    )),
+                    payload: Some(parsed.payload),
+                };
+            }
+            Some(false) => {
+                return LicenseValidation {
+                    valid: false,
+                    reason_code: Some(AuthReasonCode::LicenseSignatureInvalid),
+                    reason: Some(AuthReasonCode::LicenseSignatureInvalid.message()),
+                    payload: Some(parsed.payload),
+                };
+            }
+            Some(true) => {}
         }
+
+        let payload = parsed.payload;
 
         // 3. Claims 验证（产品 / License ID）
         if let Err(code) = claims_valid(&payload) {
@@ -320,6 +354,43 @@ mod tests {
         }
     }
 
+    /// 构造单把公钥的产品清单并据此初始化验证器
+    fn validator_from_manifest(
+        kid: &str,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> LicenseValidator {
+        let manifest = format!(
+            r#"{{"product":"{}","keys":[{{"kid":"{}","public_hex":"{}"}}]}}"#,
+            PRODUCT_CODE,
+            kid,
+            hex::encode(signing_key.verifying_key().as_bytes())
+        );
+        let verifier = LicenseVerifier::from_keys_json(&manifest).unwrap();
+        LicenseValidator { verifier }
+    }
+
+    /// 构造带 claims.kid 的授权码；`tamper_signature` 翻转签名首字节
+    fn build_signed_license_with_kid(
+        payload: &LicensePayload,
+        kid: &str,
+        signing_key: &ed25519_dalek::SigningKey,
+        tamper_signature: bool,
+    ) -> String {
+        use base64::Engine;
+        use ed25519_dalek::Signer as _;
+        let mut value = serde_json::to_value(payload).unwrap();
+        value["kid"] = serde_json::Value::String(kid.to_string());
+        let json = serde_json::to_string(&value).unwrap();
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json.as_bytes());
+        let mut signature = signing_key.sign(encoded.as_bytes()).to_bytes();
+        if tamper_signature {
+            signature[0] ^= 0x01;
+        }
+        let sig_hex = hex::encode(signature);
+        let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig_hex);
+        format!("{}{}{}", crypto_ed25519::LICENSE_PREFIX, sig_b64, encoded)
+    }
+
     #[test]
     fn test_valid_license_passes() {
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
@@ -400,6 +471,68 @@ mod tests {
         let result = v.validate(&license, "DEVICE-A");
         assert!(!result.valid);
         assert_eq!(result.reason_code, Some(AuthReasonCode::LicenseClaimsInvalid));
+    }
+
+    // ---- 多公钥清单（kid 选择 / 轮换） ----
+
+    #[test]
+    fn test_embedded_product_keys_initialize() {
+        // 直接吃仓库里入库的 app/src-tauri/keys/product_keys.json
+        let v = LicenseValidator::new().expect("内嵌公钥清单必须合法");
+        assert!(
+            v.verifier.key_for_kid("PMTOOL-2026-01").is_some(),
+            "清单应包含 kid PMTOOL-2026-01"
+        );
+    }
+
+    #[test]
+    fn test_manifest_kid_license_passes() {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[21u8; 32]);
+        let payload = base_payload("DEVICE-A");
+        let license =
+            build_signed_license_with_kid(&payload, "PMTOOL-2026-01", &signing_key, false);
+        let v = validator_from_manifest("PMTOOL-2026-01", &signing_key);
+
+        let result = v.validate(&license, "DEVICE-A");
+        assert!(result.valid, "清单公钥应验签通过: {:?}", result.reason);
+        assert_eq!(result.payload.unwrap().license_id, "test-lic-001");
+    }
+
+    #[test]
+    fn test_unknown_kid_returns_license_key_unknown() {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[21u8; 32]);
+        let payload = base_payload("DEVICE-A");
+        // 签发端 kid 不在内置清单中
+        let license =
+            build_signed_license_with_kid(&payload, "PMTOOL-1999-99", &signing_key, false);
+        let v = validator_from_manifest("PMTOOL-2026-01", &signing_key);
+
+        let result = v.validate(&license, "DEVICE-A");
+        assert!(!result.valid);
+        assert_eq!(
+            result.reason_code,
+            Some(AuthReasonCode::LicenseKeyUnknown)
+        );
+        assert_eq!(
+            AuthReasonCode::LicenseKeyUnknown.code(),
+            "LICENSE_KEY_UNKNOWN"
+        );
+    }
+
+    #[test]
+    fn test_manifest_kid_tampered_signature_fails() {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[21u8; 32]);
+        let payload = base_payload("DEVICE-A");
+        let license =
+            build_signed_license_with_kid(&payload, "PMTOOL-2026-01", &signing_key, true);
+        let v = validator_from_manifest("PMTOOL-2026-01", &signing_key);
+
+        let result = v.validate(&license, "DEVICE-A");
+        assert!(!result.valid);
+        assert_eq!(
+            result.reason_code,
+            Some(AuthReasonCode::LicenseSignatureInvalid)
+        );
     }
 
     // ---- 试用期 ----

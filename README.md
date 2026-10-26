@@ -53,7 +53,7 @@ PMTOOL/
 │   │   │   ├── commands/           # 12+ 命令域
 │   │   │   ├── repositories/       # 数据访问层
 │   │   │   ├── services/           # 业务层（license / trial / device_fingerprint / ...）
-│   │   │   └── keys/               # 公钥（已 gitignore，私钥不入库）
+│   │   │   └── keys/               # 公钥清单 product_keys.json（入库；私钥不入库）
 │   │   ├── tauri.conf.json
 │   │   └── tests/                  # 集成测试
 │   └── license-generator/          # 授权生成器（独立 Tauri 应用）
@@ -128,30 +128,67 @@ cd app/license-generator && npm run tauri:dev
 
 ## 🔐 授权系统
 
-PMTool 使用 **Ed25519** 数字签名授权（v2.0）。完整授权流程：
+PMTool 使用 **Ed25519** 数字签名授权（v2.0，协议前缀 `LC1`）。授权码由
+**授权平台（LicensePlatform）** 在管理员本机签发，主应用只内置公钥验签：
 
-1. **License Generator**（管理员端）用私钥签发授权码
-2. 授权码 = `PMT1-<sig_b64 171位>+<encoded b64url JSON>`（每 5 字符加 `-`）
+1. 授权平台用**产品私钥**签发授权码；私钥加密存放在本机 SQLite，永不进 CI / 安装包
+2. 授权码 = `LC1-<sig_b64 171位>+<encoded b64url JSON>`（每 5 字符加 `-`），claims 内含 `product` / `kid` / 设备 / 有效期
 3. 用户在 PMTool「设置 → 授权管理」粘贴授权码
-4. 主应用用公钥验签 → 校验设备指纹 → 写入 SQLite
+4. 主应用按 `claims.kid` 选择内置公钥验签 → 校验设备指纹 → 写入 SQLite
+
+> 旧 `License Generator` 已停用，见 `app/license-generator/DEPRECATED.md`；旧 `PMT1` 码已作废。
 
 ### 关键文件
 
 | 文件 | 作用 |
 |---|---|
-| `app/src-tauri/src/crypto_ed25519.rs` | Ed25519 验签 + License 解析 |
-| `app/src-tauri/src/services/license.rs` | 授权激活 / 过期检测 |
+| `app/src-tauri/src/crypto_ed25519.rs` | Ed25519 验签 + License 解析（多公钥 kid 选择）|
+| `app/src-tauri/src/services/auth/license_validator.rs` | 授权验证流水线（格式/签名/Claims/有效期/设备）|
+| `app/src-tauri/keys/product_keys.json` | 公钥清单（kid → public_hex，**必须入库**）|
 | `app/src-tauri/src/services/device_fingerprint.rs` | 设备指纹（基于硬件 UUID，重装不变）|
 | `app/src-tauri/src/services/trial.rs` | 7 天免费试用逻辑 |
 | `app/src-tauri/src/components/LicenseActivation.tsx` | 激活弹窗 |
 | `app/src-tauri/src/components/LicenseGuard.tsx` | 启动授权检查 |
-| `app/license-generator/src-tauri/src/main.rs` | 授权生成器（私钥签名）|
+| `app/license-generator/` | 旧授权生成器，已停用（仅历史参考）|
+
+### 授权与打包（公钥入库 · CI 零 secret）
+
+- **公钥入库**：`app/src-tauri/keys/product_keys.json` 必须提交，构建时 `include_str!` 编进主应用。
+  格式：
+  ```json
+  {"product":"PMTOOL","keys":[{"kid":"PMTOOL-2026-01","public_hex":"<64 位小写 hex>"}]}
+  ```
+- **私钥不出本机**：私钥只在授权平台本机库（主口令加密），备份走离线 `.lpbak`；
+  仓库、CI、安装包都不含私钥。
+- **轮换时新旧公钥并存**：新公钥追加到 `keys` 数组并分配新 `kid`，旧公钥保留 →
+  旧授权码继续有效；客户端按 `claims.kid` 选公钥，无需为兼容多代密钥改代码。
+- **CI 无 secret**：GitHub 打包只 checkout + 编译，不注入任何私钥。
+- **密钥守卫**：`bash scripts/check-release-keys.sh` 会扫描私钥/备份串、校验公钥清单格式、
+  禁止 workflow 注入私钥 secret；CI 由 `.github/workflows/guard-keys.yml` 以及
+  `pmtool-macos.yml` / `pmtool-windows.yml` 的 `guard` job 调用，守卫不过不打包。
+
+### 迁移：公钥入库 + 重新打包 + 重发 3 台设备
+
+（本仓库暂无 `docs/pmtool-migration.md`，步骤暂记于此。）
+
+1. 确认 `app/src-tauri/keys/product_keys.json` 已入库，`kid` / `public_hex` 与授权平台
+   `lic product list` / 导出公钥的输出一致。
+2. 跑守卫与测试：
+   ```bash
+   bash scripts/check-release-keys.sh
+   cd app/src-tauri && cargo test --lib
+   ```
+3. 重新打包：本地构建，或推 `v*` tag 触发 `pmtool-macos.yml` / `pmtool-windows.yml`
+   （守卫不过不会进入 build）。
+4. 安装新包，确认主应用内置的是新公钥（可用一条新码做冒烟激活）。
+5. 在授权平台为 3 台设备重新签发 `LC1` 码（同一产品、新 `kid`、按设备绑定），逐台激活验证。
+6. 旧 `PMT1` 码作废、不再续签；历史台账以平台导入记录为准。
 
 ### 密钥位置
 
-- **生成器私钥/公钥**：`~/.pmtool/license_generator_{private,public}.pem`
-- **主应用公钥**：`app/src-tauri/keys/generator_public.pem`
-- 私钥路径已在 `.gitignore` 排除，**严禁提交进仓库**
+- **产品私钥**：授权平台本机加密库（不进仓库、不进 CI、不进安装包）
+- **公钥清单**：`app/src-tauri/keys/product_keys.json`（入库）
+- **本地私钥/备份文件**：由 `.gitignore` 排除，严禁提交进仓库
 
 ### 试用
 
