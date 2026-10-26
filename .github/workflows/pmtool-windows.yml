@@ -63,10 +63,9 @@ jobs:
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
+        # 只要 NSIS 的 *-setup.exe；msi 由 WiX 另出，故意不上传（用户要求只给一个安装包）
         with:
           name: pmtool-windows
-          path: |
-            app/src-tauri/target/release/bundle/nsis/*-setup.exe
-            app/src-tauri/target/release/bundle/msi/*.msi
+          path: app/src-tauri/target/release/bundle/nsis/*-setup.exe
           retention-days: 30
           if-no-files-found: error
