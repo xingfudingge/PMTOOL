@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PMTOOL · MVP 可点击原型 v1</title>
+<style>
+  :root{
+    --bg:#ffffff; --sub:#fafaf8; --muted:#f4f4f1;
+    --bd:#e6e6e2; --bd2:#dcdcd6;
+    --tx:#1d1d1b; --tx2:#61615c; --tx3:#9a9a93;
+    --ac:#5b5ce2; --ac-soft:#eeeefb; --ac-line:#d9d9f7;
+    --red:#cf4436; --red-soft:#fbeeec;
+    --amber:#b0741a; --amber-soft:#fbf3e4;
+    --green:#2f8460; --green-soft:#ecf6f0;
+    --r:10px; --r-sm:7px;
+    --shadow:0 1px 2px rgba(20,20,18,.04), 0 8px 24px -16px rgba(20,20,18,.18);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--tx);
+    font:13px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ---------- shell ---------- */
+  .app{display:grid;grid-template-columns:216px 1fr;height:100vh;overflow:hidden}
+  .rail{border-right:1px solid var(--bd);background:var(--sub);display:flex;flex-direction:column;padding:14px 10px}
+  .brand{display:flex;align-items:center;gap:9px;padding:4px 8px 16px}
+  .mark{width:26px;height:26px;border-radius:8px;background:var(--ac);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;letter-spacing:.02em}
+  .brand b{font-size:13px;letter-spacing:.04em}
+  .brand small{display:block;font-size:10.5px;color:var(--tx3);letter-spacing:.02em;margin-top:1px}
+  .nav{display:flex;flex-direction:column;gap:1px}
+  .nav button{
+    display:flex;align-items:center;gap:9px;height:33px;padding:0 9px;border-radius:var(--r-sm);
+    color:var(--tx2);font-size:12.5px;text-align:left;position:relative
+  }
+  .nav button:hover{background:rgba(0,0,0,.035);color:var(--tx)}
+  .nav button.on{background:#fff;color:var(--tx);box-shadow:inset 0 0 0 1px var(--bd);font-weight:550}
+  .nav button.on::before{content:"";position:absolute;left:-10px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--ac)}
+  .nav svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;opacity:.8}
+  .nav .tag{margin-left:auto;font-size:10px;padding:1px 6px;border-radius:20px;background:var(--red);color:#fff;font-weight:600}
+  .rail-foot{margin-top:auto;padding:10px 9px 2px;border-top:1px solid var(--bd);color:var(--tx3);font-size:10.5px;line-height:1.6}
+  .rail-foot b{color:var(--tx2);font-weight:550}
+
+  .main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  .topbar{height:62px;flex:0 0 auto;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--bg)}
+  .tb-title h1{margin:0;font-size:15.5px;font-weight:600;letter-spacing:-.01em}
+  .tb-title .sub{font-size:11.5px;color:var(--tx3);margin-top:1px}
+  .tb-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .search-trigger{
+    display:flex;align-items:center;gap:8px;height:31px;padding:0 10px 0 9px;min-width:238px;
+    border:1px solid var(--bd);border-radius:8px;background:var(--sub);color:var(--tx3);font-size:12px
+  }
+  .search-trigger:hover{border-color:var(--bd2);color:var(--tx2);background:#fff}
+  .search-trigger svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7}
+  .kbd{font-size:10.5px;border:1px solid var(--bd);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--tx3);background:#fff;line-height:15px}
+  .today-chip{font-size:11.5px;color:var(--tx2);padding:4px 9px;border:1px solid var(--bd);border-radius:20px;background:var(--sub)}
+  .avatar{width:27px;height:27px;border-radius:50%;background:var(--ac-soft);color:var(--ac);display:grid;place-items:center;font-size:11.5px;font-weight:650;border:1px solid var(--ac-line)}
+
+  .view{flex:1 1 auto;overflow:auto;padding:22px 24px 60px}
+  .view::-webkit-scrollbar{width:10px}
+  .view::-webkit-scrollbar-thumb{background:#e2e2dd;border-radius:10px;border:3px solid #fff}
+
+  /* ---------- generic ---------- */
+  .sec{display:flex;align-items:baseline;gap:10px;margin:24px 0 11px}
+  .sec:first-child{margin-top:0}
+  .sec h2{margin:0;font-size:13px;font-weight:600;letter-spacing:.01em}
+  .sec .hint{font-size:11.5px;color:var(--tx3)}
+  .sec .right{margin-left:auto;font-size:11.5px;color:var(--tx3);display:flex;gap:12px;align-items:center}
+  .link{color:var(--ac);font-size:11.5px}
+  .link:hover{text-decoration:underline}
+  .card{background:#fff;border:1px solid var(--bd);border-radius:var(--r)}
+  .card-pad{padding:14px 16px}
+  .btn{height:30px;padding:0 12px;border-radius:7px;border:1px solid var(--bd);background:#fff;font-size:12px;color:var(--tx2)}
+  .btn:hover{border-color:var(--bd2);color:var(--tx);background:var(--sub)}
+  .btn-pri{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:550}
+  .btn-pri:hover{background:#4d4ed4;border-color:#4d4ed4;color:#fff}
+  .btn-sm{height:26px;padding:0 9px;font-size:11.5px;border-radius:6px}
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;display:inline-block}
+  .dot.red{background:var(--red)} .dot.amber{background:var(--amber)} .dot.green{background:var(--green)}
+  .pill{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:550;letter-spacing:.01em}
+  .pill.red{background:var(--red-soft);color:var(--red)}
+  .pill.amber{background:var(--amber-soft);color:var(--amber)}
+  .pill.green{background:var(--green-soft);color:var(--green)}
+  .pill.ac{background:var(--ac-soft);color:var(--ac)}
+  .pill.gray{background:var(--muted);color:var(--tx2)}
+  .new{font-size:9.5px;font-weight:700;letter-spacing:.06em;color:var(--ac);background:var(--ac-soft);border:1px solid var(--ac-line);border-radius:4px;padding:0 4px;line-height:14px;margin-left:6px;vertical-align:1px}
+
+  /* ---------- kpi row ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .kpi{border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px;background:#fff}
+  .kpi .lab{font-size:11px;color:var(--tx3);letter-spacing:.03em}
+  .kpi .val{font-size:24px;font-weight:600;letter-spacing:-.03em;margin-top:4px;line-height:1.1}
+  .kpi .val small{font-size:11.5px;font-weight:450;color:var(--tx3);letter-spacing:0;margin-left:4px}
+  .kpi.action{display:flex;flex-direction:column;justify-content:center;gap:7px;background:var(--sub)}
+  .kpi.action .t{font-size:11.5px;color:var(--tx2)}
+
+  /* ---------- project health ---------- */
+  .pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .pcard{border:1px solid var(--bd);border-radius:var(--r);padding:13px 14px 12px;background:#fff;text-align:left;transition:border-color .15s, transform .15s, box-shadow .15s}
+  .pcard:hover{border-color:var(--bd2);transform:translateY(-1px);box-shadow:var(--shadow)}
+  .pc-top{display:flex;align-items:center;gap:7px}
+  .pc-name{font-size:12.5px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pc-st{margin-left:auto;font-size:10.5px;color:var(--tx3);flex:0 0 auto}
+  .pc-cust{font-size:11px;color:var(--tx3);margin:3px 0 10px}
+  .pc-met{display:flex;gap:14px;font-size:11.5px;color:var(--tx2);margin-bottom:9px}
+  .pc-met b{font-weight:600;color:var(--tx);margin-right:2px}
+  .pc-met .r b{color:var(--red)}
+  .pc-bar{height:3px;border-radius:3px;background:var(--muted);overflow:hidden}
+  .pc-bar i{display:block;height:100%;border-radius:3px;background:var(--ac)}
+  .pcard[data-h="red"] .pc-bar i{background:var(--red)}
+  .pcard[data-h="amber"] .pc-bar i{background:var(--amber)}
+  .pcard[data-h="green"] .pc-bar i{background:var(--green)}
+  .pc-foot{display:flex;align-items:center;margin-top:8px;font-size:10.5px;color:var(--tx3)}
+  .pc-foot .go{margin-left:auto;color:var(--ac);opacity:0;transition:opacity .15s}
+  .pcard:hover .pc-foot .go{opacity:1}
+  .pc-why{margin-top:8px;font-size:10.5px;color:var(--red);background:var(--red-soft);border-radius:5px;padding:3px 7px;display:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pcard[data-h="red"] .pc-why{display:block}
+  .pcard[data-h="amber"] .pc-why{display:block;color:var(--amber);background:var(--amber-soft)}
+
+  /* ---------- two column ---------- */
+  .cols{display:grid;grid-template-columns:1.15fr .85fr;gap:10px;align-items:start}
+  .todo-row{display:flex;align-items:flex-start;gap:9px;padding:8px 4px;border-bottom:1px solid #f2f2ee}
+  .todo-row:last-child{border-bottom:none}
+  .chk{width:15px;height:15px;border:1.4px solid var(--bd2);border-radius:50%;flex:0 0 auto;margin-top:2px;display:grid;place-items:center;transition:.12s}
+  .chk:hover{border-color:var(--ac);background:var(--ac-soft)}
+  .todo-row.done .chk{background:var(--ac);border-color:var(--ac)}
+  .todo-row.done .chk::after{content:"";width:7px;height:4px;border-left:1.6px solid #fff;border-bottom:1.6px solid #fff;transform:rotate(-45deg) translateY(-1px)}
+  .todo-row.done .tt{color:var(--tx3);text-decoration:line-through}
+  .todo-row.done .tt em{text-decoration:none;opacity:.55}
+  .tt{font-size:12.5px;line-height:1.45}
+  .tt em{font-style:normal;color:var(--ac);background:var(--ac-soft);border-radius:4px;padding:0 4px;font-size:11px}
+  .todo-meta{font-size:10.5px;color:var(--tx3);margin-top:2px;display:flex;gap:8px}
+  .add-line{display:flex;align-items:center;gap:8px;padding:9px 4px 0;border-top:1px dashed var(--bd);margin-top:6px;color:var(--tx3);font-size:11.5px}
+  .log-line{display:flex;gap:8px;padding:6px 2px;font-size:12px;color:var(--tx2);border-bottom:1px solid #f5f5f1}
+  .log-line:last-child{border-bottom:none}
+  .log-line span:first-child{color:var(--tx3);font-variant-numeric:tabular-nums;flex:0 0 16px}
+  .next-line{display:flex;gap:8px;align-items:baseline;padding:6px 2px;font-size:12px}
+  .next-line .k{font-size:10.5px;color:var(--tx3);flex:0 0 42px}
+
+  /* ---------- messages ---------- */
+  .digest{border:1px solid var(--ac-line);background:linear-gradient(180deg,#fbfbfe,#fff);border-radius:var(--r);overflow:hidden}
+  .digest-h{display:flex;align-items:center;gap:9px;padding:12px 16px;border-bottom:1px solid #efeffa}
+  .digest-h .t{font-size:12.5px;font-weight:600}
+  .digest-h .time{font-size:11px;color:var(--tx3)}
+  .dstat{display:flex;border-top:1px solid #f2f2f6}
+  .dstat > div{flex:1;padding:10px 16px;border-right:1px solid #f2f2f6}
+  .dstat > div:last-child{border-right:none}
+  .dstat .n{font-size:17px;font-weight:600;letter-spacing:-.02em}
+  .dstat .l{font-size:10.5px;color:var(--tx3);margin-top:1px}
+  .msg{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid #f3f3ef;font-size:12px}
+  .msg:last-child{border-bottom:none}
+  .msg .who{color:var(--tx3);font-size:10.5px;flex:0 0 58px}
+  .msg .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .msg .go{color:var(--ac);font-size:11px;opacity:0}
+  .msg:hover .go{opacity:1}
+
+  /* ---------- report ---------- */
+  .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sel{height:30px;border:1px solid var(--bd);border-radius:7px;background:#fff;padding:0 8px;font-size:12px;color:var(--tx2)}
+  .metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;margin:14px 0}
+  .metrics > div{background:var(--sub);padding:11px 13px}
+  .metrics .l{font-size:10.5px;color:var(--tx3);letter-spacing:.02em}
+  .metrics .n{font-size:19px;font-weight:600;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums}
+  .metrics .n.warn{color:var(--red)}
+  .report-body{padding:18px 22px;border:1px solid var(--bd);border-radius:var(--r);background:#fff;max-width:760px}
+  .report-body h3{font-size:12.5px;margin:0 0 6px;color:var(--tx2);font-weight:600}
+  .report-body ol{margin:0 0 16px;padding-left:18px;font-size:12.5px;color:var(--tx);line-height:1.9}
+  .report-body ol:last-child{margin-bottom:0}
+  .ai-mark{font-size:9.5px;color:var(--tx3);border:1px dashed var(--bd2);border-radius:4px;padding:0 5px;margin-left:6px}
+
+  /* ---------- settings ---------- */
+  .srow{display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid #f3f3ef}
+  .srow:last-child{border-bottom:none}
+  .srow .txt{flex:1;min-width:0}
+  .srow .t{font-size:12.5px}
+  .srow .d{font-size:11px;color:var(--tx3);margin-top:2px}
+  .sw{width:34px;height:19px;border-radius:20px;background:var(--bd2);position:relative;transition:.16s;flex:0 0 auto}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:.16s}
+  .sw.on{background:var(--ac)}
+  .sw.on::after{left:17px}
+  .sw.dis{opacity:.45;cursor:not-allowed}
+  .time-in{display:flex;gap:6px;align-items:center}
+  .time-in .sw{margin-left:8px}
+  .time-in input{width:74px;height:28px;border:1px solid var(--bd);border-radius:6px;padding:0 7px;font-size:11.5px;color:var(--tx2);font-variant-numeric:tabular-nums;background:#fff}
+  .time-in input:disabled{background:var(--muted);color:var(--tx3)}
+  .note{background:var(--sub);border:1px solid var(--bd);border-radius:8px;padding:9px 11px;font-size:11px;color:var(--tx2);margin-top:12px}
+
+  /* ---------- project detail ---------- */
+  .pd-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .pd-head h2{margin:0;font-size:17px;letter-spacing:-.02em}
+  .pd-head .meta{font-size:11.5px;color:var(--tx3);margin-top:3px}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--bd);margin:0 0 14px}
+  .tabs button{padding:8px 11px;font-size:12px;color:var(--tx2);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tabs button.on{color:var(--tx);border-bottom-color:var(--ac);font-weight:550}
+  table.rt{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.rt th{text-align:left;font-weight:550;color:var(--tx3);font-size:10.5px;letter-spacing:.02em;padding:8px 10px;border-bottom:1px solid var(--bd);background:var(--sub);white-space:nowrap}
+  table.rt td{padding:9px 10px;border-bottom:1px solid #f4f4f0;vertical-align:top}
+  table.rt tr:hover td{background:#fcfcfa}
+  .lv{font-size:10.5px;font-weight:600;letter-spacing:.02em}
+
+  /* ---------- palette ---------- */
+  .palette{position:fixed;inset:0;background:rgba(18,18,16,.28);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:80}
+  .palette[hidden]{display:none}
+  .pal-box{width:640px;max-width:calc(100vw - 40px);background:#fff;border:1px solid var(--bd2);border-radius:12px;box-shadow:0 24px 70px -20px rgba(20,20,18,.45);overflow:hidden}
+  .pal-in{display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--bd)}
+  .pal-in svg{width:16px;height:16px;stroke:var(--tx3);fill:none;stroke-width:1.8}
+  .pal-in input{flex:1;border:none;outline:none;font-size:14px;background:transparent;color:var(--tx)}
+  .pal-in input::placeholder{color:var(--tx3)}
+  .pal-res{max-height:52vh;overflow:auto;padding:6px}
+  .pal-group{font-size:10px;letter-spacing:.06em;color:var(--tx3);padding:8px 10px 4px;text-transform:uppercase}
+  .pal-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;font-size:12.5px;cursor:pointer}
+  .pal-item .s{color:var(--tx3);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pal-item .t{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pal-item:hover,.pal-item.sel{background:var(--ac-soft)}
+  .pal-item .type{margin-left:auto;font-size:10px;color:var(--tx3);flex:0 0 auto}
+  .pal-foot{display:flex;gap:14px;padding:9px 14px;border-top:1px solid var(--bd);font-size:10.5px;color:var(--tx3);background:var(--sub)}
+  .pal-foot span b{font-weight:600;color:var(--tx2)}
+  .empty{padding:26px;text-align:center;color:var(--tx3);font-size:12px}
+
+  /* ---------- spec panel ---------- */
+  .spec-btn{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;align-items:center;gap:8px;height:34px;padding:0 13px;border-radius:20px;background:var(--tx);color:#fff;font-size:11.5px;box-shadow:0 10px 30px -12px rgba(0,0,0,.5)}
+  .spec-btn:hover{background:#000}
+  .spec-btn .d{width:6px;height:6px;border-radius:50%;background:#7ee2a8}
+  .spec{position:fixed;right:20px;bottom:64px;width:360px;max-height:70vh;overflow:auto;background:#fff;border:1px solid var(--bd2);border-radius:12px;box-shadow:0 24px 60px -20px rgba(20,20,18,.4);z-index:61;padding:14px 15px}
+  .spec[hidden]{display:none}
+  .spec h4{margin:0 0 4px;font-size:12.5px}
+  .spec p{margin:0 0 10px;font-size:11px;color:var(--tx3);line-height:1.6}
+  .spec ol{margin:0;padding:0;list-style:none}
+  .spec li{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid #f3f3ef;font-size:11.5px}
+  .spec li .i{width:17px;height:17px;border-radius:5px;background:var(--ac-soft);color:var(--ac);font-size:10px;font-weight:700;display:grid;place-items:center;flex:0 0 auto;margin-top:1px}
+  .spec li .b{flex:1;min-width:0}
+  .spec li .b small{display:block;color:var(--tx3);font-size:10.5px;margin-top:1px}
+  .spec li button{color:var(--ac);font-size:10.5px;flex:0 0 auto}
+  .spec-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:9px;border-top:1px solid var(--bd);font-size:10.5px;color:var(--tx3)}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);background:var(--tx);color:#fff;font-size:11.5px;padding:8px 14px;border-radius:8px;opacity:0;transition:.2s;z-index:90;pointer-events:none}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .flash{animation:flash .7s ease}
+  @keyframes flash{0%{background:var(--ac-soft)}100%{background:var(--sub)}}
+  @media (max-width:1180px){.pgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="mark">P</div>
+      <div><b>PMTOOL</b><small>实施经理工作台</small></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="rail-foot">
+      <div><b>本地数据</b> · 断网可用</div>
+      <div>无服务端 · 无账号</div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="tb-title"><h1 id="pgTitle">主工作区</h1><div class="sub" id="pgSub"></div></div>
+      <div class="tb-actions">
+        <button class="search-trigger" onclick="openPalette()">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5L21 21"></path></svg>
+          搜索项目 / 任务 / 风险 / 笔记
+          <span class="kbd" style="margin-left:auto">⌘K</span>
+        </button>
+        <span class="today-chip">2026-10-27 周二</span>
+        <div class="avatar">进</div>
+      </div>
+    </header>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+
+<div class="palette" id="palette" hidden onclick="if(event.target===this)closePalette()">
+  <div class="pal-box" role="dialog" aria-label="全局搜索">
+    <div class="pal-in">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5L21 21"></path></svg>
+      <input id="palInput" placeholder="输入关键词：项目、任务、风险、需求、笔记、报告…" autocomplete="off" />
+      <span class="kbd">ESC</span>
+    </div>
+    <div class="pal-res" id="palRes"></div>
+    <div class="pal-foot"><span><b>↑↓</b> 选择</span><span><b>↵</b> 打开</span><span><b>⌘K</b> 关闭</span><span style="margin-left:auto">仅本机数据 · 无网络请求</span></div>
+  </div>
+</div>
+
+<button class="spec-btn" onclick="toggleSpec()"><span class="d"></span>本次原型 · 5 项变更</button>
+<div class="spec" id="spec" hidden>
+  <h4>MVP 原型覆盖范围</h4>
+  <p>演示数据，仅用于评审交互与信息层级；不含真实业务数据。</p>
+  <ol id="specList"></ol>
+  <div class="spec-foot"><span>PMTOOL MVP · v1</span><button class="link" onclick="resetDemo()">重置演示状态</button></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   PMTOOL MVP 原型 · 纯静态单文件（无网络、无构建、localStorage）
+   覆盖：1 项目健康总览 / 2 风险巡检+每日摘要 / 3 ⌘K 全局检索
+        4 通知静默与工作日 / 5 周报数据化段落
+   ============================================================ */
+
+const TODAY = '2026-10-27';
+
+const projects = [
+  {id:3, code:'PRJ-2026-014', name:'环宇仓储 WMS 二期', cust:'环宇物流', stage:'监控', progress:35, done:8, total:23,
+   overdue:6, highRisk:3, node:{label:'UAT 开始', days:-2}, stale:false, amount:'186 万', owner:'我'},
+  {id:1, code:'PRJ-2026-007', name:'启明智能印章实施', cust:'启明集团', stage:'执行', progress:62, done:14, total:23,
+   overdue:3, highRisk:2, node:{label:'试运行', days:4}, stale:false, amount:'128 万', owner:'我'},
+  {id:6, code:'PRJ-2026-011', name:'远望 MES 接口联调', cust:'远望精密', stage:'执行', progress:54, done:12, total:22,
+   overdue:2, highRisk:0, node:{label:'联调完成', days:6}, stale:false, amount:'96 万', owner:'我'},
+  {id:2, code:'PRJ-2026-004', name:'晨曦合同管理上线', cust:'晨曦科技', stage:'执行', progress:78, done:18, total:23,
+   overdue:1, highRisk:1, node:{label:'验收', days:9}, stale:false, amount:'72 万', owner:'我'},
+  {id:5, code:'PRJ-2026-016', name:'泰和财务共享调研', cust:'泰和集团', stage:'规划', progress:12, done:2, total:17,
+   overdue:0, highRisk:0, node:{label:'方案评审', days:18}, stale:true, amount:'待定', owner:'我'},
+  {id:4, code:'PRJ-2026-002', name:'恒信 HR 考勤配置', cust:'恒信新材', stage:'执行', progress:88, done:15, total:17,
+   overdue:0, highRisk:0, node:{label:'上线', days:12}, stale:false, amount:'58 万', owner:'我'}
+];
+
+function health(p){
+  if(p.overdue>=3 || p.highRisk>=2 || p.node.days<0) return 'red';
+  if(p.overdue>=1 || p.stale || p.node.days<=7) return 'amber';
+  return 'green';
+}
+function healthWhy(p){
+  const r=[];
+  if(p.node.days<0) r.push(`节点「${p.node.label}」已超期 ${Math.abs(p.node.days)} 天`);
+  else if(p.node.days<=7) r.push(`距${p.node.label}仅 ${p.node.days} 天`);
+  if(p.overdue>0) r.push(`${p.overdue} 项任务逾期`);
+  if(p.highRisk>0) r.push(`${p.highRisk} 条高风险未关闭`);
+  if(p.stale) r.push('12 天无任务进展');
+  return r.join(' · ') || '无风险信号';
+}
+/* 卡片只用「主因」一句话，避免与上方三个指标重复、也避免换行把卡片撑高 */
+function healthMain(p){
+  if(p.node.days<0) return `节点「${p.node.label}」已超期 ${Math.abs(p.node.days)} 天`;
+  if(p.highRisk>=2) return `${p.highRisk} 条高风险未关闭`;
+  if(p.overdue>=3) return `${p.overdue} 项任务逾期，最早逾期 5 天`;
+  if(p.stale) return '12 天无任务进展';
+  if(p.node.days<=7) return `距${p.node.label} ${p.node.days} 天，需盯节点`;
+  if(p.overdue>0) return `${p.overdue} 项任务逾期`;
+  return '';
+}
+
+const todos = [
+  {id:'t1', title:'启明印章 · 试运行问题清单确认', proj:'启明智能印章实施', pid:1, pri:'高', due:'今天', done:false},
+  {id:'t2', title:'环宇 WMS · UAT 环境开通跟进', proj:'环宇仓储 WMS 二期', pid:3, pri:'紧急', due:'已逾期 2 天', done:false},
+  {id:'t3', title:'远望 MES · 接口联调结果回执', proj:'远望 MES 接口联调', pid:6, pri:'中', due:'今天', done:false},
+  {id:'t4', title:'晨曦合同 · 验收材料初稿', proj:'晨曦合同管理上线', pid:2, pri:'高', due:'明天', done:false},
+  {id:'t5', title:'泰和调研 · 访谈提纲发给客户', proj:'泰和财务共享调研', pid:5, pri:'中', due:'今天', done:true}
+];
+
+const logs = ['整理启明印章试运行环境，与客户 IT 确认账号权限（2h）','环宇 WMS 二期 UAT 用例走查，提出 4 条阻塞项','晨曦合同验收材料框架搭好，等客户确认签收人'];
+
+const nextPlan = [
+  {k:'上午', v:'启明印章 · 试运行启动会（客户 3 人）'},
+  {k:'下午', v:'环宇 WMS · UAT 阻塞项与开发对齐'}
+];
+
+const digest = {
+  time:'08:30',
+  counts:[{n:3,l:'风险今日到期',tone:'red'},{n:5,l:'任务已逾期',tone:'amber'},{n:2,l:'项目停滞 7 天+',tone:'gray'}],
+  items:[
+    {type:'风险', tone:'red', txt:'UAT 环境未就绪（等级 ★★★★，计划解决 10-27）', who:'环宇 WMS', pid:3},
+    {type:'风险', tone:'red', txt:'客户接口文档版本不一致（★★★★，计划解决 10-27）', who:'远望 MES', pid:6},
+    {type:'风险', tone:'red', txt:'历史数据清洗口径未确认（★★★，计划解决 10-26）', who:'启明印章', pid:1},
+    {type:'任务', tone:'amber', txt:'UAT 环境开通跟进（逾期 2 天）', who:'环宇 WMS', pid:3},
+    {type:'任务', tone:'amber', txt:'试运行培训材料评审（逾期 1 天）', who:'启明印章', pid:1},
+    {type:'停滞', tone:'gray', txt:'项目 12 天无任务进展，最近更新 10-15', who:'泰和调研', pid:5}
+  ]
+};
+
+const weekly = {
+  period:'2026-10-19 ~ 2026-10-25',
+  metrics:[
+    {l:'完成任务', n:18},
+    {l:'逾期任务', n:5, warn:true},
+    {l:'新增风险', n:3},
+    {l:'高等级风险', n:1, warn:true},
+    {l:'下周计划', n:9}
+  ],
+  body:[
+    ['本周工作内容', ['启明智能印章：完成试运行环境搭建，账号权限与客户 IT 对齐','环宇 WMS 二期：UAT 用例走查 23 条，提出 4 条阻塞项','远望 MES：接口联调 3 个接口通过，2 个待对方修正','晨曦合同：验收材料框架完成，等待客户确认签收人']],
+    ['下周工作计划', ['启明印章：试运行启动会 + 问题清单确认','环宇 WMS：推动 UAT 环境开通，澄清历史数据清洗口径','远望 MES：完成剩余 2 个接口联调并出联调报告']]
+  ]
+};
+
+const risks = [
+  {id:'R-07', desc:'UAT 环境未就绪：客户侧服务器未到货', lv:'★★★★', owner:'客户 IT 张工', plan:'2026-10-27', st:'OPEN', open:true},
+  {id:'R-05', desc:'接口文档版本不一致，联调反复返工', lv:'★★★★', owner:'我', plan:'2026-10-27', st:'OPEN', open:true},
+  {id:'R-09', desc:'历史数据清洗口径未确认，影响上线范围', lv:'★★★', owner:'我 / 客户财务', plan:'2026-10-26', st:'OPEN', open:true},
+  {id:'R-02', desc:'关键用户培训时间与客户年检冲突', lv:'★★', owner:'客户 HR', plan:'2026-11-02', st:'OPEN', open:false},
+  {id:'R-01', desc:'乙方实施顾问临时调配，投入不足', lv:'★★', owner:'我', plan:'2026-10-18', st:'CLOSED', open:false}
+];
+
+const searchIndex = [
+  ...projects.map(p=>({type:'项目', title:p.name, sub:p.code+' · '+p.cust, page:'project', pid:p.id})),
+  {type:'任务', title:'UAT 环境开通跟进', sub:'环宇仓储 WMS 二期 · 逾期 2 天', page:'project', pid:3},
+  {type:'任务', title:'试运行培训材料评审', sub:'启明智能印章实施 · 逾期 1 天', page:'project', pid:1},
+  {type:'任务', title:'接口联调结果回执', sub:'远望 MES 接口联调 · 今天', page:'project', pid:6},
+  {type:'风险', title:'R-07 UAT 环境未就绪', sub:'环宇仓储 WMS 二期 · ★★★★ · 计划 10-27', page:'project', pid:3},
+  {type:'风险', title:'R-05 接口文档版本不一致', sub:'远望 MES 接口联调 · ★★★★ · 计划 10-27', page:'project', pid:6},
+  {type:'需求', title:'报表中心增加自定义字段', sub:'启明智能印章实施 · 待评估', page:'project', pid:1},
+  {type:'笔记', title:'印章项目 试运行检查清单', sub:'项目知识库 · 更新于 10-24', page:'knowledge'},
+  {type:'笔记', title:'客户访谈提纲（财务共享）', sub:'个人知识库 · 更新于 10-21', page:'knowledge'},
+  {type:'报告', title:'周报 · 启明智能印章 2026-W43', sub:'报告中心 · 10-25 生成', page:'reports'}
+];
+
+const state = {
+  page:'home', pid:null,
+  quiet:true, quietFrom:'20:00', quietTo:'09:00',
+  weekdaysOnly:true, threshold:'HIGH', dailyCap:3,
+  metricBlock:true,
+  todos: JSON.parse(JSON.stringify(todos)),
+  logs: logs.slice()
+};
+
+/* ---------- persistence ---------- */
+const KEY='pmtool-mvp-v1';
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({quiet:state.quiet,quietFrom:state.quietFrom,quietTo:state.quietTo,weekdaysOnly:state.weekdaysOnly,threshold:state.threshold,dailyCap:state.dailyCap,metricBlock:state.metricBlock,todos:state.todos,logs:state.logs})) }catch(e){} }
+function load(){
+  try{
+    const raw=localStorage.getItem(KEY); if(!raw) return;
+    const d=JSON.parse(raw); Object.assign(state,d);
+  }catch(e){}
+}
+load();
+
+const NAV = [
+  {id:'home', label:'主工作区', icon:'<path d="M3 10.5L12 3l9 7.5"></path><path d="M5.5 9.5V21h13V9.5"></path>'},
+  {id:'todo', label:'任务中心', icon:'<path d="M9 6h11M9 12h11M9 18h11"></path><path d="M4 6l1.4 1.4L8 5"></path><path d="M4 12l1.4 1.4L8 11"></path><path d="M4 18l1.4 1.4L8 17"></path>'},
+  {id:'projects', label:'项目中心', icon:'<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path>'},
+  {id:'reports', label:'报告中心', icon:'<path d="M7 3h7l4 4v14H7z"></path><path d="M14 3v4h4"></path><path d="M10 12h5M10 16h5"></path>'},
+  {id:'knowledge', label:'知识中心', icon:'<path d="M4 5.5A2.5 2.5 0 016.5 3H20v16H6.5A2.5 2.5 0 004 21.5z"></path><path d="M4 5.5v16"></path>'},
+  {id:'templates', label:'模板中心', icon:'<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>'},
+  {id:'messages', label:'消息中心', icon:'<path d="M18 8a6 6 0 10-12 0c0 6-2 7-2 7h16s-2-1-2-7"></path><path d="M10.5 20a2 2 0 003 0"></path>'},
+  {id:'settings', label:'设置中心', icon:'<circle cx="12" cy="12" r="3"></circle><path d="M19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.3.9A7 7 0 0014.5 5L14 2.6h-4L9.5 5a7 7 0 00-2.1 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-.9A7 7 0 009.5 19l.5 2.4h4l.5-2.4a7 7 0 002.1-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"></path>'}
+];
+
+const SPEC = [
+  {n:1, t:'项目健康总览', d:'主工作区新增 6 张项目卡，按逾期/高风险/节点/停滞自动红黄绿，点击直达', to:'home'},
+  {n:2, t:'风险巡检与每日摘要', d:'消息中心 08:30 一条摘要：3 条风险到期 + 5 条逾期 + 2 个停滞项目', to:'messages'},
+  {n:3, t:'全局检索 ⌘K', d:'跨项目/任务/风险/需求/笔记/报告，键盘上下选择回车直达', to:'palette'},
+  {n:4, t:'通知静默与工作日', d:'免打扰时段、仅工作日、优先级阈值、每日上限；低优先级只进站内', to:'settings'},
+  {n:5, t:'周报数据化段落', d:'生成周报时插入 5 项指标（完成/逾期/新增风险/高等级/下周计划），可关闭', to:'reports'}
+];
+
+/* ---------- render: shell ---------- */
+function renderNav(){
+  document.getElementById('nav').innerHTML = NAV.map(n=>{
+    const on = (state.page===n.id || (state.page==='project'&&n.id==='projects')) ? 'on':'';
+    const tag = n.id==='messages' ? '<span class="tag">3</span>' : '';
+    return `<button class="${on}" onclick="go('${n.id}')"><svg viewBox="0 0 24 24">${n.icon}</svg>${n.label}${tag}</button>`;
+  }).join('');
+}
+
+const TITLES = {
+  home:['主工作区','今天要做什么 · 哪个项目最危险'],
+  todo:['任务中心','四源聚合：待办 / 项目任务 / 周报下周计划 / 周期任务'],
+  projects:['项目中心','6 个在办项目'],
+  project:['项目详情',''],
+  reports:['报告中心','日报 / 周报 / 月报 · 个人与项目'],
+  knowledge:['知识中心','个人知识库 · 项目知识库'],
+  templates:['模板中心','报告模板 / 文档模板 / 项目文件模板'],
+  messages:['消息中心','提醒与每日摘要'],
+  settings:['设置中心','通知 · 自动化 · 数据']
+};
+function renderTop(){
+  const t = TITLES[state.page] || TITLES.home;
+  document.getElementById('pgTitle').textContent = t[0];
+  document.getElementById('pgSub').textContent = t[1];
+}
+
+/* ---------- views ---------- */
+function viewHome(){
+  const working = state.todos.filter(t=>!t.done).length;
+  const doneN = state.todos.filter(t=>t.done).length;
+  const cards = projects.slice().sort((a,b)=>{
+    const rank={red:0,amber:1,green:2}; const d=rank[health(a)]-rank[health(b)];
+    if(d) return d; return (b.overdue+b.highRisk)-(a.overdue+a.highRisk);
+  }).map(p=>{
+    const h=health(p);
+    const nodeTxt = p.node.days<0 ? `节点超期 ${Math.abs(p.node.days)} 天` : `距${p.node.label} ${p.node.days} 天`;
+    return `<button class="pcard" data-h="${h}" onclick="go('project',${p.id})">
+      <div class="pc-top"><span class="dot ${h}"></span><div class="pc-name">${p.name}</div><span class="pc-st">${p.stage}</span></div>
+      <div class="pc-cust">${p.cust} · ${p.amount}</div>
+      <div class="pc-met">
+        <span class="${p.overdue?'r':''}"><b>${p.overdue}</b>逾期</span>
+        <span class="${p.highRisk?'r':''}"><b>${p.highRisk}</b>高风险</span>
+        <span>${nodeTxt}</span>
+      </div>
+      <div class="pc-bar"><i style="width:${p.progress}%"></i></div>
+      <div class="pc-foot">整体进度 ${p.progress}% · ${p.done}/${p.total} 任务<span class="go">打开 →</span></div>
+      <div class="pc-why">主因 · ${healthMain(p)}</div>
+    </button>`;
+  }).join('');
+
+  const todoRows = state.todos.map(t=>`
+    <div class="todo-row ${t.done?'done':''}" onclick="toggleTodo('${t.id}')">
+      <span class="chk"></span>
+      <div style="flex:1;min-width:0">
+        <div class="tt">${t.title} <em>@${t.proj.replace(/(实施|上线|联调|二期|配置|调研)$/,'')}</em></div>
+        <div class="todo-meta"><span>${t.pri}优先级</span><span>${t.due}</span></div>
+      </div>
+    </div>`).join('');
+
+  const logRows = state.logs.map((l,i)=>`<div class="log-line"><span>${i+1}</span><span>${l}</span></div>`).join('');
+  const planRows = nextPlan.map(p=>`<div class="next-line"><span class="k">${p.k}</span><span>${p.v}</span></div>`).join('');
+
+  return `
+  <div class="kpis">
+    <div class="kpi"><div class="lab">今日待办</div><div class="val num">${working}<small>待完成</small></div></div>
+    <div class="kpi"><div class="lab">今日已完成</div><div class="val num">${doneN}<small>条</small></div></div>
+    <div class="kpi"><div class="lab">本周逾期</div><div class="val num" style="color:var(--red)">5<small>条任务</small></div></div>
+    <div class="kpi action">
+      <div class="t">今天的记录已齐，可直接出报告</div>
+      <div style="display:flex;gap:8px"><button class="btn btn-pri btn-sm" onclick="go('reports')">生成日报</button><button class="btn btn-sm" onclick="go('messages')">看摘要</button></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>项目健康总览<span class="new">新增</span></h2>
+    <span class="hint">6 个在办 · 按风险排序</span>
+    <span class="right"><span class="dot red" style="margin-right:4px"></span>2 红灯 · <span class="dot amber" style="margin-right:4px"></span>2 黄灯 · <span class="dot green" style="margin-right:4px"></span>2 正常</span>
+  </div>
+  <div class="pgrid">${cards}</div>
+
+  <div class="sec" style="margin-top:22px">
+    <h2>今天</h2><span class="hint">点击圆点完成，会自动记入右下工作内容</span>
+    <span class="right"><a class="link" href="javascript:void(0)" onclick="go('todo')">去任务中心</a></span>
+  </div>
+  <div class="cols">
+    <div class="card card-pad">
+      ${todoRows}
+      <div class="add-line">＋ 快速添加 · 输入 @ 选项目 · 回车保存</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="card card-pad">
+        <div style="display:flex;align-items:baseline;margin-bottom:6px">
+          <div style="font-size:12px;font-weight:600">今日工作内容</div>
+          <span style="margin-left:auto;font-size:10.5px;color:var(--tx3)">自动追加 · 可编辑</span>
+        </div>
+        ${logRows}
+      </div>
+      <div class="card card-pad">
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px">下个工作日计划 <span style="font-weight:400;color:var(--tx3);font-size:10.5px">10-28 周三</span></div>
+        ${planRows}
+      </div>
+    </div>
+  </div>`;
+}
+
+function viewMessages(){
+  const items = digest.items.map(m=>`
+    <div class="msg">
+      <span class="pill ${m.tone}">${m.type}</span>
+      <span class="txt">${m.txt}</span>
+      <span class="who">${m.who}</span>
+      <a class="go" href="javascript:void(0)" onclick="go('project',${m.pid})">打开 →</a>
+    </div>`).join('');
+
+  return `
+  <div class="sec" style="margin-top:0">
+    <h2>今日摘要<span class="new">新增</span></h2>
+    <span class="hint">替代逐条弹窗 · 每日 1 条 · 可深链到行</span>
+    <span class="right"><a class="link" href="javascript:void(0)" onclick="go('settings')">通知策略</a></span>
+  </div>
+  <div class="digest">
+    <div class="digest-h">
+      <span class="pill ac">摘要</span>
+      <div class="t">今天需要你处理的事</div>
+      <span class="time">${digest.time} 生成 · 站内 + 系统通知</span>
+    </div>
+    <div class="dstat">
+      ${digest.counts.map(c=>`<div><div class="n num" style="color:${c.tone==='red'?'var(--red)':c.tone==='amber'?'var(--amber)':'var(--tx2)'}">${c.n}</div><div class="l">${c.l}</div></div>`).join('')}
+      <div><div class="n num">0</div><div class="l">昨晚静默（20:00–09:00）</div></div>
+    </div>
+    <div class="card-pad" style="padding-top:4px;padding-bottom:6px">${items}</div>
+  </div>
+
+  <div class="sec"><h2>消息列表</h2><span class="hint">已读 12 · 未读 3</span></div>
+  <div class="card card-pad" style="padding-top:4px">
+    ${['任务即将到期｜启明印章 · 试运行启动会材料（10-28）','报告已生成｜周报 · 远望 MES 2026-W43','备份完成｜昨日 23:00 · 18.4 MB'].map(t=>`
+      <div class="msg"><span class="pill gray">系统</span><span class="txt" style="color:var(--tx2)">${t}</span><span class="who">昨天</span><span class="go" style="opacity:0">—</span></div>`).join('')}
+  </div>
+
+  <div class="note">规则可在 设置中心 → 通知 调整：免打扰时段 ${state.quietFrom}–${state.quietTo}（${state.quiet?'已开启':'已关闭'}）、${state.weekdaysOnly?'仅工作日推送':'含周末'}、优先级阈值 ${state.threshold}、每日上限 ${state.dailyCap} 条。</div>`;
+}
+
+function viewReports(){
+  const metrics = state.metricBlock ? `
+    <div class="metrics">
+      ${weekly.metrics.map(m=>`<div><div class="l">${m.l}</div><div class="n ${m.warn?'warn':''}">${m.n}</div></div>`).join('')}
+    </div>` : '';
+
+  const body = weekly.body.map(([h, arr])=>`<h3>${h}</h3><ol>${arr.map(x=>`<li>${x}</li>`).join('')}</ol>`).join('');
+
+  return `
+  <div class="sec" style="margin-top:0">
+    <h2>周报</h2><span class="hint">个人 · ${weekly.period}</span>
+    <span class="right"><a class="link" href="javascript:void(0)" onclick="go('home')">回到今天</a></span>
+  </div>
+  <div class="toolbar">
+    <select class="sel"><option>周报</option><option>日报</option><option>月报</option></select>
+    <select class="sel"><option>个人</option><option>启明智能印章实施</option><option>环宇仓储 WMS 二期</option></select>
+    <select class="sel"><option>${weekly.period}</option><option>2026-10-12 ~ 2026-10-18</option></select>
+    <button class="btn btn-pri" onclick="regen()">生成</button>
+    <button class="btn" onclick="toast('原型演示：导出 Word 为现有能力，不在此演示')">导出 Word</button>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--tx3)">
+      指标块<span class="new">新增</span>
+      <span class="sw ${state.metricBlock?'on':''}" onclick="toggleMetrics()"></span>
+    </span>
+  </div>
+  <div id="metricWrap">${metrics}</div>
+  <div class="report-body" id="reportBody">${body}</div>
+  <div class="note" style="max-width:760px">指标块数字全部来自本地任务与登记册计算，不经过任何模型生成；关闭后与现版本报告完全一致。</div>`;
+}
+
+function viewSettings(){
+  const q = state.quiet;
+  return `
+  <div style="max-width:920px">
+  <div class="sec" style="margin-top:0"><h2>通知</h2><span class="hint">站内消息始终可用；系统通知按下述策略发送</span></div>
+  <div class="card card-pad">
+    <div class="srow"><div class="txt"><div class="t">站内消息</div><div class="d">消息中心的基础能力，始终开启</div></div><span class="sw on dis"></span></div>
+    <div class="srow"><div class="txt"><div class="t">系统通知（macOS / Windows）</div><div class="d">受下面策略限制</div></div><span class="sw on"></span></div>
+    <div class="srow">
+      <div class="txt"><div class="t">免打扰时段<span class="new">新增</span></div><div class="d">期间只进站内，不弹系统通知；次日摘要里合并提示</div></div>
+      <div class="time-in">
+        <input value="${state.quietFrom}" ${q?'':'disabled'} onchange="state.quietFrom=this.value;save();toast('免打扰起始已改为 '+this.value)" />
+        <span style="color:var(--tx3)">–</span>
+        <input value="${state.quietTo}" ${q?'':'disabled'} onchange="state.quietTo=this.value;save()" />
+        <span class="sw ${q?'on':''}" onclick="toggleQuiet()"></span>
+      </div>
+    </div>
+    <div class="srow">
+      <div class="txt"><div class="t">仅工作日推送<span class="new">新增</span></div><div class="d">读取本地节假日表：周末与法定节假日不推送</div></div>
+      <span class="sw ${state.weekdaysOnly?'on':''}" onclick="state.weekdaysOnly=!state.weekdaysOnly;save();render()"></span>
+    </div>
+    <div class="srow">
+      <div class="txt"><div class="t">优先级阈值<span class="new">新增</span></div><div class="d">低于阈值的提醒只进站内，不打扰</div></div>
+      <select class="sel" onchange="state.threshold=this.value;save();render()">
+        ${['HIGH','CRITICAL'].map(v=>`<option ${state.threshold===v?'selected':''}>${v}</option>`).join('')}
+      </select>
+    </div>
+    <div class="srow">
+      <div class="txt"><div class="t">每日系统通知上限<span class="new">新增</span></div><div class="d">超出后合并为 1 条摘要</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-sm" onclick="cap(-1)">−</button>
+        <span class="num" style="width:22px;text-align:center">${state.dailyCap}</span>
+        <button class="btn btn-sm" onclick="cap(1)">＋</button>
+      </div>
+    </div>
+  </div>
+  <div class="note">按当前设置：今晚 ${state.quietFrom} 起静默，约 2 条低优先级提醒只进站内；明早 08:30 合并为 1 条摘要。节假日（读本地 holidays 表）不推送。</div>
+  </div>`;
+}
+
+function viewProject(){
+  const p = projects.find(x=>x.id===state.pid) || projects[1];
+  const h = health(p);
+  const rows = risks.map(r=>`<tr>
+      <td class="num" style="color:var(--tx3)">${r.id}</td>
+      <td>${r.desc}</td>
+      <td class="lv" style="color:${r.lv.length>=4?'var(--red)':'var(--amber)'}">${r.lv}</td>
+      <td>${r.owner}</td>
+      <td class="num">${r.plan}</td>
+      <td>${r.st==='OPEN'?`<span class="pill ${r.open?'red':'gray'}">${r.open?'待处理':'进行中'}</span>`:'<span class="pill green">已关闭</span>'}</td>
+    </tr>`).join('');
+
+  return `
+  <button class="link" style="margin-bottom:10px" onclick="go('home')">← 返回主工作区</button>
+  <div class="pd-head">
+    <div>
+      <h2>${p.name}</h2>
+      <div class="meta">${p.code} · ${p.cust} · 合同 ${p.amount} · 负责人 我</div>
+    </div>
+    <span class="pill ${h==='red'?'red':h==='amber'?'amber':'green'}" style="margin-left:auto">${h==='red'?'红灯':h==='amber'?'黄灯':'正常'} · ${p.stage}</span>
+  </div>
+  <div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px">
+    <div class="kpi"><div class="lab">整体进度</div><div class="val num">${p.progress}%</div></div>
+    <div class="kpi"><div class="lab">逾期任务</div><div class="val num" style="color:${p.overdue?'var(--red)':'var(--tx)'}">${p.overdue}</div></div>
+    <div class="kpi"><div class="lab">高风险未关闭</div><div class="val num" style="color:${p.highRisk?'var(--red)':'var(--tx)'}">${p.highRisk}</div></div>
+    <div class="kpi"><div class="lab">${p.node.label}</div><div class="val num" style="color:${p.node.days<0?'var(--red)':'var(--tx)'}">${p.node.days<0?'超期 '+Math.abs(p.node.days):p.node.days}<small>天</small></div></div>
+  </div>
+  <div class="tabs">
+    ${['计划管理','每周工作情况及下周任务','项目知识库','项目文件管理','项目成员','风险登记册'].map((t,i)=>`<button class="${i===5?'on':''}">${t}</button>`).join('')}
+  </div>
+  <div class="card" style="overflow:hidden">
+    <table class="rt">
+      <thead><tr><th>编号</th><th>风险描述</th><th>等级</th><th>责任人</th><th>计划解决</th><th>状态</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+  <div class="note">健康总览的红灯依据本页数据自动计算：${healthWhy(p)}。判定不写入任何字段，仅用于排序。</div>`;
+}
+
+function viewStub(kind){
+  const map = {
+    todo:['任务中心','四源聚合视图（现有能力，本次未改动）',['日视图 / 周视图 / 月视图','逾期按项目折叠 + 多选批量顺延（P1）','周期性任务管理']],
+    projects:['项目中心','项目列表（现有能力）',['项目卡片 / 列表双视图','新建项目：编号 + 名称','项目详情 6 个页签']],
+    knowledge:['知识中心','个人知识库 + 项目知识库（现有能力）',['多级目录 + 标签 + 置顶','Markdown / 富文本编辑','全库搜索（P1 升级 FTS5）']],
+    templates:['模板中心','报告 / 文档 / 项目文件模板（现有能力）',['模板变量填充','项目文件模板写入本地目录','P1：项目骨架模板、检查清单']]
+  };
+  const [t, d, arr] = map[kind] || ['页面','',''];
+  return `<div class="sec" style="margin-top:0"><h2>${t}</h2><span class="hint">${d}</span></div>
+    <div class="card card-pad">${arr.map(a=>`<div class="srow" style="padding:9px 0"><span class="dot ${a.includes('P1')?'amber':'green'}"></span><div class="txt"><div class="t">${a}</div></div></div>`).join('')}</div>
+    <div class="note">本原型聚焦 5 项 MVP 变更；此页为占位说明，未做交互。</div>`;
+}
+
+/* ---------- router ---------- */
+function go(page, pid){
+  state.page = page; state.pid = pid || null;
+  render(); window.scrollTo(0,0);
+  document.getElementById('view').scrollTop = 0;
+  closePalette();
+}
+function render(){
+  renderNav(); renderTop();
+  const v = document.getElementById('view');
+  if(state.page==='home') v.innerHTML = viewHome();
+  else if(state.page==='messages') v.innerHTML = viewMessages();
+  else if(state.page==='reports') v.innerHTML = viewReports();
+  else if(state.page==='settings') v.innerHTML = viewSettings();
+  else if(state.page==='project') v.innerHTML = viewProject();
+  else v.innerHTML = viewStub(state.page);
+}
+
+/* ---------- actions ---------- */
+function toggleTodo(id){
+  const t = state.todos.find(x=>x.id===id); if(!t) return;
+  t.done = !t.done;
+  if(t.done){
+    state.logs.push(`${t.title.replace(/[·]/g,'-')}（${t.proj}）`);
+    toast('已完成，并自动记入「今日工作内容」');
+  } else {
+    state.logs.pop(); toast('已撤销');
+  }
+  save(); render();
+}
+function regen(){
+  state.metricBlock = true; save(); render();
+  const w = document.getElementById('metricWrap');
+  if(w){ void w.offsetWidth; w.classList.add('flash'); }
+  toast('已按本周事实重新生成 · 5 项指标来自本地任务与登记册');
+}
+function toggleMetrics(){ state.metricBlock=!state.metricBlock; save(); render(); toast(state.metricBlock?'指标块已开启':'指标块已关闭，回到纯文本周报'); }
+function toggleQuiet(){ state.quiet=!state.quiet; save(); render(); toast(state.quiet?`免打扰已开启（${state.quietFrom}–${state.quietTo}）`:'免打扰已关闭'); }
+function cap(d){ state.dailyCap = Math.max(1, Math.min(9, state.dailyCap+d)); save(); render(); }
+
+/* ---------- palette ---------- */
+let palSel = 0, palItems = [];
+function openPalette(){
+  document.getElementById('palette').hidden = false;
+  const inp = document.getElementById('palInput'); inp.value=''; 
+  setTimeout(()=>inp.focus(), 10);
+  palSel = 0; renderPalette('');
+}
+function closePalette(){ document.getElementById('palette').hidden = true; }
+function renderPalette(q){
+  q = (q||'').trim();
+  palItems = (q ? searchIndex.filter(i=>(i.title+i.sub+i.type).toLowerCase().includes(q.toLowerCase())) : searchIndex).slice(0,24);
+  const groups = {};
+  palItems.forEach((i,idx)=>{ (groups[i.type]=groups[i.type]||[]).push({...i, idx}); });
+  const res = document.getElementById('palRes');
+  if(!palItems.length){ res.innerHTML = `<div class="empty">没有匹配「${q}」的结果</div>`; return; }
+  res.innerHTML = Object.entries(groups).map(([type, arr])=>`
+    <div class="pal-group">${type} · ${arr.length}</div>
+    ${arr.map(i=>`<div class="pal-item ${i.idx===palSel?'sel':''}" data-i="${i.idx}" onclick="palGo(${i.idx})" onmouseenter="palSel=${i.idx};markSel()">
+      <span class="t">${i.title}</span><span class="s">${i.sub}</span><span class="type">${i.type}</span>
+    </div>`).join('')}`).join('');
+}
+function markSel(){
+  document.querySelectorAll('.pal-item').forEach(el=>el.classList.toggle('sel', +el.dataset.i===palSel));
+  const el = document.querySelector('.pal-item.sel'); if(el) el.scrollIntoView({block:'nearest'});
+}
+function palGo(i){
+  const it = palItems[i]; if(!it) return;
+  closePalette();
+  if(it.page==='project') go('project', it.pid);
+  else go(it.page);
+  toast(`已打开：${it.title}`);
+}
+
+document.addEventListener('keydown', e=>{
+  const open = !document.getElementById('palette').hidden;
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); open?closePalette():openPalette(); return; }
+  if(e.key==='Escape' && open){ closePalette(); return; }
+  if(!open) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); palSel=Math.min(palItems.length-1,palSel+1); markSel(); }
+  if(e.key==='ArrowUp'){ e.preventDefault(); palSel=Math.max(0,palSel-1); markSel(); }
+  if(e.key==='Enter'){ e.preventDefault(); palGo(palSel); }
+});
+document.addEventListener('input', e=>{
+  if(e.target && e.target.id==='palInput'){ palSel=0; renderPalette(e.target.value); }
+});
+
+/* ---------- spec panel ---------- */
+function toggleSpec(){ const s=document.getElementById('spec'); s.hidden=!s.hidden; }
+function renderSpec(){
+  document.getElementById('specList').innerHTML = SPEC.map(s=>`
+    <li><span class="i">${s.n}</span><div class="b">${s.t}<small>${s.d}</small></div><button onclick="specGo('${s.to}')">看</button></li>`).join('');
+}
+function specGo(to){
+  document.getElementById('spec').hidden = true;
+  if(to==='palette'){ openPalette(); return; }
+  go(to);
+}
+function resetDemo(){ try{localStorage.removeItem(KEY)}catch(e){} location.reload(); }
+
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+renderSpec();
+render();
+</script>
+</body>
+</html>

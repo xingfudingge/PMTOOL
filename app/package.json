@@ -1,7 +1,7 @@
 {
   "name": "pmtool-desktop",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "description": "PMTool · 实施经理个人工作台（桌面端 · V2.0）",
   "packageManager": "pnpm@12.4.2",
