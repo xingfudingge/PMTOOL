@@ -13,7 +13,6 @@
 
 pub mod projects;
 pub mod todos;
-pub mod license;
 pub mod clipboard;
 pub mod project_tasks;
 pub mod project_issues;

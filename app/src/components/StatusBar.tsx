@@ -5,11 +5,10 @@
  * 设计依据：UI 产品化设计规格 Part 1
  *   - 高 24px · 表面色 · 顶部分隔
  *   - 左侧：数据目录 · 同步状态
- *   - 右侧：机器码 · 授权状态徽章
  */
 
 import { useEffect, useState } from 'react'
-import { CircleCheck, Database, KeyRound, Cpu } from 'lucide-react'
+import { CircleCheck, Database } from 'lucide-react'
 import { getDataDir } from '../services/settings'
 
 export function StatusBar() {
@@ -55,41 +54,6 @@ export function StatusBar() {
           {dataDir}
         </span>
       </div>
-
-      <Sep />
-
-      <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Cpu size={11} strokeWidth={1.75} />
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '10.5px',
-            }}
-          >
-            PM-DESKTOP-2H4F-XK92
-          </span>
-        </div>
-
-        <Sep />
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '1px 8px',
-            background: 'var(--color-accent-subtle)',
-            color: 'var(--color-accent)',
-            borderRadius: '99px',
-            fontWeight: 500,
-            fontSize: '10.5px',
-          }}
-        >
-          <KeyRound size={10} strokeWidth={2} />
-          <span>已授权 · 测试科技</span>
-        </div>
-      </span>
     </footer>
   )
 }

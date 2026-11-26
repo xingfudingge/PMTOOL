@@ -13,20 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  # 说明：GitHub Actions 的 needs 不能跨 workflow 引用，因此把密钥守卫内联到本
-  # workflow 并让 build needs: guard（守卫不过不打包）；push/PR 另有 guard-keys.yml。
-  guard:
-    name: Key guard
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Check release keys
-        run: bash scripts/check-release-keys.sh
-
   build:
-    needs: guard
     runs-on: windows-latest
     steps:
       - name: Checkout
