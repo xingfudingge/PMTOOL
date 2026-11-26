@@ -5,7 +5,7 @@
  * 设计依据：维护者 2026-08-22 反馈
  *   - 设置从 sidebar 一级菜单移走（由头像菜单进入）
  *   - 进入后是面板视图（左分类 + 主区表单）
- *   - 8 个分类：个人 / 外观 / 通知 / 自动化 / 节假日 / 数据 / 授权 / 关于
+ *   - 7 个分类：个人 / 外观 / 通知 / 自动化 / 节假日 / 数据 / 关于
  *   - 不用 emoji · 统一 Lucide
  */
 
@@ -16,16 +16,13 @@ import {
   Database,
   Sparkles,
   Info,
-  Cpu,
   FolderOpen,
   HardDrive,
   CheckCircle2,
-  Shield,
   CalendarDays,
   Bell,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { AuthorizationStateView, ActivateLicenseResult } from '@/types/license'
 import { useSettings, SETTING_KEYS } from '@/state/SettingsProvider'
 import { getDataDir, backupData, restoreData, listBackups, getBackupLocation, setBackupLocation, setDataRoot, revealPath, syncHolidays, clearHolidays, deleteBackup, type BackupItem } from '@/services/settings'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
@@ -50,7 +47,7 @@ function formatLocalDateTime(iso: string | null | undefined): string {
 /**
  * 分类顺序：个人化（我是谁 / 长什么样 / 怎么提醒）
  *        → 能力配置（自动化 / 节假日规则）
- *        → 系统（数据 / 授权）→ 尾部信息（关于）
+ *        → 系统（数据）→ 尾部信息（关于）
  * 命名统一为 2 字（「自动化」「节假日」为固定词，保持 3 字），避免长短不齐。
  */
 const SECTIONS: SettingsSection[] = [
@@ -60,7 +57,6 @@ const SECTIONS: SettingsSection[] = [
   { id: 'automation', label: '自动化', Icon: Sparkles },
   { id: 'workday', label: '节假日', Icon: CalendarDays },
   { id: 'data', label: '数据', Icon: Database },
-  { id: 'license', label: '授权', Icon: Shield },
   { id: 'about', label: '关于', Icon: Info },
 ]
 
@@ -149,7 +145,6 @@ export function SettingsPage() {
         {active === 'automation' && <AutomationSection />}
         {active === 'workday' && <WorkdaySection />}
         {active === 'notification' && <NotificationSettingsPanel />}
-        {active === 'license' && <LicenseSection />}
         {active === 'about' && <AboutSection />}
       </main>
     </div>
@@ -161,25 +156,11 @@ export function SettingsPage() {
 // ============================================================
 
 function ProfileSection() {
-  const [deviceId, setDeviceId] = useState('')
   const { get, save } = useSettings()
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core')
-        const id = await invoke<string>('get_device_id')
-        setDeviceId(id)
-      } catch (e) {
-        console.error('获取设备标识失败:', e)
-      }
-    }
-    load()
-  }, [])
 
   return (
     <>
-      <SectionHeader title="个人资料" desc="管理你的基本信息和设备标识" />
+      <SectionHeader title="个人资料" desc="管理你的基本信息" />
       <Field label="姓名">
         <Input
           value={get('userName') ?? ''}
@@ -199,12 +180,6 @@ function ProfileSection() {
           value={get('userRole') ?? ''}
           onChange={(v) => save('userRole', v)}
           placeholder="你的角色"
-        />
-      </Field>
-      <Field label="机器码">
-        <ReadonlyRow
-          Icon={Cpu}
-          value={deviceId || '加载中…'}
         />
       </Field>
     </>
@@ -357,315 +332,7 @@ function DataSection() {
   )
 }
 
-function LicenseSection() {
-  const [loading, setLoading] = useState(true)
-
-  // 从 Rust 获取的真实数据
-  const [status, setStatus] = useState<'trial' | 'activated' | 'expired'>('trial')
-  const [daysRemaining, setDaysRemaining] = useState<number | null>(null)
-  const [expireDate, setExpireDate] = useState<string | null>(null)
-  const [deviceId, setDeviceId] = useState('')
-  const [licenseCode, setLicenseCode] = useState('')
-  const [activating, setActivating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-
-  // 初始化：获取设备 ID 和授权状态（2026-09-16 授权隔离改造：单一后端判定源）
-  const initialize = async () => {
-    setLoading(true)
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-
-      // 获取设备 ID
-      const deviceIdResult = await invoke<string>('get_device_id')
-      setDeviceId(deviceIdResult)
-
-      // 授权状态由后端运行时判定（安全存储 + 设备绑定 + 验签，无 DB）
-      const auth = await invoke<AuthorizationStateView>('get_authorization_state')
-      if (auth.state === 'licensed') {
-        setStatus('activated')
-        if (auth.expire_time) {
-          setExpireDate(auth.expire_time.slice(0, 10))
-          const expire = new Date(auth.expire_time)
-          const today = new Date()
-          const diffDays = Math.floor((expire.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-          setDaysRemaining(diffDays > 0 ? diffDays : null)
-        } else {
-          setDaysRemaining(null) // 永久授权
-        }
-      } else if (auth.state === 'trial') {
-        setStatus(auth.days_remaining !== null && auth.days_remaining > 0 ? 'trial' : 'expired')
-        setDaysRemaining(auth.days_remaining)
-        if (auth.expire_time) setExpireDate(auth.expire_time.slice(0, 10))
-      } else {
-        // 未授权：无授权记录或授权已失效
-        setStatus(auth.reason_code && auth.reason_code !== 'LICENSE_NOT_FOUND' ? 'expired' : 'expired')
-        setError(auth.reason || null)
-      }
-    } catch (e) {
-      console.error('初始化授权状态失败:', e)
-      setError(e instanceof Error ? e.message : '初始化失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // 组件挂载时初始化授权状态
-  useEffect(() => {
-    initialize()
-  }, [])
-
-  // 复制设备 ID（走 Rust 剪贴板命令，保证可靠）
-  const copyDeviceId = async () => {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('copy_to_clipboard', { text: deviceId })
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (e) {
-      console.error('复制失败:', e)
-      // 兜底：浏览器剪贴板
-      try {
-        await navigator.clipboard.writeText(deviceId)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      } catch (e2) {
-        console.error('复制兜底失败:', e2)
-      }
-    }
-  }
-
-  // 激活授权
-  const handleActivate = async () => {
-    if (!licenseCode.trim()) {
-      setError('请输入授权码')
-      return
-    }
-
-    setActivating(true)
-    setError(null)
-
-    // 调用 Rust API
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-
-      // 验证授权码（清洗所有空白/换行，避免 textarea 粘贴带换行导致签名 base64 错位）
-      const cleaned = licenseCode.replace(/[\s\r\n]+/g, '').trim()
-      if (!cleaned) {
-        setError('请输入授权码')
-        setActivating(false)
-        return
-      }
-      const result = await invoke<ActivateLicenseResult>('activate_license_simple', {
-        licenseB64: cleaned,
-      })
-
-      if (result.success) {
-        setStatus('activated')
-        setLicenseCode('')
-        // 重新初始化
-        await initialize()
-        // 显示成功提示
-        const expireText = result.expire_time
-          ? new Date(result.expire_time).toLocaleDateString('zh-CN')
-          : '永久授权'
-        alert(`授权成功\n\n${result.product || 'PMTool'}\n有效期至：${expireText}`)
-      } else {
-        setError(result.reason || '授权失败（无 reason）')
-      }
-    } catch (e: any) {
-      // 透传 Rust 端真实错误（避免误导性的"授权失败"）
-      const msg =
-        typeof e === 'string'
-          ? e
-          : e?.message || JSON.stringify(e) || '未知错误'
-      setError(`授权失败：${msg}`)
-    } finally {
-      setActivating(false)
-    }
-  }
-
-  // 组件挂载时初始化
-  if (loading) {
-    return (
-      <>
-        <SectionHeader title="授权管理" desc="查看当前授权状态，并管理本设备的授权。" />
-        <div style={{ padding: '20px', color: 'var(--color-text-secondary)' }}>
-          正在加载授权状态…
-        </div>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <SectionHeader title="授权管理" desc="查看当前授权状态，并管理本设备的授权。" />
-
-      {/* 当前授权状态 */}
-      <StatusCard status={status} daysRemaining={daysRemaining} expireDate={expireDate} />
-
-      {/* 当前设备 */}
-      <div
-        style={{
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border-thin)',
-          borderRadius: 'var(--radius-md)',
-          padding: '20px',
-          marginBottom: '24px',
-        }}
-      >
-        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
-          当前设备
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '12px',
-          }}
-        >
-          <code
-            style={{
-              fontSize: '14px',
-              color: 'var(--color-text)',
-              background: 'var(--color-bg-subtle)',
-              padding: '8px 12px',
-              borderRadius: '6px',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            {deviceId}
-          </code>
-          <button
-            onClick={copyDeviceId}
-            style={{
-              fontSize: '12px',
-              padding: '6px 12px',
-              background: copied ? 'var(--color-success)' : 'var(--color-bg-subtle)',
-              color: copied ? 'var(--color-text-on-accent)' : 'var(--color-text)',
-              border: copied ? '1px solid var(--color-success)' : '1px solid var(--color-border-thin)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              if (!copied) e.currentTarget.style.background = 'var(--color-border-thin)'
-            }}
-            onMouseLeave={(e) => {
-              if (!copied) e.currentTarget.style.background = 'var(--color-bg-subtle)'
-            }}
-          >
-            {copied ? '已复制 ✓' : '复制'}
-          </button>
-        </div>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-          此设备唯一值用于生成本设备授权。<br />
-          如需获取或更换授权，请将此值提供给授权管理员。
-        </div>
-      </div>
-
-      {/* 激活授权 */}
-      <div
-        style={{
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border-thin)',
-          borderRadius: 'var(--radius-md)',
-          padding: '20px',
-          marginBottom: '20px',
-        }}
-      >
-        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
-          激活授权
-        </div>
-        <textarea
-          value={licenseCode}
-          onChange={(e) => setLicenseCode(e.target.value)}
-          placeholder="PMT1-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX..."
-          rows={4}
-          style={{
-            width: '100%',
-            padding: '12px 14px',
-            fontSize: '12px',
-            fontFamily: 'var(--font-mono)',
-            border: '1px solid var(--color-border-thin)',
-            borderRadius: 'var(--radius)',
-            background: 'var(--color-bg-subtle)',
-            color: 'var(--color-text)',
-            marginBottom: '8px',
-            outline: 'none',
-            resize: 'vertical',
-            minHeight: '80px',
-            wordBreak: 'break-all',
-          }}
-          disabled={activating}
-        />
-        {error && (
-          <div
-            style={{
-              fontSize: '12px',
-              color: 'var(--color-status-error)',
-              marginBottom: '12px',
-            }}
-          >
-            {error}
-          </div>
-        )}
-        <button
-          onClick={handleActivate}
-          disabled={activating || !licenseCode.trim()}
-          style={{
-            width: '100%',
-            padding: '12px 20px',
-            background: activating || !licenseCode.trim() ? 'var(--color-bg-muted)' : 'var(--color-accent)',
-            color: activating || !licenseCode.trim() ? 'var(--color-text-secondary)' : 'var(--color-text-on-accent)',
-            border: 'none',
-            borderRadius: 'var(--radius)',
-            fontSize: '14px',
-            fontWeight: 600,
-            cursor: activating || !licenseCode.trim() ? 'not-allowed' : 'pointer',
-            transition: 'all 0.2s',
-          }}
-        >
-          {activating ? '激活中...' : '激活授权'}
-        </button>
-      </div>
-    </>
-  )
-}
-
 function AboutSection() {
-  const [status, setStatus] = useState<string>('loading')
-
-  // 读真实授权状态，避免写死"待激活"（2026-09-16：单一后端判定源）
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core')
-        const auth = await invoke<AuthorizationStateView>('get_authorization_state')
-        if (!alive) return
-        if (auth.state === 'licensed') {
-          if (auth.expire_time) {
-            setStatus(`已激活 · 有效期至 ${auth.expire_time.slice(0, 10)}`)
-          } else {
-            setStatus('已激活 · 永久授权')
-          }
-        } else if (auth.state === 'trial' && auth.days_remaining !== null) {
-          setStatus(`试用中 · 剩 ${auth.days_remaining} 天`)
-        } else {
-          setStatus('待激活')
-        }
-      } catch (e) {
-        if (alive) setStatus('待激活')
-      }
-    }
-    load()
-    return () => {
-      alive = false
-    }
-  }, [])
-
   return (
     <>
       <SectionHeader title="关于" desc="PMTool V2.0" />
@@ -682,9 +349,6 @@ function AboutSection() {
       >
         <div style={{ marginBottom: '8px' }}>
           <span style={{ color: 'var(--color-text)' }}>版本</span> · 2.0.0
-        </div>
-        <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: 'var(--color-text)' }}>授权</span> · {status === 'loading' ? '读取中…' : status}
         </div>
         <div
           style={{
@@ -938,96 +602,6 @@ function SectionHeader({ title, desc }: { title: string; desc: string }) {
   )
 }
 
-// 授权状态卡片
-function StatusCard({ status, daysRemaining, expireDate }: { status: 'trial' | 'activated' | 'expired'; daysRemaining: number | null; expireDate: string | null }) {
-  if (status === 'trial') {
-    return (
-      <div
-        style={{
-          background: 'linear-gradient(135deg, rgba(56,189,248,0.1) 0%, rgba(14,165,233,0.08) 100%)',
-          border: '1px solid rgba(56,189,248,0.3)',
-          borderRadius: '12px',
-          padding: '18px',
-          marginBottom: '24px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-          <span style={{ fontSize: '18px' }}>●</span>
-          <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text)' }}>免费试用</span>
-        </div>
-        <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-          PMTool 正处于免费试用期
-        </div>
-        <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-accent)', marginBottom: '8px' }}>
-          剩余 {daysRemaining ?? '?'} 天
-        </div>
-        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-          试用期结束后，请输入授权码继续使用。
-        </div>
-      </div>
-    )
-  }
-
-  if (status === 'activated') {
-    return (
-      <div
-        style={{
-          background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, rgba(5,150,105,0.08) 100%)',
-          border: '1px solid rgba(16,185,129,0.3)',
-          borderRadius: '12px',
-          padding: '18px',
-          marginBottom: '24px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-          <span style={{ fontSize: '18px' }}>●</span>
-          <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text)' }}>已授权</span>
-        </div>
-        <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-          PMTool
-        </div>
-        {daysRemaining === null || daysRemaining <= 0 ? (
-          <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--success)', marginBottom: '8px' }}>
-            永久授权
-          </div>
-        ) : (
-          <>
-            <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-              有效期至：{expireDate || '2027-09-03'}
-            </div>
-            <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--success)', marginBottom: '8px' }}>
-              剩余 {daysRemaining} 天
-            </div>
-          </>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      style={{
-        background: 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(220,38,38,0.08) 100%)',
-        border: '1px solid rgba(239,68,68,0.3)',
-        borderRadius: '12px',
-        padding: '18px',
-        marginBottom: '24px',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-        <span style={{ fontSize: '18px' }}>●</span>
-        <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text)' }}>授权已过期</span>
-      </div>
-      <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-        当前授权已失效。
-      </div>
-      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-        请输入新的授权码继续使用。
-      </div>
-    </div>
-  )
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div
@@ -1262,13 +836,3 @@ function ColorSwatches() {
 }
 
 
-// License activation result type
-interface LicenseActivationResult {
-  success: boolean
-  reason?: string
-  license?: {
-    product: string
-    license_type: string
-    expire_time?: string
-  }
-}

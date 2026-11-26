@@ -10,10 +10,10 @@
  *   username = notif_channel_{channel_id}
  *   value    = 该渠道的机密串（密码 / 签名密钥）
  *
- * 复用授权体系同一套 SecureStorage（services/auth/secure_storage.rs）。
+ * 复用统一 SecureStorage（services/secure_storage.rs）。
  */
 
-use crate::services::auth::secure_storage::{KeyringStorage, SecureStorage};
+use crate::services::secure_storage::{KeyringStorage, SecureStorage};
 
 /// 渠道凭证在安全存储中的用户名
 pub fn channel_secret_key(channel_id: i64) -> String {
@@ -49,7 +49,7 @@ pub fn has_channel_secret(channel_id: i64) -> bool {
 // ============================================================
 #[cfg(test)]
 mod tests {
-    use crate::services::auth::secure_storage::{MemoryStorage, SecureStorage};
+    use crate::services::secure_storage::{MemoryStorage, SecureStorage};
 
     #[test]
     fn key_format_is_stable() {

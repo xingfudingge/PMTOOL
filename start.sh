@@ -3,9 +3,7 @@
 # PMTool 项目一键启停脚本
 # 使用方法:
 #   ./start.sh start      - 启动 PMTool (Tauri 1420)
-#   ./start.sh start-lg   - 启动 License Generator (1421)
 #   ./start.sh stop       - 停止 PMTool
-#   ./start.sh stop-lg    - 停止 License Generator
 #   ./start.sh stop-all   - 停止所有服务
 #   ./start.sh restart    - 重启 PMTool
 #   ./start.sh status     - 查看运行状态
@@ -27,15 +25,12 @@ export PATH="$HOME/.cargo/bin:$PATH"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$PROJECT_DIR/app"
 TAURI_DIR="$PROJECT_DIR/app/src-tauri"
-LG_DIR="$PROJECT_DIR/app/license-generator"
 
 # 端口配置
 TAURI_PORT=1420
-LG_PORT=1421
 
 # PID 文件路径
 TAURI_PID_FILE="$PROJECT_DIR/.pmtool-tauri.pid"
-LG_PID_FILE="$PROJECT_DIR/.pmtool-lg.pid"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -151,15 +146,9 @@ stop_pmtool() {
     return 0
 }
 
-# 停止 License Generator
-stop_license_generator() {
-    force_stop_port $LG_PORT "$LG_PID_FILE" "License Generator"
-}
-
 # 停止所有
 stop_all() {
     stop_pmtool || true
-    stop_license_generator || true
     log_success "所有服务已停止"
 }
 
@@ -175,13 +164,6 @@ show_status() {
         echo -e "${GREEN}✓${NC} PMTool       : 运行中 (端口 $TAURI_PORT, PID: $pid)"
     else
         echo -e "${RED}✗${NC} PMTool       : 未启动"
-    fi
-
-    if check_port $LG_PORT; then
-        local pid=$(lsof -ti:$LG_PORT 2>/dev/null | head -1)
-        echo -e "${GREEN}✓${NC} License Gen  : 运行中 (端口 $LG_PORT, PID: $pid)"
-    else
-        echo -e "${RED}✗${NC} License Gen  : 未启动"
     fi
 
     echo ""
@@ -282,124 +264,38 @@ start_pmtool() {
     return 1
 }
 
-# 启动 License Generator
-start_license_generator() {
-    log_info "检查端口 $LG_PORT..."
-
-    if check_port $LG_PORT; then
-        local pid=$(get_pid_by_port $LG_PORT)
-        log_error "端口 $LG_PORT 已被占用 (PID: $pid)"
-        log_error "请先执行 ./start.sh stop-lg 停止现有进程"
-        return 1
-    fi
-
-    log_info "启动 License Generator (Tauri 桌面应用)..."
-
-    cd "$LG_DIR" || exit 1
-
-    # 检查 node_modules
-    if [ ! -d "node_modules" ]; then
-        log_info "安装依赖..."
-        npm install || {
-            log_error "依赖安装失败"
-            return 1
-        }
-    fi
-
-    # 启动 License Generator (前端服务 + Tauri)
-    log_info "启动 License Generator..."
-    if command -v pnpm &> /dev/null; then
-        pnpm run tauri:dev > "$PROJECT_DIR/lg.log" 2>&1 &
-    else
-        npm run tauri:dev > "$PROJECT_DIR/lg.log" 2>&1 &
-    fi
-    local lg_pid=$!
-    echo $lg_pid > "$LG_PID_FILE"
-
-    log_info "License Generator PID: $lg_pid"
-
-    # 等待启动
-    local max_wait=30
-    local waited=0
-    local started=false
-
-    while [ $waited -lt $max_wait ]; do
-        if check_port $LG_PORT; then
-            sleep 1
-            started=true
-            break
-        fi
-        sleep 1
-        waited=$((waited + 1))
-    done
-
-    if [ "$started" = false ]; then
-        log_error "License Generator 启动超时"
-        log_info "请查看日志：tail -50 $PROJECT_DIR/lg.log"
-        return 1
-    fi
-
-    log_success "License Generator 已启动成功"
-    log_success "窗口已打开 (端口 $LG_PORT)"
-    return 0
-}
-
 # 打包 (内联自 build-dmg.sh，修正其在 src-tauri 下错跑 npm run 的问题)
 build_app() {
-    local type=${1:-"all"}
-    local do_pmt=false
-    local do_lg=false
+    local type=${1:-"pmt"}
 
     case "$type" in
-        pmt) do_pmt=true ;;
-        lg)  do_lg=true ;;
-        all|*)
-            do_pmt=true
-            do_lg=true
+        pmt|all|*) ;;
+        *)
+            log_error "未知打包目标：$type（仅支持 pmt）"
+            return 1
             ;;
     esac
 
-    log_info "=== 打包应用 (${type}) ==="
+    log_info "=== 打包 PMTool ==="
 
     # 用 pnpm 优先，回退 npm
     local pkg=pnpm
     command -v pnpm &> /dev/null || pkg=npm
 
-    # 打包 PMTool：tauri:build 定义在 app/package.json，故在 app/ 下执行
-    if [ "$do_pmt" = true ]; then
-        log_info "=== 打包 PMTool ==="
-        cd "$APP_DIR" || return 1
-        if [ ! -d "node_modules" ]; then
-            log_info "安装前端依赖..."
-            "$pkg" install || { log_error "依赖安装失败"; return 1; }
-        fi
-        "$pkg" run tauri:build || { log_error "PMTool 构建失败"; return 1; }
-        log_success "PMTool 构建完成"
+    # tauri:build 定义在 app/package.json，故在 app/ 下执行
+    cd "$APP_DIR" || return 1
+    if [ ! -d "node_modules" ]; then
+        log_info "安装前端依赖..."
+        "$pkg" install || { log_error "依赖安装失败"; return 1; }
     fi
-
-    # 打包 License Generator：tauri:build 定义在 license-generator/package.json
-    if [ "$do_lg" = true ]; then
-        log_info "=== 打包 License Generator ==="
-        cd "$LG_DIR" || return 1
-        if [ ! -d "node_modules" ]; then
-            log_info "安装前端依赖..."
-            "$pkg" install || { log_error "依赖安装失败"; return 1; }
-        fi
-        "$pkg" run tauri:build || { log_error "License Generator 构建失败"; return 1; }
-        log_success "License Generator 构建完成"
-    fi
+    "$pkg" run tauri:build || { log_error "PMTool 构建失败"; return 1; }
+    log_success "PMTool 构建完成"
 
     # 整理 DMG 到 dist/
     log_info "=== 整理输出文件到 dist/ ==="
     mkdir -p "$PROJECT_DIR/dist"
-    if [ "$do_pmt" = true ]; then
-        local pmt_dmg=$(find "$TAURI_DIR/target/release/bundle" -name "*.dmg" 2>/dev/null | grep -i pmtool | head -1)
-        [ -n "$pmt_dmg" ] && cp "$pmt_dmg" "$PROJECT_DIR/dist/" && log_success "PMTool DMG -> dist/$(basename "$pmt_dmg")"
-    fi
-    if [ "$do_lg" = true ]; then
-        local lg_dmg=$(find "$LG_DIR/src-tauri/target/release/bundle" -name "*.dmg" 2>/dev/null | head -1)
-        [ -n "$lg_dmg" ] && cp "$lg_dmg" "$PROJECT_DIR/dist/" && log_success "License Generator DMG -> dist/$(basename "$lg_dmg")"
-    fi
+    local pmt_dmg=$(find "$TAURI_DIR/target/release/bundle" -name "*.dmg" 2>/dev/null | grep -i pmtool | head -1)
+    [ -n "$pmt_dmg" ] && cp "$pmt_dmg" "$PROJECT_DIR/dist/" && log_success "PMTool DMG -> dist/$(basename "$pmt_dmg")"
 
     log_success "=== 打包完成，产物见 $PROJECT_DIR/dist/ ==="
 }
@@ -417,20 +313,10 @@ clean_project() {
         rm -rf "$APP_DIR/node_modules"
     fi
 
-    if [ -d "$LG_DIR/node_modules" ]; then
-        log_info "清理 License Generator 依赖..."
-        rm -rf "$LG_DIR/node_modules"
-    fi
-
     # 删除构建产物
     if [ -d "$TAURI_DIR/target" ]; then
         log_info "清理 PMTool 构建产物..."
         rm -rf "$TAURI_DIR/target"
-    fi
-
-    if [ -d "$LG_DIR/src-tauri/target" ]; then
-        log_info "清理 License Generator 构建产物..."
-        rm -rf "$LG_DIR/src-tauri/target"
     fi
 
     # 删除日志
@@ -444,27 +330,22 @@ show_help() {
     cat << EOF
 PMTool 项目一键管理脚本
 
-用法：$0 {start|start-lg|stop|stop-lg|stop-all|restart|status|clean|build|help}
+用法：$0 {start|stop|stop-all|restart|status|clean|build|help}
 
 命令:
   start       - 启动 PMTool (Tauri 开发服务器，包含前端 + 后端)
-  start-lg    - 启动 License Generator 授权码生成器
   stop        - 停止 PMTool (彻底停止所有进程)
-  stop-lg     - 停止 License Generator
   stop-all    - 停止所有服务
   restart     - 重启 PMTool
   status      - 显示运行状态
   clean       - 清理项目 (停止服务 + 删除依赖)
-  build [pmt|lg|all] - 打包为 DMG (产物到 dist/)
+  build [pmt] - 打包为 DMG (产物到 dist/)
   help        - 显示帮助
 
 示例:
   $0 start        # 启动 PMTool
-  $0 start-lg     # 启动 License Generator
   $0 stop-all     # 停止所有
-  $0 build all    # 打包所有应用(默认)
-  $0 build pmt    # 只打包 PMTool
-  $0 build lg     # 只打包 License Generator
+  $0 build pmt    # 打包 PMTool
 EOF
 }
 
@@ -483,22 +364,8 @@ main() {
             start_pmtool
             ;;
 
-        start-lg)
-            if check_port $LG_PORT; then
-                log_warn "端口 $LG_PORT 已被占用"
-                local pid=$(get_pid_by_port $LG_PORT)
-                log_error "请先执行 ./start.sh stop-lg 停止现有进程"
-                exit 1
-            fi
-            start_license_generator
-            ;;
-
         stop)
             stop_pmtool
-            ;;
-
-        stop-lg)
-            stop_license_generator
             ;;
 
         stop-all)

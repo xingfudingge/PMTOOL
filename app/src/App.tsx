@@ -1,19 +1,16 @@
 /**
  * PMTool V2.0 桌面端主应用
  * Phase 0 · T0.3 UI 框架
- * Phase 1 · T1.4 启动流程改造（包裹 LicenseGuard）
  * Phase A · alpha 化（2026-08-24 · hash 路由 + 项目详情）
  *
  * 变更记录：
  *   - 2026-08-21（T0.3）：8 大模块 state-based 路由
- *   - 2026-08-22（T1.4）：包裹 LicenseGuard
  *   - 2026-08-24（alpha 化）：hash 路由 + projectDetail 支持
  */
 
 import { useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
 import { Layout } from './components/Layout'
-import { LicenseGuard } from './components/LicenseGuard'
 import { RegenConfirmModal } from './components/RegenConfirmModal'
 import { ReportGenProvider } from './services/reportGenerator'
 import { HomePage } from './pages/HomePage'
@@ -148,7 +145,6 @@ function App() {
   return (
     <>
     {dataRootReady === false && <FirstRunSetup />}
-    <LicenseGuard>
       <SettingsProvider>
       <AutomationProvider>
       <ReportGenProvider>
@@ -164,7 +160,6 @@ function App() {
       </AutomationProvider>
       </SettingsProvider>
       <Toaster />
-    </LicenseGuard>
     </>
   )
 }
