@@ -1,6 +1,6 @@
-# 打包流水线：构建 Tauri 安装包并上传到 GitHub Actions Artifacts。
-# 产物只在 Actions → Artifacts 中下载，不会创建 GitHub Release。
-# 发布是人工步骤，不在 CI 中执行。
+# 打包流水线：构建 Tauri 安装包。
+#   - push tag v*  → 构建并发布到 GitHub Release（dmg 作为 release 附件）
+#   - workflow_dispatch → 只构建并上传 Actions Artifacts，不动 Release
 name: PMTool Build macOS
 
 on:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -55,3 +55,18 @@ jobs:
           path: app/src-tauri/target/release/bundle/dmg/*.dmg
           retention-days: 30
           if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # 两个平台并行跑，谁先到谁建 Release，另一个只上传（create 冲突时重试）
+          for i in 1 2 3 4 5; do
+            if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+            gh release create "$TAG" --title "PMTool $TAG" --generate-notes && break || sleep 5
+          done
+          gh release upload "$TAG" app/src-tauri/target/release/bundle/dmg/*.dmg --clobber

@@ -41,9 +41,12 @@ lg.log
 # GitHub 访问令牌（本地机密）
 .pmtool-github-token
 
-# 密钥（只忽略私钥类文件；公钥清单 product_keys.json 必须入库）
-# 说明：本机遗留的 RSA 私钥 private.pem 需排除；其余 .pem/.key 私钥由
-# scripts/check-release-keys.sh 在提交/CI 阶段拦截，防止误入库。
+# 本地账号/口令文件（永不入库）
+.git-config/
+*.lpbak
+credentials*.txt
+
+# 私钥类文件（永不入库；本项目已无授权体系，保留规则防止误提交）
 app/src-tauri/keys/private.pem
 app/src-tauri/keys/*.key
 app/src-tauri/keys/*.p12

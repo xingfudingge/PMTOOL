@@ -8,6 +8,21 @@ PMTool 是给实施 / 交付经理用的个人工作台：项目计划、周计�
 
 ---
 
+## ⬇️ 下载安装
+
+到 [Releases](https://github.com/xingfudingge/PMTOOL/releases) 下载最新版安装包：
+
+| 平台 | 文件 |
+|---|---|
+| macOS（Apple Silicon / Intel） | `PMTool_*_aarch64.dmg` / `PMTool_*_x64.dmg` |
+| Windows 10+ | `PMTool_*_x64-setup.exe` |
+
+安装即用：无需账号、无需授权码、无试用期。首次启动选一个数据目录即可。
+
+> 维护者：`git tag v2.2.1 && git push origin v2.2.1` 会自动触发两个平台的构建，并把 dmg / exe 上传到该 tag 的 Release。
+
+---
+
 ## ✨ 功能
 
 | 模块 | 说明 |
