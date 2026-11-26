@@ -14,13 +14,10 @@ node_modules/
 # PMTool 主应用
 app/dist/
 
-# License Generator
-app/license-generator/web/dist/
 
 # Rust 构建
 target/
 app/src-tauri/target/
-app/license-generator/src-tauri/target/
 
 # DMG 安装包
 *.dmg
@@ -51,7 +48,6 @@ app/src-tauri/keys/private.pem
 app/src-tauri/keys/*.key
 app/src-tauri/keys/*.p12
 app/src-tauri/keys/*.pfx
-app/license-generator/src-tauri/keys/
 
 # ========================================
 # IDE 配置
@@ -88,8 +84,6 @@ lerna-debug.log*
 # ========================================
 # Tauri 相关
 # ========================================
-app/src-tauri/tauri.conf.json.backup
-app/license-generator/src-tauri/tauri.conf.json.backup
 
 # ========================================
 # 测试覆盖
