@@ -1,6 +1,6 @@
 [package]
 name = "pmtool"
-version = "2.0.0"
+version = "2.2.1"
 description = "PMTool · 实施经理个人工作台"
 authors = ["维护者"]
 edition = "2021"
